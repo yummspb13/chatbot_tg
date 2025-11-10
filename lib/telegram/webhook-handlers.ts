@@ -49,10 +49,10 @@ export function registerWebhookHandlers() {
   })
 
   // Обработка отредактированных сообщений
+  // Примечание: отредактированные сообщения из каналов обрабатываются через 'edited_channel_post' выше
   bot.on('edited_message', async (ctx) => {
-    if (ctx.chat?.type === 'channel') {
-      await handleChannelMessage(ctx as any)
-    }
+    // Обработка отредактированных сообщений из групп/личных чатов
+    // Команды обработаются через bot.command выше
   })
 }
 
