@@ -96,6 +96,7 @@ router.post('/start', async (req, res) => {
               console.log('   [Worker] ⏳ QR-код еще не отсканирован, продолжаем ждать...')
             } else if (result instanceof Api.auth.LoginTokenMigrateTo) {
               console.log('   [Worker] 🔄 Требуется миграция на DC:', result.dcId)
+              console.log('   [Worker] Выполняю ImportLoginToken для миграции...')
               
               // Используем ImportLoginToken на текущем клиенте (Telegram Client API обработает миграцию)
               try {
@@ -104,6 +105,8 @@ router.post('/start', async (req, res) => {
                     token: result.token,
                   })
                 )
+                
+                console.log('   [Worker] Результат миграции:', migrateResult.constructor.name)
                 
                 if (migrateResult instanceof Api.auth.LoginTokenSuccess) {
                   console.log('   [Worker] ✅ Авторизация успешна после миграции!')
@@ -114,31 +117,53 @@ router.post('/start', async (req, res) => {
                 } else {
                   console.log('   [Worker] ⚠️ После миграции получен неожиданный результат:', migrateResult.constructor.name)
                   // Пробуем проверить через getMe, возможно требуется пароль
+                  console.log('   [Worker] Проверяю через getMe()...')
                   try {
-                    await client.getMe()
+                    const me = await client.getMe()
+                    console.log('   [Worker] ✅ getMe() успешен, пользователь авторизован:', me.id)
+                    // Если getMe успешен, значит авторизация прошла
+                    const sessionString = client.session.save() as unknown as string
+                    sessionEntry.authResolved = true
+                    sessionEntry.authSessionString = sessionString
                   } catch (getMeError: any) {
+                    console.log('   [Worker] ❌ getMe() ошибка:', getMeError.errorMessage || getMeError.message)
                     if (getMeError.errorMessage?.includes('PASSWORD') || 
                         getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
                       console.log('   [Worker] ⚠️ Требуется пароль 2FA (определено через getMe после миграции)')
+                      sessionEntry.authPasswordRequired = true
+                    } else {
+                      // Если другая ошибка, все равно пробуем установить флаг пароля
+                      console.log('   [Worker] ⚠️ Устанавливаю флаг password_required из-за ошибки getMe')
                       sessionEntry.authPasswordRequired = true
                     }
                   }
                 }
               } catch (migrateError: any) {
                 console.log('   [Worker] ❌ Ошибка при миграции:', migrateError.errorMessage || migrateError.message)
+                console.log('   [Worker] Детали ошибки:', JSON.stringify(migrateError, null, 2))
                 if (migrateError.errorMessage?.includes('PASSWORD') || 
                     migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED') ||
                     migrateError.message?.includes('PASSWORD')) {
-                  console.log('   [Worker] ⚠️ Требуется пароль 2FA после миграции')
+                  console.log('   [Worker] ⚠️ Требуется пароль 2FA после миграции (из ошибки)')
                   sessionEntry.authPasswordRequired = true
                 } else {
                   // Если другая ошибка, пробуем проверить через getMe
+                  console.log('   [Worker] Проверяю через getMe() после ошибки миграции...')
                   try {
-                    await client.getMe()
+                    const me = await client.getMe()
+                    console.log('   [Worker] ✅ getMe() успешен после ошибки миграции:', me.id)
+                    const sessionString = client.session.save() as unknown as string
+                    sessionEntry.authResolved = true
+                    sessionEntry.authSessionString = sessionString
                   } catch (getMeError: any) {
+                    console.log('   [Worker] ❌ getMe() ошибка после миграции:', getMeError.errorMessage || getMeError.message)
                     if (getMeError.errorMessage?.includes('PASSWORD') || 
                         getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
                       console.log('   [Worker] ⚠️ Требуется пароль 2FA (определено через getMe)')
+                      sessionEntry.authPasswordRequired = true
+                    } else {
+                      // Если другая ошибка, все равно пробуем установить флаг пароля
+                      console.log('   [Worker] ⚠️ Устанавливаю флаг password_required из-за ошибки getMe')
                       sessionEntry.authPasswordRequired = true
                     }
                   }
