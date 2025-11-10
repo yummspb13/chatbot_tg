@@ -225,6 +225,7 @@ export default function QRAuthPage() {
         const saveData = await saveResponse.json()
         if (saveData.success) {
           console.log('✅ Сессия сохранена успешно')
+          setSessionString(data.sessionString)
           setStatus('success')
         } else {
           setPasswordError('Ошибка сохранения сессии: ' + (saveData.error || 'неизвестная ошибка'))
@@ -292,19 +293,72 @@ export default function QRAuthPage() {
 
   if (status === 'success') {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-center max-w-md">
-          <div className="text-green-600 text-6xl mb-4">✅</div>
-          <h1 className="text-2xl font-bold mb-4">Авторизация успешна!</h1>
-          <p className="text-gray-600 mb-4">
-            Сессия сохранена. Теперь аккаунт @yummspb будет автоматически пересылать сообщения из каналов боту.
-          </p>
-          <button
-            onClick={() => window.location.href = '/admin'}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Вернуться в админку
-          </button>
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="bg-white p-8 rounded-lg shadow-lg max-w-2xl w-full">
+          <div className="text-center mb-6">
+            <div className="text-green-600 text-6xl mb-4">✅</div>
+            <h1 className="text-2xl font-bold mb-2">Авторизация успешна!</h1>
+            <p className="text-gray-600 mb-6">
+              Сессия сгенерирована. Скопируйте её и добавьте в Render.com Environment Variables.
+            </p>
+          </div>
+
+          {sessionString && (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                TELEGRAM_SESSION_STRING:
+              </label>
+              <div className="flex gap-2">
+                <textarea
+                  readOnly
+                  value={sessionString}
+                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg font-mono text-xs bg-gray-50"
+                  rows={4}
+                  onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                />
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(sessionString)
+                    alert('✅ Сессия скопирована в буфер обмена!')
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 whitespace-nowrap"
+                >
+                  📋 Копировать
+                </button>
+              </div>
+              <p className="text-xs text-gray-500 mt-2">
+                ⚠️ Важно: Добавьте эту строку в Render.com → Environment Variables → TELEGRAM_SESSION_STRING
+              </p>
+            </div>
+          )}
+
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <p className="text-sm text-yellow-800 font-medium mb-2">📋 Что делать дальше:</p>
+            <ol className="text-sm text-yellow-700 space-y-1 list-decimal list-inside">
+              <li>Скопируйте сессию выше (кнопка "Копировать")</li>
+              <li>Откройте <a href="https://dashboard.render.com" target="_blank" rel="noopener noreferrer" className="underline">Render Dashboard</a></li>
+              <li>Выберите ваш воркер (chatbot-tg)</li>
+              <li>Перейдите в <strong>Environment</strong></li>
+              <li>Добавьте переменную: <code className="bg-yellow-100 px-1 rounded">TELEGRAM_SESSION_STRING</code></li>
+              <li>Вставьте скопированную сессию в значение</li>
+              <li>Сохраните (воркер перезапустится автоматически)</li>
+            </ol>
+          </div>
+
+          <div className="flex gap-4 justify-center">
+            <button
+              onClick={() => window.location.href = '/admin'}
+              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              Вернуться в админку
+            </button>
+            <button
+              onClick={() => window.location.reload()}
+              className="px-6 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300"
+            >
+              Начать заново
+            </button>
+          </div>
         </div>
       </div>
     )
