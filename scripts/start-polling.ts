@@ -176,9 +176,7 @@ bot.use((ctx, next) => {
   
   if (ctx.updateType === 'message') {
     console.log('   📨 Это message')
-    if (ctx.chat?.type === 'channel') {
-      console.log('   ⚠️⚠️⚠️ ЭТО message ИЗ КАНАЛА! ⚠️⚠️⚠️')
-    }
+    // Примечание: message из каналов обрабатываются через 'channel_post'
     if (ctx.message) {
       console.log('   message.message_id:', ctx.message.message_id)
       console.log('   message keys:', Object.keys(ctx.message))
