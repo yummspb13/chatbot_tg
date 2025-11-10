@@ -10,7 +10,9 @@ import { getBot } from './bot'
 
 // Включаем логирование всех запросов к Prisma
 if (process.env.DEBUG_PRISMA === 'true') {
-  prisma.$on('query' as any, (e: any) => {
+  // Prisma query logging (только для отладки)
+  // @ts-ignore - Prisma $on может не иметь типов для query в некоторых версиях
+  prisma.$on('query', (e: any) => {
     console.log('      [Prisma] Query:', e.query)
     console.log('      [Prisma] Params:', e.params)
     console.log('      [Prisma] Duration:', e.duration, 'ms')
