@@ -22,10 +22,17 @@
 
 ### 3. Создайте приложение
 
-- **App title:** `Afisha Bot` (любое название)
-- **Short name:** `afisha-bot` (любое)
-- **Platform:** `Other`
-- **Description:** `Bot for event collection` (опционально)
+Заполните форму:
+- **App title:** `Afisha Bot` (любое название, например: "Afisha Bot" или "My Bot")
+- **Short name:** `afisha-bot` (любое короткое имя, например: "afisha-bot" или "mybot")
+- **Platform:** выберите **`Other`** (или `Desktop` - не важно)
+- **URL:** можно оставить пустым или указать любой (например: `https://example.com`)
+- **Description:** `Bot for event collection` (опционально, можно оставить пустым)
+
+**Важно:**
+- URL и Platform не критичны для работы Client API
+- Можно указать любые значения или оставить пустыми
+- Главное - получить `api_id` и `api_hash`
 
 ### 4. Получите credentials
 
