@@ -1,21 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Api } from 'telegram/tl'
-import { TelegramClient } from 'telegram'
-
-// Храним активные сессии (в продакшене использовать Redis)
-// Импортируем из start/route.ts или используем общий storage
-const authSessions = new Map<string, { 
-  client: TelegramClient; 
-  expiresAt: number;
-  authResolved?: boolean;
-  authSessionString?: string | null;
-  authPasswordRequired?: boolean;
-  migrateToDcId?: number;
-  migrateToken?: Buffer;
-}>()
-
-// Экспортируем для использования в start/route.ts
-export { authSessions }
+import { authSessions } from '@/lib/telegram/qr-auth-sessions'
 
 export async function POST(req: NextRequest) {
   try {

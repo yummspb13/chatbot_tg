@@ -3,7 +3,7 @@ import { TelegramClient } from 'telegram'
 import { StringSession } from 'telegram/sessions'
 import { Api } from 'telegram/tl'
 import qrcode from 'qrcode'
-import { authSessions } from '../status/route'
+import { authSessions } from '@/lib/telegram/qr-auth-sessions'
 
 // Стандартные credentials (не требуют создания приложения)
 const DEFAULT_API_ID = 17349

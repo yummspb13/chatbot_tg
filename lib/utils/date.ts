@@ -1,5 +1,5 @@
 import { format, parseISO } from 'date-fns'
-import { utcToZonedTime, zonedTimeToUtc } from 'date-fns-tz'
+import { toZonedTime, fromZonedTime } from 'date-fns-tz'
 
 const MOSCOW_TZ = 'Europe/Moscow'
 
@@ -8,14 +8,14 @@ const MOSCOW_TZ = 'Europe/Moscow'
  */
 export function toMoscowTime(date: Date | string): Date {
   const dateObj = typeof date === 'string' ? parseISO(date) : date
-  return utcToZonedTime(dateObj, MOSCOW_TZ)
+  return toZonedTime(dateObj, MOSCOW_TZ)
 }
 
 /**
  * Конвертирует московское время в UTC
  */
 export function fromMoscowTime(date: Date): Date {
-  return zonedTimeToUtc(date, MOSCOW_TZ)
+  return fromZonedTime(date, MOSCOW_TZ)
 }
 
 /**
