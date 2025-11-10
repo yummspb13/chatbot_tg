@@ -257,7 +257,12 @@ export async function handleAddChannel(ctx: Context) {
         
         // Если название не указано, используем название канала
         if (!channelName) {
-          channelName = chat.title || `Канал @${username}`
+          // Проверяем, что это не приватный чат (у приватных чатов нет title)
+          if ('title' in chat && chat.title) {
+            channelName = chat.title
+          } else {
+            channelName = `Канал @${username}`
+          }
         }
       } catch (error: any) {
         if (error.response?.error_code === 400) {
