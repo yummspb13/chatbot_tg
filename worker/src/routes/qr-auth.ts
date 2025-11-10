@@ -113,6 +113,16 @@ router.post('/start', async (req, res) => {
                   console.log('   [Worker] Сессия сохранена после миграции, длина:', sessionString.length)
                 } else {
                   console.log('   [Worker] ⚠️ После миграции получен неожиданный результат:', migrateResult.constructor.name)
+                  // Пробуем проверить через getMe, возможно требуется пароль
+                  try {
+                    await client.getMe()
+                  } catch (getMeError: any) {
+                    if (getMeError.errorMessage?.includes('PASSWORD') || 
+                        getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
+                      console.log('   [Worker] ⚠️ Требуется пароль 2FA (определено через getMe после миграции)')
+                      sessionEntry.authPasswordRequired = true
+                    }
+                  }
                 }
               } catch (migrateError: any) {
                 console.log('   [Worker] ❌ Ошибка при миграции:', migrateError.errorMessage || migrateError.message)
