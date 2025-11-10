@@ -48,6 +48,7 @@ export default function QRAuthPage() {
         const saveData = await saveResponse.json()
         if (saveData.success) {
           console.log('✅ Сессия сохранена успешно')
+          setSessionString(data.sessionString)
           setStatus('success')
         } else {
           setError('Ошибка сохранения сессии: ' + (saveData.error || 'неизвестная ошибка'))
@@ -104,6 +105,7 @@ export default function QRAuthPage() {
               const saveData = await saveResponse.json()
               if (saveData.success) {
                 console.log('✅ Сессия сохранена успешно')
+                setSessionString(statusData.sessionString)
                 setStatus('success')
               } else {
                 setError('Ошибка сохранения сессии: ' + (saveData.error || 'неизвестная ошибка'))
