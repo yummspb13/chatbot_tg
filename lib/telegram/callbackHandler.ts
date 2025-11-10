@@ -8,11 +8,11 @@ import { saveDecision } from '@/lib/learning/decisionService'
  * Обрабатывает callback_query (нажатия на кнопки)
  */
 export async function handleCallback(ctx: Context) {
-  if (!('callback_query' in ctx) || !ctx.callback_query) {
+  if (!('callbackQuery' in ctx) || !ctx.callbackQuery) {
     return
   }
 
-  const callback = ctx.callback_query
+  const callback = ctx.callbackQuery
   // Проверяем, что callback - это объект и имеет свойство data
   const data = callback && typeof callback === 'object' && 'data' in callback 
     ? (callback as any).data 
@@ -84,12 +84,12 @@ async function handleApproveCallback(ctx: Context, draftId: number) {
       await ctx.answerCbQuery('Мероприятие уже существует в Афише.')
       
       // Удаляем сообщение
-      if ('message' in ctx.callback_query && ctx.callback_query.message) {
+      if (ctx.callbackQuery && 'message' in ctx.callbackQuery && ctx.callbackQuery.message) {
         const bot = getBot()
         try {
           await bot.telegram.deleteMessage(
-            ctx.callback_query.message.chat.id,
-            ctx.callback_query.message.message_id
+            ctx.callbackQuery.message.chat.id,
+            ctx.callbackQuery.message.message_id
           )
         } catch (error) {
           console.error('Error deleting message:', error)
@@ -134,12 +134,12 @@ async function handleApproveCallback(ctx: Context, draftId: number) {
     await publishToGroup(draft)
 
     // Удаляем сообщение
-    if ('message' in ctx.callback_query && ctx.callback_query.message) {
+    if (ctx.callbackQuery && 'message' in ctx.callbackQuery && ctx.callbackQuery.message) {
       const bot = getBot()
       try {
         await bot.telegram.deleteMessage(
-          ctx.callback_query.message.chat.id,
-          ctx.callback_query.message.message_id
+          ctx.callbackQuery.message.chat.id,
+          ctx.callbackQuery.message.message_id
         )
       } catch (error) {
         console.error('Error deleting message:', error)
@@ -214,12 +214,12 @@ async function handleRejectCallback(ctx: Context, draftId: number) {
   await ctx.answerCbQuery('❌ Мероприятие отклонено.')
 
   // Удаляем сообщение
-  if ('message' in ctx.callback_query && ctx.callback_query.message) {
+  if (ctx.callbackQuery && 'message' in ctx.callbackQuery && ctx.callbackQuery.message) {
     const bot = getBot()
     try {
       await bot.telegram.deleteMessage(
-        ctx.callback_query.message.chat.id,
-        ctx.callback_query.message.message_id
+        ctx.callbackQuery.message.chat.id,
+        ctx.callbackQuery.message.message_id
       )
     } catch (error) {
       console.error('Error deleting message:', error)
