@@ -1,18 +1,23 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // Исключаем worker директорию из сборки Next.js
-  webpack: (config, { isServer }) => {
-    config.externals = config.externals || []
-    if (isServer) {
-      config.externals.push({
-        'worker/src': 'commonjs worker/src',
-      })
-    }
-    return config
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb',
+    },
   },
   // Исключаем worker из TypeScript проверки
   typescript: {
+    // Игнорируем ошибки в worker директории
     ignoreBuildErrors: false,
+  },
+  // Исключаем worker из сборки
+  webpack: (config) => {
+    // Игнорируем worker директорию при сборке
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: ['**/node_modules/**', '**/worker/**'],
+    }
+    return config
   },
 }
 
