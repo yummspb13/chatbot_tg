@@ -535,6 +535,9 @@ router.post('/password', async (req, res) => {
 /**
  * POST /auth/qr/save
  * Сохраняет sessionString (вызывается из админ-панели)
+ * 
+ * ВАЖНО: На Render.com сессия должна быть добавлена в Environment Variables вручную!
+ * Этот endpoint только логирует информацию для пользователя.
  */
 router.post('/save', async (req, res) => {
   try {
@@ -544,36 +547,64 @@ router.post('/save', async (req, res) => {
       return res.status(400).json({ error: 'sessionString не предоставлен' })
     }
 
-    // В воркере мы просто сохраняем сессию в переменную окружения или БД
-    // Для MVP сохраняем в .env (в продакшене - в зашифрованное хранилище)
-    const fs = await import('fs/promises')
-    const path = await import('path')
-    
-    const envPath = path.resolve(process.cwd(), '../.env')
-    let envContent = ''
+    console.log('')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('💾 [Worker] Сохранение сессии')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('   Длина сессии:', sessionString.length)
+    console.log('   Первые 50 символов:', sessionString.substring(0, 50) + '...')
+    console.log('')
+    console.log('⚠️  ВАЖНО: На Render.com сессия НЕ сохраняется автоматически!')
+    console.log('   Вы должны вручную добавить её в Environment Variables:')
+    console.log('   1. Откройте Render Dashboard')
+    console.log('   2. Выберите ваш воркер')
+    console.log('   3. Перейдите в Environment')
+    console.log('   4. Добавьте: TELEGRAM_SESSION_STRING="' + sessionString.substring(0, 50) + '..."')
+    console.log('   5. Сохраните (воркер перезапустится автоматически)')
+    console.log('')
+    console.log('✅ После добавления в Environment Variables воркер будет использовать')
+    console.log('   эту сессию при каждом перезапуске (даже после "засыпания" на free tier)')
+    console.log('═══════════════════════════════════════════════════════════')
+    console.log('')
 
+    // Пробуем сохранить в .env для локальной разработки
     try {
-      envContent = await fs.readFile(envPath, 'utf-8')
-    } catch (error: any) {
-      if (error.code !== 'ENOENT') {
-        throw error
+      const fs = await import('fs/promises')
+      const path = await import('path')
+      
+      const envPath = path.resolve(process.cwd(), '../.env')
+      let envContent = ''
+
+      try {
+        envContent = await fs.readFile(envPath, 'utf-8')
+      } catch (error: any) {
+        if (error.code !== 'ENOENT') {
+          throw error
+        }
       }
+
+      // Обновляем или добавляем TELEGRAM_SESSION_STRING
+      if (envContent.includes('TELEGRAM_SESSION_STRING=')) {
+        envContent = envContent.replace(
+          /TELEGRAM_SESSION_STRING=.*/g,
+          `TELEGRAM_SESSION_STRING="${sessionString}"`
+        )
+      } else {
+        envContent += `\nTELEGRAM_SESSION_STRING="${sessionString}"\n`
+      }
+
+      await fs.writeFile(envPath, envContent, 'utf-8')
+      console.log('   [Worker] ✅ Сессия сохранена в .env (для локальной разработки)')
+    } catch (fsError: any) {
+      // Игнорируем ошибки файловой системы (на Render.com файлы могут быть недоступны)
+      console.log('   [Worker] ⚠️ Не удалось сохранить в .env (это нормально на Render.com)')
     }
 
-    // Обновляем или добавляем TELEGRAM_SESSION_STRING
-    if (envContent.includes('TELEGRAM_SESSION_STRING=')) {
-      envContent = envContent.replace(
-        /TELEGRAM_SESSION_STRING=.*/g,
-        `TELEGRAM_SESSION_STRING="${sessionString}"`
-      )
-    } else {
-      envContent += `\nTELEGRAM_SESSION_STRING="${sessionString}"\n`
-    }
-
-    await fs.writeFile(envPath, envContent, 'utf-8')
-    console.log('✅ TELEGRAM_SESSION_STRING успешно сохранен в .env')
-
-    return res.json({ success: true })
+    return res.json({ 
+      success: true,
+      message: 'Сессия получена. Добавьте её в Render.com Environment Variables вручную.',
+      sessionString: sessionString // Возвращаем сессию, чтобы админ-панель могла её показать
+    })
   } catch (error: any) {
     console.error('❌ Ошибка сохранения сессии:', error)
     return res.status(500).json({
