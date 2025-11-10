@@ -58,12 +58,15 @@ router.post('/start', async (req, res) => {
         if (event instanceof Api.UpdateLoginToken) {
           console.log('   [Worker] 📱 Получено обновление: QR-код отсканирован!')
           
-          // Находим сессию по клиенту
-          let sessionEntry: any = null
-          for (const [token, session] of authSessions.entries()) {
-            if (session.client === client) {
-              sessionEntry = session
-              break
+          // Находим сессию по клиенту (используем сохраненную ссылку или ищем)
+          let sessionEntry: any = (client as any)._authSessionEntry || null
+          
+          if (!sessionEntry) {
+            for (const [token, session] of authSessions.entries()) {
+              if (session.client === client) {
+                sessionEntry = session
+                break
+              }
             }
           }
 
@@ -88,6 +91,9 @@ router.post('/start', async (req, res) => {
               sessionEntry.authResolved = true
               sessionEntry.authSessionString = sessionString
               console.log('   [Worker] Сессия обновлена, длина:', sessionString.length)
+            } else if (result instanceof Api.auth.LoginToken) {
+              // QR-код еще не отсканирован, продолжаем ждать
+              console.log('   [Worker] ⏳ QR-код еще не отсканирован, продолжаем ждать...')
             } else if (result instanceof Api.auth.LoginTokenMigrateTo) {
               console.log('   [Worker] 🔄 Требуется миграция на DC:', result.dcId)
               
