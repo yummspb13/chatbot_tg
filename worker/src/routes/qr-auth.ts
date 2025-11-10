@@ -147,11 +147,30 @@ router.post('/start', async (req, res) => {
               } catch (migrateError: any) {
                 console.log('   [Worker] ❌ Ошибка при миграции:', migrateError.errorMessage || migrateError.message)
                 
-                // Если токен истек, это нормально - нужно будет использовать пароль
+                // Если токен истек, пробуем проверить через getMe - возможно сессия уже зарегистрирована
                 if (migrateError.errorMessage?.includes('AUTH_TOKEN_EXPIRED') ||
                     migrateError.errorMessage?.includes('TOKEN_EXPIRED')) {
-                  console.log('   [Worker] ⚠️ Токен миграции истек, требуется пароль 2FA')
-                  sessionEntry.authPasswordRequired = true
+                  console.log('   [Worker] ⚠️ Токен миграции истек, проверяю через getMe()...')
+                  try {
+                    const me = await client.getMe()
+                    console.log('   [Worker] ✅ getMe() успешен после истечения токена:', me.id)
+                    // Если getMe успешен, значит авторизация прошла
+                    const sessionString = client.session.save() as unknown as string
+                    sessionEntry.authResolved = true
+                    sessionEntry.authSessionString = sessionString
+                    console.log('   [Worker] Сессия сохранена после истечения токена')
+                  } catch (getMeError: any) {
+                    console.log('   [Worker] ❌ getMe() ошибка после истечения токена:', getMeError.errorMessage || getMeError.message)
+                    if (getMeError.errorMessage?.includes('PASSWORD') || 
+                        getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
+                      console.log('   [Worker] ⚠️ Требуется пароль 2FA')
+                      sessionEntry.authPasswordRequired = true
+                    } else {
+                      // Если другая ошибка, все равно пробуем установить флаг пароля
+                      console.log('   [Worker] ⚠️ Устанавливаю флаг password_required')
+                      sessionEntry.authPasswordRequired = true
+                    }
+                  }
                 } else if (migrateError.errorMessage?.includes('PASSWORD') || 
                     migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED') ||
                     migrateError.message?.includes('PASSWORD')) {
@@ -315,7 +334,9 @@ router.post('/status', async (req, res) => {
     }
 
     // Пробуем получить информацию о пользователе
+    // Это может сработать даже после истечения токена миграции, если сессия частично зарегистрирована
     try {
+      console.log('   [Worker] Проверяю авторизацию через getMe()...')
       const me = await client.getMe()
       if (me) {
         console.log('   [Worker] ✅ getMe() успешен, пользователь авторизован:', me.id)
@@ -334,6 +355,7 @@ router.post('/status', async (req, res) => {
         })
       }
     } catch (getMeError: any) {
+      console.log('   [Worker] getMe() ошибка:', getMeError.errorMessage || getMeError.message)
       if (getMeError.errorMessage?.includes('PASSWORD') || getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
         sessionData.authPasswordRequired = true
         return res.json({
@@ -341,6 +363,7 @@ router.post('/status', async (req, res) => {
           hint: getMeError.hint || 'Требуется пароль двухфакторной аутентификации',
         })
       }
+      // Если другая ошибка (например, AUTH_KEY_UNREGISTERED), продолжаем проверку
     }
 
     // Пробуем повторно вызвать ExportLoginToken
