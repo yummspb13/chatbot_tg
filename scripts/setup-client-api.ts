@@ -45,6 +45,11 @@ async function setup() {
   console.log('📱 Используем аккаунт: @yummspb (7007868967)')
   console.log('')
 
+  if (!apiHash) {
+    console.error('❌ TELEGRAM_API_HASH не установлен в .env')
+    process.exit(1)
+  }
+
   const session = new StringSession('')
   const client = new TelegramClient(session, parseInt(apiId), apiHash, {
     connectionRetries: 5,
