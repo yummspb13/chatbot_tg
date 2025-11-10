@@ -107,8 +107,15 @@ bot.on('message', async (ctx) => {
   console.log('   Chat Type:', ctx.chat?.type)
   console.log('   Chat ID:', ctx.chat?.id)
   console.log('   Message ID:', ctx.message?.message_id)
-  console.log('   Has forward_from_chat:', !!(ctx.message as any)?.forward_from_chat)
-  console.log('   Has forward_from:', !!(ctx.message as any)?.forward_from)
+  const msg = ctx.message as any
+  console.log('   Все ключи message:', Object.keys(msg || {}))
+  console.log('   Has forward_from_chat:', !!msg?.forward_from_chat)
+  console.log('   Has forward_from:', !!msg?.forward_from)
+  console.log('   Has forward_origin:', !!msg?.forward_origin)
+  console.log('   Has forward_sender_name:', !!msg?.forward_sender_name)
+  console.log('   Has forward_date:', !!msg?.forward_date)
+  console.log('   Полный message (первые 1000 символов):')
+  console.log('   ', JSON.stringify(msg, null, 2).substring(0, 1000))
   
   // Примечание: сообщения из каналов обрабатываются через 'channel_post' выше
   // Здесь обрабатываются только личные сообщения и сообщения из групп
