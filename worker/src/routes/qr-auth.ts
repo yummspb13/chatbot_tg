@@ -22,6 +22,8 @@ const authSessions = new Map<string, {
   authResolved?: boolean
   authSessionString?: string | null
   authPasswordRequired?: boolean
+  migrateToDcId?: number
+  migrateToken?: Buffer
 }>()
 
 /**
