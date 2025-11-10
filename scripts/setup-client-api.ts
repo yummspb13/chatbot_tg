@@ -70,7 +70,7 @@ async function setup() {
       await client.invoke(
         new (await import('telegram/tl')).Api.auth.SignIn({
           phoneNumber,
-          phoneCodeHash: (await client.sendCode({ apiId: parseInt(apiId), apiHash }, phoneNumber)).phoneCodeHash,
+          phoneCodeHash: (await client.sendCode({ apiId: apiIdNum, apiHash: apiHashStr }, phoneNumber)).phoneCodeHash,
           phoneCode: code,
         })
       )
