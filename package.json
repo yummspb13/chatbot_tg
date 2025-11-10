@@ -26,7 +26,8 @@
     "client:setup": "tsx scripts/setup-client-api.ts",
     "worker:dev": "cd worker && npm run dev",
     "worker:start": "cd worker && npm start",
-    "worker:install": "cd worker && npm install"
+    "worker:install": "cd worker && npm install",
+    "admin:password-hash": "tsx scripts/generate-password-hash.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.0",
