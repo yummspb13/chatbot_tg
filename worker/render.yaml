@@ -1,0 +1,24 @@
+# Render.com конфигурация для автоматического деплоя
+# Используется при подключении через GitHub
+
+services:
+  - type: web
+    name: afisha-bot-worker
+    env: node
+    rootDir: worker
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    plan: starter  # Платный тариф ($7/месяц) - для постоянной работы
+    envVars:
+      - key: TELEGRAM_API_ID
+        value: 17349
+      - key: TELEGRAM_API_HASH
+        value: 344583e45741c457fe1862106095a5eb
+      - key: TELEGRAM_SESSION_STRING
+        sync: false  # Будет установлен вручную после QR-логина
+      - key: PORT
+        fromService:
+          type: web
+          name: afisha-bot-worker
+          property: port
+

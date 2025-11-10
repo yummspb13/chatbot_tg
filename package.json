@@ -1,0 +1,62 @@
+{
+  "name": "afisha-bot",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "start": "next start",
+    "lint": "next lint",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "db:studio": "prisma studio",
+    "webhook:set": "tsx scripts/setup-webhook.ts",
+    "webhook:set:prod": "tsx scripts/setup-production-webhook.ts",
+    "webhook:info": "tsx scripts/get-webhook-info.ts",
+    "webhook:delete": "tsx scripts/delete-webhook.ts",
+    "tunnel:start": "bash scripts/start-tunnel.sh",
+    "bot:polling": "tsx scripts/start-polling.ts",
+    "bot:get-id": "tsx scripts/get-my-telegram-id.ts",
+    "channel:get-id": "tsx scripts/get-channel-id.ts",
+    "cities:list": "tsx scripts/list-cities.ts",
+    "debug:channels": "tsx scripts/debug-channel.ts",
+    "check:setup": "tsx scripts/check-channel-setup.ts",
+    "diagnose": "tsx scripts/diagnose-channel-issue.ts",
+    "client:setup": "tsx scripts/setup-client-api.ts",
+    "worker:dev": "cd worker && npm run dev",
+    "worker:start": "cd worker && npm start",
+    "worker:install": "cd worker && npm install"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.19.0",
+    "@types/qrcode": "^1.5.6",
+    "bcryptjs": "^3.0.3",
+    "date-fns": "^3.6.0",
+    "date-fns-tz": "^3.0.0",
+    "dotenv": "^17.2.3",
+    "jose": "^6.1.1",
+    "jsonwebtoken": "^9.0.2",
+    "next": "^14.2.0",
+    "openai": "^4.52.0",
+    "qrcode": "^1.5.4",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "telegraf": "^4.16.0",
+    "telegram": "^2.26.22",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "@types/node": "^20.14.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "prisma": "^5.19.0",
+    "tsx": "^4.16.0",
+    "typescript": "^5.5.0"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}

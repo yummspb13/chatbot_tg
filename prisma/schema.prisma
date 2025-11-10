@@ -1,0 +1,113 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model City {
+  id        Int       @id @default(autoincrement())
+  name      String    // "Москва"
+  slug      String    @unique // "moskva"
+  channels  Channel[]
+  draftEvents DraftEvent[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+}
+
+model Channel {
+  id                    Int       @id @default(autoincrement())
+  cityId                Int
+  city                  City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  chatId                String    // Telegram chat_id (channel ID)
+  title                 String
+  isActive              Boolean   @default(true)
+  lastCheckedMessageId  String?   // для истории / повторной проверки
+  draftEvents           DraftEvent[]
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@unique([chatId])
+  @@index([cityId])
+  @@index([isActive])
+}
+
+// SQLite не поддерживает enums, используем String
+// DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
+
+model DraftEvent {
+  id                Int         @id @default(autoincrement())
+  cityId            Int?
+  city              City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  channelId         Int?
+  channel           Channel?    @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  telegramMessageId String      // исходный message_id
+  telegramChatId    String       // исходный chat_id (канал)
+  sourceLink        String?      // ссылка на пост в TG (если возможно)
+
+  // Извлечённые поля:
+  title             String
+  startDate         DateTime
+  endDate           DateTime?
+  venue             String?
+  description       String?
+  cityName          String?
+  coverImage        String?      // URL главного изображения
+  gallery           String?      // JSON массив URL изображений (TEXT в SQLite)
+
+  status            String      @default("NEW") // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([telegramMessageId, telegramChatId])
+  @@index([title, startDate])
+  @@index([status])
+}
+
+// SQLite не поддерживает enums, используем String
+// UserDecision: APPROVED | REJECTED
+
+model LearningDecision {
+  id                Int          @id @default(autoincrement())
+  telegramMessageId String
+  telegramChatId    String
+  originalText      String       // полный текст поста (TEXT в SQLite)
+  extractedFields   String       // JSON с извлеченными полями (TEXT в SQLite)
+  userDecision      String       // UserDecision: APPROVED | REJECTED
+  agentPrediction   String       // что предсказал агент перед решением: APPROVED | REJECTED
+  agentConfidence   Float        // 0-1
+  agentReasoning    String?      // объяснение агента (TEXT в SQLite)
+  createdAt         DateTime     @default(now())
+
+  @@index([telegramMessageId, telegramChatId])
+  @@index([userDecision])
+  @@index([createdAt])
+}
+
+// SQLite не поддерживает enums, используем String
+// BotMode: MANUAL | AUTO
+
+model BotSettings {
+  id                  Int      @id @default(autoincrement())
+  mode                String   @default("MANUAL") // BotMode: MANUAL | AUTO
+  confidenceThreshold Float    @default(0.8) // 0-1
+  isRunning           Boolean  @default(false)
+  updatedAt           DateTime @updatedAt
+
+  @@unique([id])
+}
+
+model AdminUser {
+  id        Int      @id @default(autoincrement())
+  username  String   @unique
+  password  String   // хеш пароля
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+

@@ -1,0 +1,25 @@
+# Fly.io конфигурация для воркера
+
+app = "afisha-bot-worker"
+primary_region = "ams"  # Amsterdam (близко к России)
+
+[build]
+  builder = "paketobuildpacks/builder:base"
+
+[env]
+  NODE_ENV = "production"
+  WORKER_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Важно: не останавливать машину
+  auto_start_machines = true
+  min_machines_running = 1  # Всегда держать 1 машину запущенной
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512
+
