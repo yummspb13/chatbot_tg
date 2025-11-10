@@ -13,7 +13,10 @@ export async function handleCallback(ctx: Context) {
   }
 
   const callback = ctx.callback_query
-  const data = 'data' in callback ? callback.data : null
+  // Проверяем, что callback - это объект и имеет свойство data
+  const data = callback && typeof callback === 'object' && 'data' in callback 
+    ? (callback as any).data 
+    : null
 
   if (!data) {
     return
