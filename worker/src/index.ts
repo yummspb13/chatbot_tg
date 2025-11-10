@@ -19,7 +19,23 @@ const app = express()
 // Используем PORT для Railway/Fly.io, или WORKER_PORT для локальной разработки
 const PORT = process.env.PORT || process.env.WORKER_PORT || 3001
 
-app.use(cors())
+// Настройка CORS с явным указанием origin
+app.use(cors({
+  origin: [
+    'https://chatbot-irhw19y8p-pixelprint.vercel.app',
+    'https://chatbot-irhw19y8p-pixelprint.vercel.app',
+    /\.vercel\.app$/,
+    'http://localhost:3000',
+    'http://localhost:3001',
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}))
+
+// Обработка preflight запросов
+app.options('*', cors())
+
 app.use(express.json())
 
 // Root path
