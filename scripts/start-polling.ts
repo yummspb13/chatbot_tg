@@ -90,7 +90,8 @@ bot.on('message', async (ctx) => {
   // Обработка пересланных сообщений из каналов (для ручного пересыла)
   if (ctx.message && 'forward_from_chat' in ctx.message && ctx.message.forward_from_chat) {
     const forwardedChat = ctx.message.forward_from_chat
-    if (forwardedChat.type === 'channel') {
+    // Проверяем, что это канал
+    if ('type' in forwardedChat && forwardedChat.type === 'channel') {
       console.log('📨 [HANDLER] Получено пересланное сообщение из канала!')
       console.log('   Исходный канал:', forwardedChat.title || forwardedChat.id)
       console.log('   Chat ID:', forwardedChat.id)
@@ -122,8 +123,9 @@ bot.on('message', async (ctx) => {
 })
 
 // 4. edited_message из канала
+// Примечание: отредактированные сообщения из каналов обрабатываются через 'edited_channel_post' выше
 bot.on('edited_message', async (ctx) => {
-  if (ctx.chat?.type === 'channel') {
+  // Обработка отредактированных сообщений из групп/личных чатов
     console.log('📢 [HANDLER] Получено edited_message из канала!')
     console.log('   Chat ID:', ctx.chat.id)
     await handleChannelMessage(ctx)
