@@ -22,6 +22,20 @@ const PORT = process.env.PORT || process.env.WORKER_PORT || 3001
 app.use(cors())
 app.use(express.json())
 
+// Root path
+app.get('/', (req, res) => {
+  res.json({ 
+    service: 'Afisha Bot Worker',
+    status: 'running',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      health: '/health',
+      qrAuth: '/auth/qr/start',
+      runner: '/runner/status'
+    }
+  })
+})
+
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
