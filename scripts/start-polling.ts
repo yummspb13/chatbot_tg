@@ -91,14 +91,15 @@ bot.on('message', async (ctx) => {
       console.log('   Chat ID:', (forwardedChat as any).id)
       
       // Создаем контекст, имитирующий сообщение из канала
+      const messageAny = ctx.message as any
       const channelCtx = {
         ...ctx,
         chat: forwardedChat,
         message: {
-          ...ctx.message,
+          ...messageAny,
           // Используем текст пересланного сообщения
-          text: ctx.message.text || ctx.message.caption || '',
-          caption: ctx.message.caption || ctx.message.text || '',
+          text: messageAny.text || messageAny.caption || '',
+          caption: messageAny.caption || messageAny.text || '',
         },
       } as any
       
