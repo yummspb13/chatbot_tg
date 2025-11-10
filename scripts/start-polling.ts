@@ -79,13 +79,6 @@ bot.on('edited_channel_post', async (ctx) => {
 bot.on('message', async (ctx) => {
   // Примечание: сообщения из каналов обрабатываются через 'channel_post' выше
   // Здесь обрабатываются только личные сообщения и сообщения из групп
-    console.log('📢 [HANDLER] Получено message из канала!')
-    console.log('   Chat ID:', ctx.chat.id)
-    console.log('   Message ID:', ctx.message?.message_id)
-    console.log('   Text:', ctx.message && 'text' in ctx.message ? ctx.message.text?.substring(0, 100) : 'нет текста')
-    await handleChannelMessage(ctx)
-    return
-  }
   
   // Обработка пересланных сообщений из каналов (для ручного пересыла)
   if (ctx.message && 'forward_from_chat' in ctx.message && ctx.message.forward_from_chat) {
