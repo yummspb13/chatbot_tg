@@ -43,7 +43,9 @@ async function getChannelId(usernameOrUrl: string) {
     const chat = await bot.telegram.getChat(`@${username}`)
     
     console.log('\n✅ Информация о канале:')
-    console.log(`   Название: ${chat.title || 'Не указано'}`)
+    // Проверяем, что это не приватный чат (у приватных чатов нет title)
+    const title = ('title' in chat && chat.title) ? chat.title : 'Не указано'
+    console.log(`   Название: ${title}`)
     console.log(`   Username: @${chat.username || 'Не указан'}`)
     console.log(`   Chat ID: ${chat.id}`)
     console.log(`   Тип: ${chat.type}`)
