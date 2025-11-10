@@ -11,83 +11,88 @@ datasource db {
 }
 
 model City {
-  id        Int       @id @default(autoincrement())
-  name      String    // "Москва"
-  slug      String    @unique // "moskva"
-  channels  Channel[]
+  id          Int          @id @default(autoincrement())
+  name        String // "Москва"
+  slug        String       @unique // "moskva"
+  channels    Channel[]
   draftEvents DraftEvent[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("afisha_bot_City")
 }
 
 model Channel {
-  id                    Int       @id @default(autoincrement())
-  cityId                Int
-  city                  City      @relation(fields: [cityId], references: [id], onDelete: Cascade)
-  chatId                String    // Telegram chat_id (channel ID)
-  title                 String
-  isActive              Boolean   @default(true)
-  lastCheckedMessageId  String?   // для истории / повторной проверки
-  draftEvents           DraftEvent[]
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id                   Int          @id @default(autoincrement())
+  cityId               Int
+  city                 City         @relation(fields: [cityId], references: [id], onDelete: Cascade)
+  chatId               String // Telegram chat_id (channel ID)
+  title                String
+  isActive             Boolean      @default(true)
+  lastCheckedMessageId String? // для истории / повторной проверки
+  draftEvents          DraftEvent[]
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   @@unique([chatId])
   @@index([cityId])
   @@index([isActive])
+  @@map("afisha_bot_Channel")
 }
 
 // SQLite не поддерживает enums, используем String
 // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
 
 model DraftEvent {
-  id                Int         @id @default(autoincrement())
-  cityId            Int?
-  city              City?       @relation(fields: [cityId], references: [id], onDelete: SetNull)
-  channelId         Int?
-  channel           Channel?    @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  id        Int      @id @default(autoincrement())
+  cityId    Int?
+  city      City?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
+  channelId Int?
+  channel   Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
 
-  telegramMessageId String      // исходный message_id
-  telegramChatId    String       // исходный chat_id (канал)
-  sourceLink        String?      // ссылка на пост в TG (если возможно)
+  telegramMessageId String // исходный message_id
+  telegramChatId    String // исходный chat_id (канал)
+  sourceLink        String? // ссылка на пост в TG (если возможно)
 
   // Извлечённые поля:
-  title             String
-  startDate         DateTime
-  endDate           DateTime?
-  venue             String?
-  description       String?
-  cityName          String?
-  coverImage        String?      // URL главного изображения
-  gallery           String?      // JSON массив URL изображений (TEXT в SQLite)
+  title       String
+  startDate   DateTime
+  endDate     DateTime?
+  venue       String?
+  description String?
+  cityName    String?
+  coverImage  String? // URL главного изображения
+  gallery     String? // JSON массив URL изображений (TEXT в SQLite)
 
-  status            String      @default("NEW") // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  status    String   @default("NEW") // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([telegramMessageId, telegramChatId])
   @@index([title, startDate])
   @@index([status])
+  @@map("afisha_bot_DraftEvent")
 }
 
 // SQLite не поддерживает enums, используем String
 // UserDecision: APPROVED | REJECTED
 
 model LearningDecision {
-  id                Int          @id @default(autoincrement())
+  id                Int      @id @default(autoincrement())
   telegramMessageId String
   telegramChatId    String
-  originalText      String       // полный текст поста (TEXT в SQLite)
-  extractedFields   String       // JSON с извлеченными полями (TEXT в SQLite)
-  userDecision      String       // UserDecision: APPROVED | REJECTED
-  agentPrediction   String       // что предсказал агент перед решением: APPROVED | REJECTED
-  agentConfidence   Float        // 0-1
-  agentReasoning    String?      // объяснение агента (TEXT в SQLite)
-  createdAt         DateTime     @default(now())
+  originalText      String // полный текст поста (TEXT в SQLite)
+  extractedFields   String // JSON с извлеченными полями (TEXT в SQLite)
+  userDecision      String // UserDecision: APPROVED | REJECTED
+  agentPrediction   String // что предсказал агент перед решением: APPROVED | REJECTED
+  agentConfidence   Float // 0-1
+  agentReasoning    String? // объяснение агента (TEXT в SQLite)
+  createdAt         DateTime @default(now())
 
   @@index([telegramMessageId, telegramChatId])
   @@index([userDecision])
   @@index([createdAt])
+  @@map("afisha_bot_LearningDecision")
 }
 
 // SQLite не поддерживает enums, используем String
@@ -101,13 +106,15 @@ model BotSettings {
   updatedAt           DateTime @updatedAt
 
   @@unique([id])
+  @@map("afisha_bot_BotSettings")
 }
 
 model AdminUser {
   id        Int      @id @default(autoincrement())
   username  String   @unique
-  password  String   // хеш пароля
+  password  String // хеш пароля
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-}
 
+  @@map("afisha_bot_AdminUser")
+}
