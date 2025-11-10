@@ -90,8 +90,8 @@ bot.on('message', async (ctx) => {
   // Обработка пересланных сообщений из каналов (для ручного пересыла)
   if (ctx.message && 'forward_from_chat' in ctx.message && ctx.message.forward_from_chat) {
     const forwardedChat = ctx.message.forward_from_chat
-    // Проверяем, что это канал
-    if ('type' in forwardedChat && forwardedChat.type === 'channel') {
+    // Проверяем, что это канал (используем type assertion для совместимости с типами)
+    if ('type' in forwardedChat && (forwardedChat as any).type === 'channel') {
       console.log('📨 [HANDLER] Получено пересланное сообщение из канала!')
       console.log('   Исходный канал:', forwardedChat.title || forwardedChat.id)
       console.log('   Chat ID:', forwardedChat.id)
