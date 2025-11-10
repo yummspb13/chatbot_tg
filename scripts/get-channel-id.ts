@@ -45,11 +45,11 @@ async function getChannelId(usernameOrUrl: string) {
     console.log('\n✅ Информация о канале:')
     // Проверяем, что это не приватный чат (у приватных чатов нет title)
     const title = ('title' in chat && chat.title) ? chat.title : 'Не указано'
-    const username = ('username' in chat && chat.username) ? chat.username : 'Не указан'
+    const chatUsername = ('username' in chat && chat.username) ? chat.username : 'Не указан'
     const description = ('description' in chat && chat.description) ? chat.description : null
     
     console.log(`   Название: ${title}`)
-    console.log(`   Username: @${username}`)
+    console.log(`   Username: @${chatUsername}`)
     console.log(`   Chat ID: ${chat.id}`)
     console.log(`   Тип: ${chat.type}`)
     
