@@ -20,11 +20,14 @@ if (!apiId || !apiHash) {
   console.error('')
   console.error('💡 Как получить:')
   console.error('   1. Перейдите на https://my.telegram.org/apps')
-  console.error('   2. Войдите с номером телефона аккаунта @yummspb')
+  console.error('   2. Войдите с ЛЮБЫМ вашим аккаунтом (можно личным)')
   console.error('   3. Создайте приложение и получите api_id и api_hash')
   console.error('   4. Добавьте в .env:')
   console.error('      TELEGRAM_API_ID=ваш_api_id')
   console.error('      TELEGRAM_API_HASH=ваш_api_hash')
+  console.error('')
+  console.error('💡 Важно: api_id и api_hash можно использовать для авторизации')
+  console.error('   ЛЮБОГО аккаунта Telegram, не только того, с которым создано приложение!')
   process.exit(1)
 }
 
