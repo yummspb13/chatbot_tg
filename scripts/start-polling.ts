@@ -86,7 +86,8 @@ bot.on('message', async (ctx) => {
     // Проверяем, что это канал (используем type assertion для совместимости с типами)
     if ((forwardedChat as any).type === 'channel') {
       console.log('📨 [HANDLER] Получено пересланное сообщение из канала!')
-      console.log('   Исходный канал:', forwardedChat.title || forwardedChat.id)
+      const chatTitle = (forwardedChat as any).title || forwardedChat.id
+      console.log('   Исходный канал:', chatTitle)
       console.log('   Chat ID:', forwardedChat.id)
       
       // Создаем контекст, имитирующий сообщение из канала
