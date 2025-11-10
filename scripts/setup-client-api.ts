@@ -28,6 +28,10 @@ if (!apiId || !apiHash) {
   process.exit(1)
 }
 
+// TypeScript type narrowing: после проверки выше apiId и apiHash точно не undefined
+const apiIdNum = parseInt(apiId!)
+const apiHashStr = apiHash!
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
@@ -45,13 +49,8 @@ async function setup() {
   console.log('📱 Используем аккаунт: @yummspb (7007868967)')
   console.log('')
 
-  if (!apiHash) {
-    console.error('❌ TELEGRAM_API_HASH не установлен в .env')
-    process.exit(1)
-  }
-
   const session = new StringSession('')
-  const client = new TelegramClient(session, parseInt(apiId), apiHash, {
+  const client = new TelegramClient(session, apiIdNum, apiHashStr, {
     connectionRetries: 5,
   })
 
