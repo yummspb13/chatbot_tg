@@ -55,7 +55,8 @@ async function getChannelId(usernameOrUrl: string) {
     }
 
     console.log('\n📋 Для добавления канала используйте:')
-    console.log(`   /addchannel <slug_города> ${chat.id} "${chat.title || 'Название'}"`)
+    const titleForCommand = ('title' in chat && chat.title) ? chat.title : 'Название'
+    console.log(`   /addchannel <slug_города> ${chat.id} "${titleForCommand}"`)
     
     return chat.id.toString()
   } catch (error: any) {
