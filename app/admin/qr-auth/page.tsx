@@ -287,12 +287,18 @@ export default function QRAuthPage() {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="bg-white p-8 rounded-lg shadow-lg max-w-md w-full">
-          <h1 className="text-2xl font-bold mb-4 text-center">Требуется пароль 2FA</h1>
-          <p className="text-gray-600 mb-6 text-center">
-            У аккаунта @yummspb включена двухфакторная аутентификация.
-            <br />
-            Введите пароль для завершения авторизации.
-          </p>
+          <div className="text-center mb-4">
+            <div className="text-yellow-600 text-6xl mb-2">🔐</div>
+            <h1 className="text-2xl font-bold mb-2">Требуется пароль 2FA</h1>
+            <p className="text-gray-600 mb-6">
+              QR-код успешно отсканирован! ✅
+              <br />
+              <br />
+              У аккаунта <strong>@yummspb</strong> включена двухфакторная аутентификация.
+              <br />
+              Введите пароль для завершения авторизации.
+            </p>
+          </div>
 
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <div>
