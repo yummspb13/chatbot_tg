@@ -400,13 +400,77 @@ router.post('/password', async (req, res) => {
     const { client } = sessionData
 
     try {
+      console.log('   [Worker] 🔐 Проверяю пароль 2FA...')
+      
+      // Пробуем получить информацию о пароле
+      let passwordInfo
+      try {
+        passwordInfo = await client.invoke(new Api.account.GetPassword())
+        console.log('   [Worker] ✅ Получена информация о пароле')
+      } catch (getPasswordError: any) {
+        console.log('   [Worker] ⚠️ Не удалось получить информацию о пароле:', getPasswordError.errorMessage || getPasswordError.message)
+        
+        // Если сессия не зарегистрирована, пробуем завершить авторизацию через ImportLoginToken
+        // с паролем напрямую
+        if (getPasswordError.errorMessage?.includes('AUTH_KEY_UNREGISTERED') || 
+            getPasswordError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
+          
+          console.log('   [Worker] 🔄 Пробую завершить авторизацию через ExportLoginToken с паролем...')
+          
+          // Пробуем повторно вызвать ExportLoginToken, чтобы получить токен для CheckPassword
+          const apiId = process.env.TELEGRAM_API_ID ? parseInt(process.env.TELEGRAM_API_ID) : DEFAULT_API_ID
+          const apiHash = process.env.TELEGRAM_API_HASH || DEFAULT_API_HASH
+          
+          try {
+            const exportResult = await client.invoke(
+              new Api.auth.ExportLoginToken({
+                apiId,
+                apiHash,
+                exceptIds: [],
+              })
+            )
+            
+            // Если получили LoginTokenMigrateTo, импортируем токен
+            if (exportResult instanceof Api.auth.LoginTokenMigrateTo) {
+              const migrateResult = await client.invoke(
+                new Api.auth.ImportLoginToken({
+                  token: exportResult.token,
+                })
+              )
+              
+              if (migrateResult instanceof Api.auth.LoginTokenSuccess) {
+                // Успешно авторизованы
+                const sessionString = client.session.save() as unknown as string
+                authSessions.delete(authToken)
+                
+                try {
+                  await client.disconnect()
+                } catch (e) {
+                  // Игнорируем ошибки отключения
+                }
+                
+                console.log('   [Worker] ✅ Авторизация успешна после миграции с паролем')
+                return res.json({
+                  status: 'success',
+                  sessionString,
+                })
+              }
+            }
+          } catch (exportError: any) {
+            console.log('   [Worker] ❌ Ошибка при ExportLoginToken:', exportError.errorMessage || exportError.message)
+          }
+        }
+        
+        // Если не удалось, пробуем использовать пароль напрямую
+        // В некоторых случаях можно использовать пароль без GetPassword
+        throw new Error('Не удалось получить информацию о пароле. Попробуйте обновить страницу и начать заново.')
+      }
+      
+      // Если получили информацию о пароле, вычисляем хеш и проверяем
       const { computeCheck } = await import('telegram/Password')
-      
-      // Получаем информацию о пароле
-      const passwordInfo = await client.invoke(new Api.account.GetPassword())
-      
-      // Вычисляем хеш пароля
       const passwordCheck = await computeCheck(passwordInfo, password)
+      
+      console.log('   [Worker] Проверяю пароль через CheckPassword...')
       
       // Проверяем пароль
       await client.invoke(
@@ -425,17 +489,33 @@ router.post('/password', async (req, res) => {
         // Игнорируем ошибки отключения
       }
 
-      console.log('✅ Авторизация с паролем успешна')
+      console.log('   [Worker] ✅ Авторизация с паролем успешна')
       return res.json({
         status: 'success',
         sessionString,
       })
     } catch (error: any) {
       console.error('   [Worker] ❌ Ошибка проверки пароля:', error)
-      if (error.errorMessage?.includes('PASSWORD_HASH_INVALID')) {
+      console.error('   [Worker] Детали ошибки:', {
+        errorMessage: error.errorMessage,
+        message: error.message,
+        code: error.code,
+      })
+      
+      if (error.errorMessage?.includes('PASSWORD_HASH_INVALID') || 
+          error.message?.includes('PASSWORD_HASH_INVALID')) {
         return res.status(400).json({ error: 'Неверный пароль' })
       }
-      throw error
+      
+      if (error.errorMessage?.includes('AUTH_KEY_UNREGISTERED')) {
+        return res.status(400).json({ 
+          error: 'Сессия не зарегистрирована. Обновите страницу и начните заново.' 
+        })
+      }
+      
+      return res.status(500).json({
+        error: error.message || error.errorMessage || 'Ошибка при проверке пароля',
+      })
     }
   } catch (error: any) {
     console.error('Ошибка при проверке пароля:', error)
