@@ -98,6 +98,10 @@ router.post('/start', async (req, res) => {
               console.log('   [Worker] 🔄 Требуется миграция на DC:', result.dcId)
               console.log('   [Worker] Выполняю ImportLoginToken для миграции...')
               
+              // Сохраняем токен миграции для использования с паролем
+              sessionEntry.migrateToDcId = result.dcId
+              sessionEntry.migrateToken = result.token
+              
               // Используем ImportLoginToken на текущем клиенте (Telegram Client API обработает миграцию)
               try {
                 const migrateResult = await client.invoke(
@@ -140,8 +144,13 @@ router.post('/start', async (req, res) => {
                 }
               } catch (migrateError: any) {
                 console.log('   [Worker] ❌ Ошибка при миграции:', migrateError.errorMessage || migrateError.message)
-                console.log('   [Worker] Детали ошибки:', JSON.stringify(migrateError, null, 2))
-                if (migrateError.errorMessage?.includes('PASSWORD') || 
+                
+                // Если токен истек, это нормально - нужно будет использовать пароль
+                if (migrateError.errorMessage?.includes('AUTH_TOKEN_EXPIRED') ||
+                    migrateError.errorMessage?.includes('TOKEN_EXPIRED')) {
+                  console.log('   [Worker] ⚠️ Токен миграции истек, требуется пароль 2FA')
+                  sessionEntry.authPasswordRequired = true
+                } else if (migrateError.errorMessage?.includes('PASSWORD') || 
                     migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED') ||
                     migrateError.message?.includes('PASSWORD')) {
                   console.log('   [Worker] ⚠️ Требуется пароль 2FA после миграции (из ошибки)')
@@ -410,54 +419,52 @@ router.post('/password', async (req, res) => {
       } catch (getPasswordError: any) {
         console.log('   [Worker] ⚠️ Не удалось получить информацию о пароле:', getPasswordError.errorMessage || getPasswordError.message)
         
-        // Если сессия не зарегистрирована, пробуем завершить авторизацию через ImportLoginToken
-        // с паролем напрямую
-        if (getPasswordError.errorMessage?.includes('AUTH_KEY_UNREGISTERED') || 
-            getPasswordError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
+        // Если сессия не зарегистрирована и есть сохраненный токен миграции, используем его
+        if ((getPasswordError.errorMessage?.includes('AUTH_KEY_UNREGISTERED') || 
+             getPasswordError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) &&
+            sessionData.migrateToken) {
           
-          console.log('   [Worker] 🔄 Пробую завершить авторизацию через ExportLoginToken с паролем...')
-          
-          // Пробуем повторно вызвать ExportLoginToken, чтобы получить токен для CheckPassword
-          const apiId = process.env.TELEGRAM_API_ID ? parseInt(process.env.TELEGRAM_API_ID) : DEFAULT_API_ID
-          const apiHash = process.env.TELEGRAM_API_HASH || DEFAULT_API_HASH
+          console.log('   [Worker] 🔄 Использую сохраненный токен миграции с паролем...')
           
           try {
-            const exportResult = await client.invoke(
-              new Api.auth.ExportLoginToken({
-                apiId,
-                apiHash,
-                exceptIds: [],
+            // Импортируем токен миграции
+            const migrateResult = await client.invoke(
+              new Api.auth.ImportLoginToken({
+                token: sessionData.migrateToken,
               })
             )
             
-            // Если получили LoginTokenMigrateTo, импортируем токен
-            if (exportResult instanceof Api.auth.LoginTokenMigrateTo) {
-              const migrateResult = await client.invoke(
-                new Api.auth.ImportLoginToken({
-                  token: exportResult.token,
-                })
-              )
+            // Если получили LoginTokenSuccess, авторизация прошла
+            if (migrateResult instanceof Api.auth.LoginTokenSuccess) {
+              const sessionString = client.session.save() as unknown as string
+              authSessions.delete(authToken)
               
-              if (migrateResult instanceof Api.auth.LoginTokenSuccess) {
-                // Успешно авторизованы
-                const sessionString = client.session.save() as unknown as string
-                authSessions.delete(authToken)
-                
-                try {
-                  await client.disconnect()
-                } catch (e) {
-                  // Игнорируем ошибки отключения
-                }
-                
-                console.log('   [Worker] ✅ Авторизация успешна после миграции с паролем')
-                return res.json({
-                  status: 'success',
-                  sessionString,
-                })
+              try {
+                await client.disconnect()
+              } catch (e) {
+                // Игнорируем ошибки отключения
               }
+              
+              console.log('   [Worker] ✅ Авторизация успешна после миграции с паролем')
+              return res.json({
+                status: 'success',
+                sessionString,
+              })
             }
-          } catch (exportError: any) {
-            console.log('   [Worker] ❌ Ошибка при ExportLoginToken:', exportError.errorMessage || exportError.message)
+            
+            // Если требуется пароль, пробуем использовать CheckPassword
+            // Но для этого все равно нужна информация о пароле
+            throw new Error('После миграции требуется пароль, но не удалось получить информацию о пароле. Попробуйте обновить страницу и начать заново.')
+          } catch (migrateError: any) {
+            console.log('   [Worker] ❌ Ошибка при ImportLoginToken с сохраненным токеном:', migrateError.errorMessage || migrateError.message)
+            
+            // Если токен истек, нужно начать заново
+            if (migrateError.errorMessage?.includes('AUTH_TOKEN_EXPIRED') ||
+                migrateError.errorMessage?.includes('TOKEN_EXPIRED')) {
+              throw new Error('Токен миграции истек. Обновите страницу и начните заново.')
+            }
+            
+            throw migrateError
           }
         }
         
