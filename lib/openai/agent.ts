@@ -1,7 +1,7 @@
 import OpenAI from 'openai'
 import { z } from 'zod'
 import { prisma } from '@/lib/db/prisma'
-import { UserDecision } from '@prisma/client'
+import { UserDecision } from '@/lib/learning/decisionService'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,

@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db/prisma'
-import { UserDecision } from '@prisma/client'
+
+// UserDecision: APPROVED | REJECTED
+export type UserDecision = 'APPROVED' | 'REJECTED'
 
 export type SaveDecisionParams = {
   telegramMessageId: string
@@ -43,13 +45,16 @@ export async function getLearningStats() {
   })
 
   // Точность агента (сколько раз он угадал решение пользователя)
-  const correct = await prisma.learningDecision.count({
-    where: {
-      agentPrediction: {
-        equals: prisma.learningDecision.fields.userDecision,
-      },
+  // Сравниваем agentPrediction с userDecision
+  const allDecisions = await prisma.learningDecision.findMany({
+    select: {
+      agentPrediction: true,
+      userDecision: true,
     },
   })
+  const correct = allDecisions.filter(
+    (d) => d.agentPrediction === d.userDecision
+  ).length
 
   const accuracy = total > 0 ? (correct / total) * 100 : 0
 
