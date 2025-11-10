@@ -163,11 +163,57 @@ bot.on('message', async (ctx) => {
     }
   }
   
-  // Для личных сообщений, если это не команда и не кнопка, показываем подсказку
+  // Для личных сообщений от админа - проверяем, не событие ли это
   const text = 'text' in ctx.message ? ctx.message.text : ''
   if (ctx.chat?.type === 'private' && text && !text.startsWith('/')) {
     // Проверяем, не обработано ли уже через bot.hears
-    // Если дошли сюда, значит это не кнопка - показываем подсказку
+    // Если дошли сюда, значит это не кнопка
+    
+    // Если сообщение от админа и похоже на событие - обрабатываем
+    const adminId = process.env.TELEGRAM_ADMIN_CHAT_ID
+    if (adminId && ctx.from?.id?.toString() === adminId) {
+      // Проверяем, похоже ли сообщение на событие (есть дата, место и т.д.)
+      const eventKeywords = ['концерт', 'мероприятие', 'событие', 'дата', 'место', 'время', 'ноября', 'декабря', 'января']
+      const hasEventKeywords = eventKeywords.some(keyword => text.toLowerCase().includes(keyword))
+      
+      if (hasEventKeywords && text.length > 20) {
+        console.log('📨 [HANDLER] Сообщение от админа похоже на событие, обрабатываю...')
+        console.log('   Текст:', text.substring(0, 100))
+        
+        // Создаем контекст, имитирующий сообщение из канала
+        // Используем первый канал из базы как источник
+        const { prisma } = await import('@/lib/db/prisma')
+        const firstChannel = await prisma.channel.findFirst({
+          where: { isActive: true },
+          include: { city: true },
+        })
+        
+        if (firstChannel) {
+          console.log(`   Использую канал "${firstChannel.title}" как источник`)
+          const channelCtx = {
+            ...ctx,
+            chat: {
+              id: parseInt(firstChannel.chatId),
+              type: 'channel',
+              title: firstChannel.title,
+            },
+            message: {
+              ...messageAny,
+              text: text,
+              caption: text,
+              message_id: messageAny.message_id,
+            },
+          } as any
+          
+          await handleChannelMessage(channelCtx)
+          return
+        } else {
+          console.log('   ⚠️ Нет активных каналов в базе')
+        }
+      }
+    }
+    
+    // Если не событие - показываем подсказку
     await ctx.reply('Используйте команды для управления ботом. Список команд: /start')
   }
 })
