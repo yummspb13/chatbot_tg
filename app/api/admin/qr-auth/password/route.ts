@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Api } from 'telegram/tl'
 import { computeCheck } from 'telegram/Password'
-import { authSessions } from '../status/route'
+import { authSessions } from '@/lib/telegram/qr-auth-sessions'
 
 export async function POST(req: NextRequest) {
   try {
