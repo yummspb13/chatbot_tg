@@ -126,10 +126,7 @@ bot.on('message', async (ctx) => {
 // Примечание: отредактированные сообщения из каналов обрабатываются через 'edited_channel_post' выше
 bot.on('edited_message', async (ctx) => {
   // Обработка отредактированных сообщений из групп/личных чатов
-    console.log('📢 [HANDLER] Получено edited_message из канала!')
-    console.log('   Chat ID:', ctx.chat.id)
-    await handleChannelMessage(ctx)
-  }
+  // Команды обработаются через bot.command выше
 })
 
 console.log('🤖 Бот запущен в режиме polling (long polling)')
@@ -190,9 +187,7 @@ bot.use((ctx, next) => {
   
   if (ctx.updateType === 'edited_message') {
     console.log('   📝 Это edited_message')
-    if (ctx.chat?.type === 'channel') {
-      console.log('   ⚠️⚠️⚠️ ЭТО edited_message ИЗ КАНАЛА! ⚠️⚠️⚠️')
-    }
+    // Примечание: edited_message из каналов обрабатываются через 'edited_channel_post'
   }
   
   console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
