@@ -421,23 +421,115 @@ router.post('/password', async (req, res) => {
       } catch (getPasswordError: any) {
         console.log('   [Worker] ⚠️ Не удалось получить информацию о пароле:', getPasswordError.errorMessage || getPasswordError.message)
         
-        // Если сессия не зарегистрирована и есть сохраненный токен миграции, используем его
-        if ((getPasswordError.errorMessage?.includes('AUTH_KEY_UNREGISTERED') || 
-             getPasswordError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) &&
-            sessionData.migrateToken) {
+        // Если сессия не зарегистрирована, пробуем повторно получить токен для использования с паролем
+        if (getPasswordError.errorMessage?.includes('AUTH_KEY_UNREGISTERED') || 
+            getPasswordError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
           
-          console.log('   [Worker] 🔄 Использую сохраненный токен миграции с паролем...')
+          console.log('   [Worker] 🔄 Сессия не зарегистрирована, пробую получить новый токен для пароля...')
           
           try {
-            // Импортируем токен миграции
-            const migrateResult = await client.invoke(
-              new Api.auth.ImportLoginToken({
-                token: sessionData.migrateToken,
+            // Пробуем повторно вызвать ExportLoginToken, чтобы получить новый токен
+            const apiId = process.env.TELEGRAM_API_ID ? parseInt(process.env.TELEGRAM_API_ID) : DEFAULT_API_ID
+            const apiHash = process.env.TELEGRAM_API_HASH || DEFAULT_API_HASH
+            
+            const exportResult = await client.invoke(
+              new Api.auth.ExportLoginToken({
+                apiId,
+                apiHash,
+                exceptIds: [],
               })
             )
             
-            // Если получили LoginTokenSuccess, авторизация прошла
-            if (migrateResult instanceof Api.auth.LoginTokenSuccess) {
+            console.log('   [Worker] Результат повторного ExportLoginToken:', exportResult.constructor.name)
+            
+            // Если получили LoginTokenMigrateTo, импортируем токен
+            if (exportResult instanceof Api.auth.LoginTokenMigrateTo) {
+              console.log('   [Worker] 🔄 Повторная миграция на DC:', exportResult.dcId)
+              
+              try {
+                const migrateResult = await client.invoke(
+                  new Api.auth.ImportLoginToken({
+                    token: exportResult.token,
+                  })
+                )
+                
+                // Если получили LoginTokenSuccess, авторизация прошла
+                if (migrateResult instanceof Api.auth.LoginTokenSuccess) {
+                  const sessionString = client.session.save() as unknown as string
+                  authSessions.delete(authToken)
+                  
+                  try {
+                    await client.disconnect()
+                  } catch (e) {
+                    // Игнорируем ошибки отключения
+                  }
+                  
+                  console.log('   [Worker] ✅ Авторизация успешна после повторной миграции')
+                  return res.json({
+                    status: 'success',
+                    sessionString,
+                  })
+                }
+                
+                // Если требуется пароль, пробуем использовать CheckPassword
+                // Но для этого все равно нужна информация о пароле
+                throw new Error('После миграции требуется пароль, но не удалось получить информацию о пароле. Попробуйте обновить страницу и начать заново.')
+              } catch (migrateError: any) {
+                console.log('   [Worker] ❌ Ошибка при повторной миграции:', migrateError.errorMessage || migrateError.message)
+                
+                // Если токен истек или требуется пароль, пробуем использовать пароль напрямую
+                if (migrateError.errorMessage?.includes('AUTH_TOKEN_EXPIRED') ||
+                    migrateError.errorMessage?.includes('TOKEN_EXPIRED') ||
+                    migrateError.errorMessage?.includes('PASSWORD') ||
+                    migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
+                  
+                  // Пробуем использовать пароль напрямую через CheckPassword
+                  // Для этого нужна информация о пароле, но GetPassword не работает
+                  // Попробуем использовать пароль как есть (в некоторых случаях это работает)
+                  console.log('   [Worker] 🔐 Пробую использовать пароль напрямую...')
+                  
+                  try {
+                    const { computeCheck } = await import('telegram/Password')
+                    
+                    // Пробуем получить информацию о пароле еще раз (может сработать после миграции)
+                    try {
+                      passwordInfo = await client.invoke(new Api.account.GetPassword())
+                      console.log('   [Worker] ✅ Получена информация о пароле после повторной миграции')
+                      
+                      const passwordCheck = await computeCheck(passwordInfo, password)
+                      
+                      await client.invoke(
+                        new Api.auth.CheckPassword({
+                          password: passwordCheck,
+                        })
+                      )
+                      
+                      const sessionString = client.session.save() as unknown as string
+                      authSessions.delete(authToken)
+                      
+                      try {
+                        await client.disconnect()
+                      } catch (e) {
+                        // Игнорируем ошибки отключения
+                      }
+                      
+                      console.log('   [Worker] ✅ Авторизация с паролем успешна после повторной миграции')
+                      return res.json({
+                        status: 'success',
+                        sessionString,
+                      })
+                    } catch (getPasswordError2: any) {
+                      throw new Error('Не удалось получить информацию о пароле после миграции. Обновите страницу и начните заново.')
+                    }
+                  } catch (passwordError: any) {
+                    throw new Error('Не удалось проверить пароль. Обновите страницу и начните заново.')
+                  }
+                }
+                
+                throw migrateError
+              }
+            } else if (exportResult instanceof Api.auth.LoginTokenSuccess) {
+              // Успешно авторизованы без пароля
               const sessionString = client.session.save() as unknown as string
               authSessions.delete(authToken)
               
@@ -447,26 +539,15 @@ router.post('/password', async (req, res) => {
                 // Игнорируем ошибки отключения
               }
               
-              console.log('   [Worker] ✅ Авторизация успешна после миграции с паролем')
+              console.log('   [Worker] ✅ Авторизация успешна без пароля')
               return res.json({
                 status: 'success',
                 sessionString,
               })
             }
-            
-            // Если требуется пароль, пробуем использовать CheckPassword
-            // Но для этого все равно нужна информация о пароле
-            throw new Error('После миграции требуется пароль, но не удалось получить информацию о пароле. Попробуйте обновить страницу и начать заново.')
-          } catch (migrateError: any) {
-            console.log('   [Worker] ❌ Ошибка при ImportLoginToken с сохраненным токеном:', migrateError.errorMessage || migrateError.message)
-            
-            // Если токен истек, нужно начать заново
-            if (migrateError.errorMessage?.includes('AUTH_TOKEN_EXPIRED') ||
-                migrateError.errorMessage?.includes('TOKEN_EXPIRED')) {
-              throw new Error('Токен миграции истек. Обновите страницу и начните заново.')
-            }
-            
-            throw migrateError
+          } catch (exportError: any) {
+            console.log('   [Worker] ❌ Ошибка при повторном ExportLoginToken:', exportError.errorMessage || exportError.message)
+            throw new Error('Не удалось получить новый токен. Обновите страницу и начните заново.')
           }
         }
         
