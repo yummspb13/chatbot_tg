@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getBot } from '@/lib/telegram/bot'
-import { handleChannelMessage } from '@/lib/telegram/messageHandler'
+// Импортируем для регистрации обработчиков
+import '@/lib/telegram/webhook-handlers'
 
 export async function POST(req: NextRequest) {
   try {
