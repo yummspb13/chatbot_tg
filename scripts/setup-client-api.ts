@@ -62,7 +62,7 @@ async function setup() {
     console.log('📱 Нужна авторизация')
     const phoneNumber = await question('Введите номер телефона (с кодом страны, например +79991234567): ')
     
-    await client.sendCode({ apiId: parseInt(apiId), apiHash }, phoneNumber)
+    await client.sendCode({ apiId: apiIdNum, apiHash: apiHashStr }, phoneNumber)
     
     const code = await question('Введите код из Telegram: ')
     
