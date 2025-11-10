@@ -77,6 +77,13 @@ bot.on('edited_channel_post', async (ctx) => {
 
 // 3. message из канала (если приходит как message, а не channel_post)
 bot.on('message', async (ctx) => {
+  console.log('📨 [MESSAGE HANDLER] Получено сообщение!')
+  console.log('   Chat Type:', ctx.chat?.type)
+  console.log('   Chat ID:', ctx.chat?.id)
+  console.log('   Message ID:', ctx.message?.message_id)
+  console.log('   Has forward_from_chat:', !!(ctx.message as any)?.forward_from_chat)
+  console.log('   Has forward_from:', !!(ctx.message as any)?.forward_from)
+  
   // Примечание: сообщения из каналов обрабатываются через 'channel_post' выше
   // Здесь обрабатываются только личные сообщения и сообщения из групп
   
