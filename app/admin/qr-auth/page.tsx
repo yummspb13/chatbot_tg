@@ -23,9 +23,25 @@ export default function QRAuthPage() {
       
       // Используем воркер вместо прямого вызова API
       const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:3001'
+      console.log('🚀 Начинаю QR-авторизацию...', { workerUrl })
+      
+      // Сначала проверяем, что воркер доступен
+      try {
+        const healthCheck = await fetch(`${workerUrl}/health`)
+        if (!healthCheck.ok) {
+          throw new Error(`Воркер не отвечает: ${healthCheck.status}`)
+        }
+        console.log('✅ Воркер доступен')
+      } catch (healthError: any) {
+        console.error('❌ Воркер недоступен:', healthError)
+        throw new Error(`Не удалось подключиться к воркеру: ${healthError.message}. Проверьте NEXT_PUBLIC_WORKER_URL.`)
+      }
+      
       const response = await fetch(`${workerUrl}/auth/qr/start`, {
         method: 'POST',
       })
+      
+      console.log('📡 Ответ от /auth/qr/start:', response.status, response.statusText)
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}))
@@ -76,6 +92,8 @@ export default function QRAuthPage() {
         try {
               // Используем воркер
               const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:3001'
+              console.log('🔄 Проверяю статус авторизации...', { workerUrl, authToken: currentAuthToken?.substring(0, 20) + '...' })
+              
               const statusResponse = await fetch(`${workerUrl}/auth/qr/status`, {
                 method: 'POST',
                 headers: {
@@ -84,8 +102,11 @@ export default function QRAuthPage() {
                 body: JSON.stringify({ authToken: currentAuthToken }),
               })
 
+          console.log('📡 Ответ от воркера:', statusResponse.status, statusResponse.statusText)
+
           if (statusResponse.ok) {
             const statusData = await statusResponse.json()
+            console.log('📦 Данные статуса:', statusData)
             
             if (statusData.status === 'success' && statusData.sessionString) {
               intervalCleared = true
@@ -114,16 +135,36 @@ export default function QRAuthPage() {
             } else if (statusData.status === 'expired') {
               intervalCleared = true
               clearInterval(interval)
+              console.log('⏰ QR-код истек')
               setError('QR-код истек. Обновите страницу.')
               setStatus('error')
             } else if (statusData.status === 'password_required') {
               intervalCleared = true
               clearInterval(interval)
+              console.log('🔐 Требуется пароль 2FA')
               setStatus('password_required')
+            } else if (statusData.status === 'pending') {
+              console.log('⏳ Ожидание сканирования QR-кода...')
+              // Продолжаем ждать
+            } else {
+              console.log('❓ Неизвестный статус:', statusData.status)
             }
+          } else {
+            const errorText = await statusResponse.text().catch(() => 'Неизвестная ошибка')
+            console.error('❌ Ошибка ответа от воркера:', statusResponse.status, errorText)
+            setError(`Ошибка соединения с воркером: ${statusResponse.status}`)
+            setStatus('error')
+            intervalCleared = true
+            clearInterval(interval)
           }
-        } catch (error) {
-          console.error('Ошибка проверки статуса:', error)
+        } catch (error: any) {
+          console.error('❌ Ошибка проверки статуса:', error)
+          console.error('   Детали:', {
+            message: error.message,
+            stack: error.stack,
+            name: error.name,
+          })
+          // Не прерываем интервал при ошибке сети, продолжаем попытки
         }
       }, 2000)
 
