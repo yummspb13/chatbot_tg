@@ -1,5 +1,5 @@
-import { format, parseISO } from 'date-fns'
-import { toZonedTime, fromZonedTime } from 'date-fns-tz'
+import { parseISO } from 'date-fns'
+import { toZonedTime, fromZonedTime, formatInTimeZone } from 'date-fns-tz'
 
 const MOSCOW_TZ = 'Europe/Moscow'
 
@@ -29,8 +29,8 @@ export function toISOString(date: Date): string {
  * Форматирует дату для отображения в московском времени
  */
 export function formatMoscowDate(date: Date | string, formatStr: string = 'dd.MM.yyyy HH:mm'): string {
-  const moscowDate = toMoscowTime(date)
-  return format(moscowDate, formatStr, { timeZone: MOSCOW_TZ })
+  const dateObj = typeof date === 'string' ? parseISO(date) : date
+  return formatInTimeZone(dateObj, MOSCOW_TZ, formatStr)
 }
 
 /**
