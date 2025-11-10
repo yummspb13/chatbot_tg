@@ -18,6 +18,32 @@ import { startChannelMonitoringSimple, stopChannelMonitoringSimple } from '@/lib
 
 const bot = getBot()
 
+// Добавляем обработчик ВСЕХ сообщений ПЕРВЫМ для отладки (ПЕРЕД командами!)
+bot.use((ctx, next) => {
+  if (ctx.updateType === 'message') {
+    console.log('')
+    console.log('🔵 [MIDDLEWARE] Получено message обновление!')
+    console.log('   Chat Type:', ctx.chat?.type)
+    console.log('   Chat ID:', ctx.chat?.id)
+    console.log('   Message keys:', Object.keys(ctx.message || {}))
+    const msg = ctx.message as any
+    if (msg) {
+      console.log('   Has forward_from_chat:', !!msg.forward_from_chat)
+      console.log('   Has forward_from:', !!msg.forward_from)
+      if (msg.forward_from_chat) {
+        console.log('   forward_from_chat type:', msg.forward_from_chat.type)
+        console.log('   forward_from_chat id:', msg.forward_from_chat.id)
+        console.log('   forward_from_chat title:', msg.forward_from_chat.title || 'нет')
+      }
+      if (msg.forward_from) {
+        console.log('   forward_from (user):', msg.forward_from.id)
+      }
+    }
+    console.log('')
+  }
+  return next()
+})
+
 // Регистрируем команды ПЕРВЫМИ (команды имеют приоритет)
 bot.command('start', handleStart)
 bot.command('stop', handleStop)
