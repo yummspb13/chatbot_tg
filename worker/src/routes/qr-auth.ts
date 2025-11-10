@@ -110,11 +110,28 @@ router.post('/start', async (req, res) => {
                   const sessionString = client.session.save() as unknown as string
                   sessionEntry.authResolved = true
                   sessionEntry.authSessionString = sessionString
+                  console.log('   [Worker] Сессия сохранена после миграции, длина:', sessionString.length)
+                } else {
+                  console.log('   [Worker] ⚠️ После миграции получен неожиданный результат:', migrateResult.constructor.name)
                 }
               } catch (migrateError: any) {
-                if (migrateError.errorMessage?.includes('PASSWORD') || migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
-                  console.log('   [Worker] ⚠️ Требуется пароль 2FA')
+                console.log('   [Worker] ❌ Ошибка при миграции:', migrateError.errorMessage || migrateError.message)
+                if (migrateError.errorMessage?.includes('PASSWORD') || 
+                    migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED') ||
+                    migrateError.message?.includes('PASSWORD')) {
+                  console.log('   [Worker] ⚠️ Требуется пароль 2FA после миграции')
                   sessionEntry.authPasswordRequired = true
+                } else {
+                  // Если другая ошибка, пробуем проверить через getMe
+                  try {
+                    await client.getMe()
+                  } catch (getMeError: any) {
+                    if (getMeError.errorMessage?.includes('PASSWORD') || 
+                        getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
+                      console.log('   [Worker] ⚠️ Требуется пароль 2FA (определено через getMe)')
+                      sessionEntry.authPasswordRequired = true
+                    }
+                  }
                 }
               }
             }
