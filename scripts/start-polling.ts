@@ -81,30 +81,45 @@ bot.on('message', async (ctx) => {
   // Здесь обрабатываются только личные сообщения и сообщения из групп
   
   // Обработка пересланных сообщений из каналов (для ручного пересыла)
-  if (ctx.message && 'forward_from_chat' in ctx.message && ctx.message.forward_from_chat) {
-    const forwardedChat = ctx.message.forward_from_chat
-    // Проверяем, что это канал (используем type assertion для совместимости с типами)
-    if ((forwardedChat as any).type === 'channel') {
-      console.log('📨 [HANDLER] Получено пересланное сообщение из канала!')
-      const chatTitle = (forwardedChat as any).title || (forwardedChat as any).id
-      console.log('   Исходный канал:', chatTitle)
+  const messageAny = ctx.message as any
+  if (messageAny && (messageAny.forward_from_chat || messageAny.forward_from)) {
+    console.log('📨 [HANDLER] Обнаружено пересланное сообщение!')
+    console.log('   forward_from_chat:', messageAny.forward_from_chat ? 'есть' : 'нет')
+    console.log('   forward_from:', messageAny.forward_from ? 'есть' : 'нет')
+    
+    const forwardedChat = messageAny.forward_from_chat
+    if (forwardedChat) {
+      console.log('   Тип пересланного чата:', (forwardedChat as any).type)
       console.log('   Chat ID:', (forwardedChat as any).id)
+      console.log('   Chat Title:', (forwardedChat as any).title || 'нет названия')
       
-      // Создаем контекст, имитирующий сообщение из канала
-      const messageAny = ctx.message as any
-      const channelCtx = {
-        ...ctx,
-        chat: forwardedChat,
-        message: {
-          ...messageAny,
-          // Используем текст пересланного сообщения
-          text: messageAny.text || messageAny.caption || '',
-          caption: messageAny.caption || messageAny.text || '',
-        },
-      } as any
-      
-      await handleChannelMessage(channelCtx)
-      return
+      // Проверяем, что это канал
+      if ((forwardedChat as any).type === 'channel') {
+        console.log('📨 [HANDLER] ✅ Это пересланное сообщение из канала!')
+        const chatTitle = (forwardedChat as any).title || (forwardedChat as any).id
+        console.log('   Исходный канал:', chatTitle)
+        console.log('   Chat ID:', (forwardedChat as any).id)
+        
+        // Создаем контекст, имитирующий сообщение из канала
+        const channelCtx = {
+          ...ctx,
+          chat: forwardedChat,
+          message: {
+            ...messageAny,
+            // Используем текст пересланного сообщения
+            text: messageAny.text || messageAny.caption || '',
+            caption: messageAny.caption || messageAny.text || '',
+            message_id: messageAny.message_id,
+          },
+        } as any
+        
+        await handleChannelMessage(channelCtx)
+        return
+      } else {
+        console.log('   ⚠️ Пересланное сообщение не из канала, тип:', (forwardedChat as any).type)
+      }
+    } else {
+      console.log('   ⚠️ forward_from_chat отсутствует, но есть forward_from')
     }
   }
   
