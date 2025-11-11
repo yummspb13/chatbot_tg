@@ -101,8 +101,8 @@ async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: st
  * Отправляет сообщение боту через webhook
  */
 async function sendMessageToBot(message: any, chatId: string, channelTitle: string): Promise<void> {
-  // Для локального тестирования можно использовать localhost
-  const botWebhookUrl = process.env.BOT_WEBHOOK_URL || process.env.VERCEL_URL || process.env.MAIN_APP_URL || 'http://localhost:3000'
+  // Используем MAIN_APP_URL как основной источник, затем BOT_WEBHOOK_URL, затем VERCEL_URL
+  const botWebhookUrl = process.env.MAIN_APP_URL || process.env.BOT_WEBHOOK_URL || process.env.VERCEL_URL || 'http://localhost:3000'
   if (!botWebhookUrl) {
     console.error('❌ BOT_WEBHOOK_URL не установлен, не могу отправить сообщение боту')
     return
