@@ -28,11 +28,18 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
   const apiUrl = process.env.AFISHA_DRAFT_URL || 'https://kiddeo.vercel.app/api/bot/events/draft'
   const apiKey = process.env.BOT_API_KEY
 
+  console.log(`[sendDraft] Отправка черновика в Афишу: ${draft.title}`)
+  console.log(`[sendDraft] API URL: ${apiUrl}`)
+  console.log(`[sendDraft] BOT_API_KEY установлен: ${!!apiKey}`)
+
   if (!apiKey) {
-    throw new Error('BOT_API_KEY is not set')
+    const error = 'BOT_API_KEY is not set'
+    console.error(`[sendDraft] ❌ ${error}`)
+    throw new Error(error)
   }
 
   try {
+    console.log(`[sendDraft] Отправляю POST запрос на ${apiUrl}...`)
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -42,16 +49,21 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
       body: JSON.stringify(draft),
     })
 
+    console.log(`[sendDraft] Response status: ${response.status} ${response.statusText}`)
+    
     const data = await response.json()
+    console.log(`[sendDraft] Response data:`, JSON.stringify(data, null, 2))
 
     if (response.status === 401) {
+      console.error(`[sendDraft] ❌ Unauthorized - проверьте BOT_API_KEY`)
       return {
         success: false,
-        error: 'Unauthorized',
+        error: 'Unauthorized - проверьте BOT_API_KEY',
       }
     }
 
     if (response.status === 400) {
+      console.error(`[sendDraft] ❌ Bad Request:`, data.error || 'Bad Request')
       return {
         success: false,
         error: data.error || 'Bad Request',
@@ -59,15 +71,18 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
     }
 
     if (!response.ok) {
+      console.error(`[sendDraft] ❌ Error ${response.status}:`, data.error || 'Internal server error')
       return {
         success: false,
         error: data.error || 'Internal server error',
       }
     }
 
+    console.log(`[sendDraft] ✅ Успешно отправлено в Афишу, eventId: ${data.eventId}`)
     return data as AfishaDraftResponse
-  } catch (error) {
-    console.error('Error sending draft to Afisha:', error)
+  } catch (error: any) {
+    console.error(`[sendDraft] ❌ Ошибка отправки в Афишу:`, error)
+    console.error(`[sendDraft] Stack:`, error.stack)
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
