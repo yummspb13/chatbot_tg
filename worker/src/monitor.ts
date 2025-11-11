@@ -113,6 +113,21 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
   const webhookUrl = `${baseUrl}/api/tg/webhook`
 
   // Создаем update в формате Telegram Bot API
+  // message.date может быть Date объектом или числом (timestamp в секундах)
+  let messageDate: number
+  if (message.date) {
+    if (message.date instanceof Date) {
+      messageDate = Math.floor(message.date.getTime() / 1000)
+    } else if (typeof message.date === 'number') {
+      // Если это уже timestamp в секундах
+      messageDate = message.date
+    } else {
+      messageDate = Math.floor(Date.now() / 1000)
+    }
+  } else {
+    messageDate = Math.floor(Date.now() / 1000)
+  }
+
   const update = {
     update_id: Date.now(),
     message: {
@@ -126,7 +141,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
         type: 'channel',
         title: channelTitle,
       },
-      date: message.date ? Math.floor(message.date.getTime() / 1000) : Math.floor(Date.now() / 1000),
+      date: messageDate,
       forward_from_chat: {
         id: parseInt(chatId),
         type: 'channel',
