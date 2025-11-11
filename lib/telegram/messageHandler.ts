@@ -353,14 +353,15 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('   💾 ✅ Предсказание агента сохранено')
 
     // 6. Отправка админу в зависимости от режима
-    console.log('   📤 Шаг 7: Отправка админу...')
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.log(`${logPrefix} 📤 STEP7: SEND_TO_ADMIN`)
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
     if (!adminChatId) {
-      console.error('   ❌ TELEGRAM_ADMIN_CHAT_ID is not set')
+      console.error(`${logPrefix} ❌ ERROR: TELEGRAM_ADMIN_CHAT_ID not set`)
       return
     }
-    console.log('   📤 Admin Chat ID:', adminChatId)
-    console.log('   📤 Режим бота:', settings.mode)
+    console.log(`${logPrefix} 📤 Admin Chat ID: ${adminChatId}`)
+    console.log(`${logPrefix} 📤 Bot mode: ${settings.mode}`)
 
     const bot = getBot()
 
