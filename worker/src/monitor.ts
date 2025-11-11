@@ -214,12 +214,17 @@ export async function startMonitoring(): Promise<boolean> {
     }
 
     console.log(`📡 Начинаю мониторинг ${channels.length} каналов...`)
+    console.log(`   📋 Список каналов:`)
+    channels.forEach(ch => {
+      console.log(`      - ${ch.title} (${ch.chatId})`)
+    })
 
     // Создаем Map для быстрого поиска каналов
     const channelsMap = new Map<string, string>()
     channels.forEach(ch => {
       channelsMap.set(ch.chatId, ch.title)
     })
+    console.log(`   ✅ Channels map создан, размер: ${channelsMap.size}`)
 
     // Подписываемся на обновления
     client.addEventHandler(async (event: any) => {
