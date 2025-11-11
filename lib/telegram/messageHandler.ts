@@ -163,6 +163,7 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('      1. Канал добавлен через /addchannel?')
     console.log('      2. Канал активен (isActive = true)?')
     console.log('      3. Chat ID правильный?')
+    console.log('      4. Бот добавлен в канал как администратор?')
     
     // Показываем все каналы для отладки
     const allChannels = await prisma.channel.findMany({
