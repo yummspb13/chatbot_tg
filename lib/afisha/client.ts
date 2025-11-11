@@ -111,17 +111,35 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
 
     if (response.status === 400) {
       console.error(`[sendDraft] ❌ Bad Request:`, data.error || 'Bad Request')
+      
+      // Проверяем, если это ошибка Prisma (например, неизвестное поле)
+      const errorMessage = data.error || 'Bad Request'
+      if (errorMessage.includes('Unknown argument') || errorMessage.includes('categoryId')) {
+        console.error(`[sendDraft] ❌ Ошибка схемы Prisma на стороне API Афиши`)
+        console.error(`[sendDraft]    Это проблема на стороне сервера Афиши, а не в нашем коде`)
+        console.error(`[sendDraft]    Нужно исправить схему Prisma или код создания события в API Афиши`)
+      }
+      
       return {
         success: false,
-        error: data.error || 'Bad Request',
+        error: errorMessage,
       }
     }
 
     if (!response.ok) {
       console.error(`[sendDraft] ❌ Error ${response.status}:`, data.error || 'Internal server error')
+      
+      // Проверяем, если это ошибка Prisma
+      const errorMessage = data.error || 'Internal server error'
+      if (errorMessage.includes('Invalid `prisma.') || errorMessage.includes('Unknown argument')) {
+        console.error(`[sendDraft] ❌ Ошибка Prisma на стороне API Афиши`)
+        console.error(`[sendDraft]    Это проблема на стороне сервера Афиши`)
+        console.error(`[sendDraft]    Проверьте схему Prisma и код создания события в API Афиши`)
+      }
+      
       return {
         success: false,
-        error: data.error || 'Internal server error',
+        error: errorMessage,
       }
     }
 
