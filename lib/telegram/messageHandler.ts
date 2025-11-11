@@ -225,32 +225,33 @@ export async function handleChannelMessage(ctx: Context) {
   // Для MVP сохраним в description если его нет, или создадим отдельное поле позже
 
   try {
+    // Объявляем logPrefix один раз для всего блока try
+    const getLogPrefix = () => `[${new Date().toISOString()}]`
+    
     console.log('   🔄 Начинаю обработку сообщения...')
     
     // 1. Классификация
-    const logPrefix = `[${new Date().toISOString()}]`
-    console.log(`${logPrefix} 📊 STEP1: CLASSIFICATION`)
+    console.log(`${getLogPrefix()} 📊 STEP1: CLASSIFICATION`)
     const category = await classifyMessage(text)
-    console.log(`${logPrefix} 📊 RESULT: ${category}`)
+    console.log(`${getLogPrefix()} 📊 RESULT: ${category}`)
     if (category === 'AD') {
-      console.log(`${logPrefix} ⏭ SKIP: AD detected`)
+      console.log(`${getLogPrefix()} ⏭ SKIP: AD detected`)
       return // Пропускаем рекламу
     }
 
     // 2. Извлечение полей
-    const logPrefix = `[${new Date().toISOString()}]`
-    console.log(`${logPrefix} 📝 STEP2: EXTRACTION`)
+    console.log(`${getLogPrefix()} 📝 STEP2: EXTRACTION`)
     const messageDate = new Date(message.date * 1000)
-    console.log(`${logPrefix} 📅 Message date: ${messageDate.toISOString()}`)
+    console.log(`${getLogPrefix()} 📅 Message date: ${messageDate.toISOString()}`)
     const extracted = await extractEvent(text, messageDate)
-    console.log(`${logPrefix} 📝 EXTRACTED: title=${extracted.title ? 'YES' : 'NO'} startDate=${extracted.startDateIso ? 'YES' : 'NO'}`)
+    console.log(`${getLogPrefix()} 📝 EXTRACTED: title=${extracted.title ? 'YES' : 'NO'} startDate=${extracted.startDateIso ? 'YES' : 'NO'}`)
 
     if (!extracted.title || !extracted.startDateIso) {
-      console.log(`${logPrefix} ❌ SKIP: Missing required fields`)
-      console.log(`${logPrefix} ❌ Title: ${extracted.title || 'MISSING'}, StartDate: ${extracted.startDateIso || 'MISSING'}`)
+      console.log(`${getLogPrefix()} ❌ SKIP: Missing required fields`)
+      console.log(`${getLogPrefix()} ❌ Title: ${extracted.title || 'MISSING'}, StartDate: ${extracted.startDateIso || 'MISSING'}`)
       return // Пропускаем, если нет обязательных полей
     }
-    console.log(`${logPrefix} ✅ REQUIRED FIELDS: OK`)
+    console.log(`${getLogPrefix()} ✅ REQUIRED FIELDS: OK`)
 
     // 3. Проверка дубликатов
     console.log('   🔍 Шаг 3: Проверка дубликатов...')
@@ -315,8 +316,7 @@ export async function handleChannelMessage(ctx: Context) {
     // Сохраняем оригинальный текст в description если description не извлечен
     const description = extracted.description || text.substring(0, 1000) || null
 
-    const logPrefix = `[${new Date().toISOString()}]`
-    console.log(`${logPrefix} 💾 STEP5: CREATING_DRAFT`)
+    console.log(`${getLogPrefix()} 💾 STEP5: CREATING_DRAFT`)
     const draft = await prisma.draftEvent.create({
       data: {
         cityId: channel.cityId,
@@ -335,7 +335,7 @@ export async function handleChannelMessage(ctx: Context) {
         status: 'NEW',
       },
     })
-    console.log(`${logPrefix} 💾 ✅ DRAFT_CREATED: id=${draft.id} title=${draft.title.substring(0, 50)}`)
+    console.log(`${getLogPrefix()} 💾 ✅ DRAFT_CREATED: id=${draft.id} title=${draft.title.substring(0, 50)}`)
 
     // Сохраняем предсказание агента для последующего использования
     // Сохраняем в LearningDecision с временным статусом (будет обновлен при callback)
@@ -353,15 +353,14 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('   💾 ✅ Предсказание агента сохранено')
 
     // 6. Отправка админу в зависимости от режима
-    const logPrefix = `[${new Date().toISOString()}]`
-    console.log(`${logPrefix} 📤 STEP7: SEND_TO_ADMIN`)
+    console.log(`${getLogPrefix()} 📤 STEP7: SEND_TO_ADMIN`)
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
     if (!adminChatId) {
-      console.error(`${logPrefix} ❌ ERROR: TELEGRAM_ADMIN_CHAT_ID not set`)
+      console.error(`${getLogPrefix()} ❌ ERROR: TELEGRAM_ADMIN_CHAT_ID not set`)
       return
     }
-    console.log(`${logPrefix} 📤 Admin Chat ID: ${adminChatId}`)
-    console.log(`${logPrefix} 📤 Bot mode: ${settings.mode}`)
+    console.log(`${getLogPrefix()} 📤 Admin Chat ID: ${adminChatId}`)
+    console.log(`${getLogPrefix()} 📤 Bot mode: ${settings.mode}`)
 
     const bot = getBot()
 
@@ -399,14 +398,13 @@ export async function handleChannelMessage(ctx: Context) {
       ],
     }
 
-    const logPrefix = `[${new Date().toISOString()}]`
-    console.log(`${logPrefix} 📤 SENDING: to admin ${adminChatId}`)
+    console.log(`${getLogPrefix()} 📤 SENDING: to admin ${adminChatId}`)
     await bot.telegram.sendMessage(adminChatId, messageText, {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     })
-    console.log(`${logPrefix} 📤 ✅ SENT: message sent to admin`)
-    console.log(`${logPrefix} ✅ SUCCESS: processing completed`)
+    console.log(`${getLogPrefix()} 📤 ✅ SENT: message sent to admin`)
+    console.log(`${getLogPrefix()} ✅ SUCCESS: processing completed`)
       } catch (error) {
         console.error('   ❌ ОШИБКА при обработке сообщения из канала:', error)
         console.error('   ❌ Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
