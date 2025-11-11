@@ -230,9 +230,15 @@ export async function startMonitoring(): Promise<boolean> {
     console.log('   📡 Регистрирую обработчик событий для новых сообщений...')
     
     // Обработчик для новых сообщений из каналов
-    client.addEventHandler(async (event: Api.UpdateNewMessage | Api.UpdateNewChannelMessage) => {
+    client.addEventHandler(async (event: any) => {
       const logPrefix = `[${new Date().toISOString()}]`
       console.log(`${logPrefix} 📥 EVENT: ${event.constructor.name}`)
+      
+      // Проверяем, что это событие нового сообщения
+      if (!(event instanceof Api.UpdateNewMessage || event instanceof Api.UpdateNewChannelMessage)) {
+        // Пропускаем другие события
+        return
+      }
       
       try {
         // Получаем сообщение из события
@@ -301,11 +307,6 @@ export async function startMonitoring(): Promise<boolean> {
         if ((event as any).message) {
           console.error(`${logPrefix}   Message object:`, JSON.stringify((event as any).message, null, 2).substring(0, 500))
         }
-      }
-    }, { 
-      // Подписываемся только на новые сообщения из каналов
-      func: (update: any) => {
-        return update instanceof Api.UpdateNewMessage || update instanceof Api.UpdateNewChannelMessage
       }
     })
 
