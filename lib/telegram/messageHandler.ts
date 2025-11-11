@@ -228,27 +228,29 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('   🔄 Начинаю обработку сообщения...')
     
     // 1. Классификация
-    console.log('   📊 Шаг 1: Классификация сообщения...')
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.log(`${logPrefix} 📊 STEP1: CLASSIFICATION`)
     const category = await classifyMessage(text)
-    console.log('   📊 Результат классификации:', category)
+    console.log(`${logPrefix} 📊 RESULT: ${category}`)
     if (category === 'AD') {
-      console.log('   ⏭ Пропущено: это реклама')
+      console.log(`${logPrefix} ⏭ SKIP: AD detected`)
       return // Пропускаем рекламу
     }
 
     // 2. Извлечение полей
-    console.log('   📝 Шаг 2: Извлечение полей события...')
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.log(`${logPrefix} 📝 STEP2: EXTRACTION`)
     const messageDate = new Date(message.date * 1000)
-    console.log('   📅 Дата сообщения:', messageDate.toISOString())
+    console.log(`${logPrefix} 📅 Message date: ${messageDate.toISOString()}`)
     const extracted = await extractEvent(text, messageDate)
-    console.log('   📝 Извлеченные поля:', JSON.stringify(extracted, null, 2))
+    console.log(`${logPrefix} 📝 EXTRACTED: title=${extracted.title ? 'YES' : 'NO'} startDate=${extracted.startDateIso ? 'YES' : 'NO'}`)
 
     if (!extracted.title || !extracted.startDateIso) {
-      console.log(`   ❌ Не удалось извлечь обязательные поля для сообщения ${messageId}`)
-      console.log(`   Title: ${extracted.title}, StartDate: ${extracted.startDateIso}`)
+      console.log(`${logPrefix} ❌ SKIP: Missing required fields`)
+      console.log(`${logPrefix} ❌ Title: ${extracted.title || 'MISSING'}, StartDate: ${extracted.startDateIso || 'MISSING'}`)
       return // Пропускаем, если нет обязательных полей
     }
-    console.log('   ✅ Обязательные поля извлечены')
+    console.log(`${logPrefix} ✅ REQUIRED FIELDS: OK`)
 
     // 3. Проверка дубликатов
     console.log('   🔍 Шаг 3: Проверка дубликатов...')
@@ -313,6 +315,8 @@ export async function handleChannelMessage(ctx: Context) {
     // Сохраняем оригинальный текст в description если description не извлечен
     const description = extracted.description || text.substring(0, 1000) || null
 
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.log(`${logPrefix} 💾 STEP5: CREATING_DRAFT`)
     const draft = await prisma.draftEvent.create({
       data: {
         cityId: channel.cityId,
@@ -331,6 +335,7 @@ export async function handleChannelMessage(ctx: Context) {
         status: 'NEW',
       },
     })
+    console.log(`${logPrefix} 💾 ✅ DRAFT_CREATED: id=${draft.id} title=${draft.title.substring(0, 50)}`)
 
     // Сохраняем предсказание агента для последующего использования
     // Сохраняем в LearningDecision с временным статусом (будет обновлен при callback)
@@ -393,13 +398,14 @@ export async function handleChannelMessage(ctx: Context) {
       ],
     }
 
-    console.log('   📤 Отправляю сообщение админу...')
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.log(`${logPrefix} 📤 SENDING: to admin ${adminChatId}`)
     await bot.telegram.sendMessage(adminChatId, messageText, {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     })
-    console.log('   📤 ✅ Сообщение отправлено админу')
-    console.log('   ✅ Обработка сообщения завершена успешно')
+    console.log(`${logPrefix} 📤 ✅ SENT: message sent to admin`)
+    console.log(`${logPrefix} ✅ SUCCESS: processing completed`)
       } catch (error) {
         console.error('   ❌ ОШИБКА при обработке сообщения из канала:', error)
         console.error('   ❌ Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')

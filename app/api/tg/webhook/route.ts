@@ -4,6 +4,7 @@ import { getBot } from '@/lib/telegram/bot'
 import '@/lib/telegram/webhook-handlers'
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now()
   try {
     const update = await req.json()
     
@@ -12,20 +13,25 @@ export async function POST(req: NextRequest) {
                       update.channel_post ? 'channel_post' : 
                       update.callback_query ? 'callback_query' : 
                       'unknown'
-    console.log('📥 [WEBHOOK] Получено обновление:', updateType)
+    
+    // Явное логирование с меткой времени для Vercel
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.log(`${logPrefix} 📥 WEBHOOK: ${updateType}`)
     
     if (update.message) {
-      console.log('   📨 Тип сообщения:', update.message.chat?.type)
-      console.log('   📨 Chat ID:', update.message.chat?.id)
-      console.log('   📨 Есть forward_from_chat?', !!update.message.forward_from_chat)
-      if (update.message.forward_from_chat) {
-        console.log('   📨 Forward from chat ID:', update.message.forward_from_chat.id)
-        console.log('   📨 Forward from chat type:', (update.message.forward_from_chat as any).type)
+      const chatType = update.message.chat?.type || 'unknown'
+      const chatId = update.message.chat?.id || 'unknown'
+      const hasForward = !!update.message.forward_from_chat
+      console.log(`${logPrefix} 📨 MESSAGE: chatType=${chatType} chatId=${chatId} hasForward=${hasForward}`)
+      
+      if (update.message.text) {
+        const textPreview = update.message.text.substring(0, 100)
+        console.log(`${logPrefix} 📨 TEXT: ${textPreview}`)
       }
     }
     
     if (update.channel_post) {
-      console.log('   📢 Channel post, Chat ID:', update.channel_post.chat?.id)
+      console.log(`${logPrefix} 📢 CHANNEL_POST: chatId=${update.channel_post.chat?.id}`)
     }
 
     const bot = getBot()
@@ -33,13 +39,18 @@ export async function POST(req: NextRequest) {
     // Используем handleUpdate для обработки обновления
     // Telegraf автоматически вызовет нужные обработчики
     await bot.handleUpdate(update)
+    
+    const duration = Date.now() - startTime
+    console.log(`${logPrefix} ✅ WEBHOOK: processed in ${duration}ms`)
 
-    return NextResponse.json({ ok: true })
+    return NextResponse.json({ ok: true, processed: true, duration: `${duration}ms` })
   } catch (error) {
-    console.error('❌ [WEBHOOK] Error processing webhook:', error)
-    console.error('❌ [WEBHOOK] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
+    const duration = Date.now() - startTime
+    const logPrefix = `[${new Date().toISOString()}]`
+    console.error(`${logPrefix} ❌ WEBHOOK ERROR:`, error)
+    console.error(`${logPrefix} ❌ STACK:`, error instanceof Error ? error.stack : 'нет stack trace')
     return NextResponse.json(
-      { ok: false, error: 'Internal server error' },
+      { ok: false, error: 'Internal server error', duration: `${duration}ms` },
       { status: 500 }
     )
   }
