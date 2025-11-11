@@ -22,13 +22,18 @@ function getKeyboardIfPrivate(ctx: Context) {
  * /start N - запуск + обработка последних N сообщений
  */
 export async function handleStart(ctx: Context) {
-  console.log('🔵 handleStart вызван')
-  console.log('   User ID:', ctx.from?.id)
-  console.log('   Chat ID:', ctx.chat?.id)
-  console.log('   Text:', ctx.message && 'text' in ctx.message ? ctx.message.text : 'нет текста')
+  const logPrefix = `[${new Date().toISOString()}]`
+  console.log(`${logPrefix} 🔵 handleStart вызван`)
+  console.log(`${logPrefix}    User ID: ${ctx.from?.id} (type: ${typeof ctx.from?.id})`)
+  console.log(`${logPrefix}    Chat ID: ${ctx.chat?.id} (type: ${typeof ctx.chat?.id})`)
+  console.log(`${logPrefix}    Text: ${ctx.message && 'text' in ctx.message ? ctx.message.text : 'нет текста'}`)
+  console.log(`${logPrefix}    TELEGRAM_ADMIN_CHAT_ID из env: ${process.env.TELEGRAM_ADMIN_CHAT_ID || 'НЕ УСТАНОВЛЕН'}`)
   
-  if (!isAdmin(ctx)) {
-    console.log('   ❌ Доступ запрещен (не админ)')
+  const adminCheck = isAdmin(ctx)
+  console.log(`${logPrefix}    isAdmin вернул: ${adminCheck}`)
+  
+  if (!adminCheck) {
+    console.log(`${logPrefix}    ❌ Доступ запрещен (не админ)`)
     return ctx.reply('Доступ запрещен. Только администратор может использовать команды.', getKeyboardIfPrivate(ctx))
   }
 
