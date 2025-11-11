@@ -454,15 +454,11 @@ export async function startMonitoring(): Promise<boolean> {
       }
     }
     
-    // Регистрируем обработчик с фильтром для новых сообщений из каналов
-    client.addEventHandler(eventHandler, {
-      // Фильтруем только события новых сообщений
-      func: (event: any) => {
-        return event instanceof Api.UpdateNewMessage || event instanceof Api.UpdateNewChannelMessage
-      }
-    })
+    // Регистрируем обработчик для всех событий
+    // Внутри обработчика проверяем тип события
+    client.addEventHandler(eventHandler)
     
-    // Также регистрируем обработчик для всех событий (для диагностики)
+    // Также регистрируем обработчик для Connection/State событий (для диагностики)
     client.addEventHandler(async (event: any) => {
       const logPrefix = `[${new Date().toISOString()}]`
       const eventType = event.constructor.name
