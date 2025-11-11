@@ -34,7 +34,9 @@ export async function handleStart(ctx: Context) {
   
   if (!adminCheck) {
     console.log(`${logPrefix}    ❌ Доступ запрещен (не админ)`)
-    return ctx.reply('Доступ запрещен. Только администратор может использовать команды.', getKeyboardIfPrivate(ctx))
+    // Добавляем детальную информацию в ответ для диагностики
+    const debugInfo = `\n\n🔍 Debug info:\nUser ID: ${ctx.from?.id}\nChat ID: ${ctx.chat?.id}\nExpected: ${process.env.TELEGRAM_ADMIN_CHAT_ID || 'НЕ УСТАНОВЛЕН'}`
+    return ctx.reply('Доступ запрещен. Только администратор может использовать команды.' + debugInfo, getKeyboardIfPrivate(ctx))
   }
 
   console.log('   ✅ Админ подтвержден')
