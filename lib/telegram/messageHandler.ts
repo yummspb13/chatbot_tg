@@ -352,14 +352,16 @@ export async function handleChannelMessage(ctx: Context) {
     })
     console.log('   💾 ✅ Предсказание агента сохранено')
 
-    // 6. Отправка админу в зависимости от режима
-    console.log(`${getLogPrefix()} 📤 STEP7: SEND_TO_ADMIN`)
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
-    if (!adminChatId) {
-      console.error(`${getLogPrefix()} ❌ ERROR: TELEGRAM_ADMIN_CHAT_ID not set`)
+    // 6. Отправка карточки с кнопками в группу для одобрения
+    console.log(`${getLogPrefix()} 📤 STEP7: SEND_APPROVAL_CARD`)
+    // Используем TELEGRAM_PUBLISH_GROUP_ID для отправки карточек с кнопками
+    // Это группа, где находится админ 120352240 для работы с кнопками
+    const approvalChatId = process.env.TELEGRAM_PUBLISH_GROUP_ID || process.env.TELEGRAM_ADMIN_CHAT_ID
+    if (!approvalChatId) {
+      console.error(`${getLogPrefix()} ❌ ERROR: TELEGRAM_PUBLISH_GROUP_ID and TELEGRAM_ADMIN_CHAT_ID not set`)
       return
     }
-    console.log(`${getLogPrefix()} 📤 Admin Chat ID: ${adminChatId}`)
+    console.log(`${getLogPrefix()} 📤 Approval Chat ID (group): ${approvalChatId}`)
     console.log(`${getLogPrefix()} 📤 Bot mode: ${settings.mode}`)
 
     const bot = getBot()
@@ -386,8 +388,8 @@ export async function handleChannelMessage(ctx: Context) {
       // Низкая уверенность - отправляем на ручную проверку
     }
 
-    // Ручной режим или низкая уверенность - отправляем админу
-    console.log('   📤 Формирую сообщение для админа...')
+    // Ручной режим или низкая уверенность - отправляем карточку в группу
+    console.log('   📤 Формирую сообщение для одобрения...')
     const messageText = formatDraftMessage(draft, channel, agentPrediction)
     const keyboard = {
       inline_keyboard: [
@@ -398,12 +400,12 @@ export async function handleChannelMessage(ctx: Context) {
       ],
     }
 
-    console.log(`${getLogPrefix()} 📤 SENDING: to admin ${adminChatId}`)
-    await bot.telegram.sendMessage(adminChatId, messageText, {
+    console.log(`${getLogPrefix()} 📤 SENDING: approval card to group ${approvalChatId}`)
+    await bot.telegram.sendMessage(approvalChatId, messageText, {
       parse_mode: 'HTML',
       reply_markup: keyboard,
     })
-    console.log(`${getLogPrefix()} 📤 ✅ SENT: message sent to admin`)
+    console.log(`${getLogPrefix()} 📤 ✅ SENT: approval card sent to group`)
     console.log(`${getLogPrefix()} ✅ SUCCESS: processing completed`)
       } catch (error) {
         console.error('   ❌ ОШИБКА при обработке сообщения из канала:', error)
