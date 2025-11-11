@@ -18,6 +18,11 @@ function getMonitoringClient(): TelegramClient | null {
   const apiHash = process.env.TELEGRAM_API_HASH
   const sessionString = process.env.TELEGRAM_SESSION_STRING
 
+  console.log('   [getMonitoringClient] Проверка переменных окружения...')
+  console.log(`   [getMonitoringClient] TELEGRAM_API_ID: ${apiId ? '✅' : '❌'}`)
+  console.log(`   [getMonitoringClient] TELEGRAM_API_HASH: ${apiHash ? '✅' : '❌'}`)
+  console.log(`   [getMonitoringClient] TELEGRAM_SESSION_STRING: ${sessionString ? '✅' : '❌'}`)
+
   if (!apiId || !apiHash) {
     console.error('❌ TELEGRAM_API_ID или TELEGRAM_API_HASH не установлены')
     return null

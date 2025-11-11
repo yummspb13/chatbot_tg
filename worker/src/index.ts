@@ -73,21 +73,33 @@ app.listen(PORT, async () => {
   console.log('')
   
   // Автоматически запускаем мониторинг при старте сервера
+  console.log('')
   console.log('🔄 Автоматический запуск мониторинга...')
+  console.log(`   Проверяю переменные окружения...`)
+  console.log(`   TELEGRAM_SESSION_STRING: ${process.env.TELEGRAM_SESSION_STRING ? '✅ установлен' : '❌ не установлен'}`)
+  console.log(`   TELEGRAM_API_ID: ${process.env.TELEGRAM_API_ID ? '✅ установлен' : '❌ не установлен'}`)
+  console.log(`   TELEGRAM_API_HASH: ${process.env.TELEGRAM_API_HASH ? '✅ установлен' : '❌ не установлен'}`)
+  console.log(`   MAIN_APP_URL: ${process.env.MAIN_APP_URL || '❌ не установлен'}`)
+  console.log(`   BOT_API_KEY: ${process.env.BOT_API_KEY ? '✅ установлен' : '❌ не установлен'}`)
+  
   try {
     setRunning(true)
+    console.log('   Вызываю startMonitoring()...')
     const monitoringStarted = await startMonitoring()
     if (monitoringStarted) {
       console.log('✅ Мониторинг запущен автоматически')
     } else {
       console.warn('⚠️ Не удалось запустить мониторинг автоматически')
+      console.warn('   startMonitoring() вернул false')
       console.warn('   Запустите вручную: POST /runner/start')
       setRunning(false)
     }
   } catch (error: any) {
     console.error('❌ Ошибка автоматического запуска мониторинга:', error.message)
+    console.error('   Stack:', error.stack)
     console.error('   Запустите вручную: POST /runner/start')
     setRunning(false)
   }
+  console.log('')
 })
 
