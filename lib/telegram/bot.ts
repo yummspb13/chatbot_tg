@@ -34,13 +34,20 @@ export function getBot(): Telegraf {
 export function isAdmin(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
   if (!adminChatId) {
-    console.warn('TELEGRAM_ADMIN_CHAT_ID не настроен')
+    console.warn('⚠️ TELEGRAM_ADMIN_CHAT_ID не настроен')
     return false
   }
 
   const userId = ctx.from?.id?.toString()
   const chatId = ctx.chat?.id?.toString()
   const callbackUserId = ctx.callbackQuery?.from?.id?.toString()
+
+  // Детальное логирование для диагностики
+  console.log(`🔐 [isAdmin] Проверка доступа:`)
+  console.log(`   User ID: ${userId}`)
+  console.log(`   Chat ID: ${chatId}`)
+  console.log(`   Callback User ID: ${callbackUserId}`)
+  console.log(`   Expected Admin Chat ID: ${adminChatId}`)
 
   // Проверяем по user ID (для личных сообщений)
   // Проверяем по chat ID (для групповых чатов)
@@ -50,7 +57,9 @@ export function isAdmin(ctx: Context): boolean {
                       callbackUserId === adminChatId
 
   if (!isAdminUser) {
-    console.log(`Access denied. User ID: ${userId}, Chat ID: ${chatId}, Expected: ${adminChatId}`)
+    console.log(`❌ [isAdmin] Access denied. User ID: ${userId}, Chat ID: ${chatId}, Expected: ${adminChatId}`)
+  } else {
+    console.log(`✅ [isAdmin] Access granted`)
   }
 
   return isAdminUser
