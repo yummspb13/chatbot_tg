@@ -220,9 +220,9 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
     console.log(`   🔄 Отправляю сообщение боту на ${webhookUrl}...`)
     console.log(`   📤 Update payload:`, JSON.stringify(update, null, 2).substring(0, 500))
     
-    // Добавляем timeout для fetch
+    // Добавляем timeout для fetch (увеличиваем до 30 секунд, т.к. Vercel может долго обрабатывать)
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 секунд timeout
+    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 секунд timeout
     
     const response = await fetch(webhookUrl, {
       method: 'POST',

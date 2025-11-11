@@ -341,11 +341,19 @@ export async function handleChannelMessage(ctx: Context) {
     console.log(`${getLogPrefix()} 📤 STEP6: SEND_APPROVAL_CARD (BEFORE DRAFT CREATION)`)
     // Используем TELEGRAM_PUBLISH_GROUP_ID для отправки карточек с кнопками
     // Это группа, где находится админ 120352240 для работы с кнопками
-    const approvalChatId = process.env.TELEGRAM_PUBLISH_GROUP_ID || process.env.TELEGRAM_ADMIN_CHAT_ID
+    let approvalChatId = process.env.TELEGRAM_PUBLISH_GROUP_ID || process.env.TELEGRAM_ADMIN_CHAT_ID
     if (!approvalChatId) {
       console.error(`${getLogPrefix()} ❌ ERROR: TELEGRAM_PUBLISH_GROUP_ID and TELEGRAM_ADMIN_CHAT_ID not set`)
       return
     }
+    
+    // Нормализуем chat ID - для групп должен быть минус в начале
+    // Если ID начинается с цифры и это группа (длинный ID), добавляем минус
+    if (!approvalChatId.startsWith('-') && approvalChatId.length > 9) {
+      approvalChatId = `-${approvalChatId}`
+      console.log(`${getLogPrefix()}   💡 Исправлен chat ID: добавлен минус -> ${approvalChatId}`)
+    }
+    
     console.log(`${getLogPrefix()} 📤 Approval Chat ID (group): ${approvalChatId}`)
     console.log(`${getLogPrefix()} 📤 Bot mode: ${settings.mode}`)
 

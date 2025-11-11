@@ -57,3 +57,4 @@ worker/node_modules/
 *.tmp
 .cache/
 .env.bak
+worker/.env.bak2
