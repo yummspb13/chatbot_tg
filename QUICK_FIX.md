@@ -24,7 +24,7 @@ curl -X POST https://chatbot-tg.onrender.com/runner/start
 1. **TELEGRAM_SESSION_STRING** - строка сессии (из QR-логина)
 2. **TELEGRAM_API_ID** - ID приложения
 3. **TELEGRAM_API_HASH** - Hash приложения
-4. **MAIN_APP_URL** - URL вашего Vercel приложения (например: `https://chatbot-irhw19y8p-pixelprint.vercel.app`)
+4. **MAIN_APP_URL** - URL вашего Vercel приложения: `https://chatbot-tg.vercel.app`
 5. **BOT_API_KEY** - должен совпадать с `BOT_API_KEY` в Vercel
 6. **BOT_WEBHOOK_URL** - тот же URL что и `MAIN_APP_URL`
 
@@ -33,7 +33,7 @@ curl -X POST https://chatbot-tg.onrender.com/runner/start
 Проверьте через API:
 
 ```bash
-curl -H "Authorization: Bearer YOUR_BOT_API_KEY" https://chatbot-irhw19y8p-pixelprint.vercel.app/api/channels
+curl -H "Authorization: Bearer YOUR_BOT_API_KEY" https://chatbot-tg.vercel.app/api/channels
 ```
 
 Должен вернуть список каналов.
