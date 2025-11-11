@@ -50,9 +50,42 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
     })
 
     console.log(`[sendDraft] Response status: ${response.status} ${response.statusText}`)
+    console.log(`[sendDraft] Response Content-Type: ${response.headers.get('content-type')}`)
     
-    const data = await response.json()
-    console.log(`[sendDraft] Response data:`, JSON.stringify(data, null, 2))
+    // Проверяем, что ответ - это JSON, а не HTML
+    const contentType = response.headers.get('content-type') || ''
+    const responseText = await response.text()
+    
+    if (!contentType.includes('application/json')) {
+      console.error(`[sendDraft] ❌ API вернул не JSON, а ${contentType}`)
+      console.error(`[sendDraft] Response preview:`, responseText.substring(0, 500))
+      
+      // Если это HTML (вероятно 404 или ошибка), возвращаем понятную ошибку
+      if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+        return {
+          success: false,
+          error: `API вернул HTML вместо JSON. Возможно, URL неправильный или endpoint не существует. Status: ${response.status}`,
+        }
+      }
+      
+      return {
+        success: false,
+        error: `API вернул не JSON (${contentType}). Status: ${response.status}`,
+      }
+    }
+    
+    let data
+    try {
+      data = JSON.parse(responseText)
+      console.log(`[sendDraft] Response data:`, JSON.stringify(data, null, 2))
+    } catch (parseError: any) {
+      console.error(`[sendDraft] ❌ Ошибка парсинга JSON:`, parseError.message)
+      console.error(`[sendDraft] Response text:`, responseText.substring(0, 1000))
+      return {
+        success: false,
+        error: `Ошибка парсинга ответа от API: ${parseError.message}`,
+      }
+    }
 
     if (response.status === 401) {
       console.error(`[sendDraft] ❌ Unauthorized - проверьте BOT_API_KEY`)
