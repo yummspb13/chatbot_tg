@@ -114,10 +114,14 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
       
       // Проверяем, если это ошибка Prisma (например, неизвестное поле)
       const errorMessage = data.error || 'Bad Request'
-      if (errorMessage.includes('Unknown argument') || errorMessage.includes('categoryId')) {
+      if (errorMessage.includes('Unknown argument') || 
+          errorMessage.includes('categoryId') || 
+          errorMessage.includes('adminNotes') ||
+          errorMessage.includes('Invalid `prisma.')) {
         console.error(`[sendDraft] ❌ Ошибка схемы Prisma на стороне API Афиши`)
         console.error(`[sendDraft]    Это проблема на стороне сервера Афиши, а не в нашем коде`)
         console.error(`[sendDraft]    Нужно исправить схему Prisma или код создания события в API Афиши`)
+        console.error(`[sendDraft]    Проблемное поле указано в сообщении об ошибке выше`)
       }
       
       return {
