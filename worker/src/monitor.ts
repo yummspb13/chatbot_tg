@@ -160,8 +160,8 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
         type: 'channel',
         title: channelTitle,
       },
-      text: message.message || '',
-      caption: message.message || '',
+      text: message.message || message.text || '',
+      caption: message.message || message.text || (message.media && (message.media as any).caption) || '',
     },
   }
 
@@ -226,66 +226,88 @@ export async function startMonitoring(): Promise<boolean> {
     })
     console.log(`   ✅ Channels map создан, размер: ${channelsMap.size}`)
 
-    // Подписываемся на обновления
-    console.log('   📡 Регистрирую обработчик событий...')
-    client.addEventHandler(async (event: any) => {
+    // Подписываемся на обновления новых сообщений
+    console.log('   📡 Регистрирую обработчик событий для новых сообщений...')
+    
+    // Обработчик для новых сообщений из каналов
+    client.addEventHandler(async (event: Api.UpdateNewMessage | Api.UpdateNewChannelMessage) => {
       const logPrefix = `[${new Date().toISOString()}]`
       console.log(`${logPrefix} 📥 EVENT: ${event.constructor.name}`)
       
       try {
-        // Проверяем, что это сообщение из канала
-        if (event.message) {
-          console.log(`${logPrefix}   ✅ Event has message`)
-          console.log(`${logPrefix}   Message ID: ${event.message.id}`)
-          console.log(`${logPrefix}   Message peerId: ${event.message.peerId ? event.message.peerId.constructor.name : 'null'}`)
-          
-          if (event.message.peerId) {
-            const peerId = event.message.peerId
+        // Получаем сообщение из события
+        const message = (event as any).message
+        if (!message) {
+          console.log(`${logPrefix}   ⚠️ Event has no message property`)
+          return
+        }
 
-            // Преобразуем peerId в chatId
-            let chatId: string | null = null
+        console.log(`${logPrefix}   ✅ Event has message`)
+        console.log(`${logPrefix}   Message ID: ${message.id}`)
+        console.log(`${logPrefix}   Message peerId: ${message.peerId ? message.peerId.constructor.name : 'null'}`)
+        
+        if (message.peerId) {
+          const peerId = message.peerId
 
-            if (peerId instanceof Api.PeerChannel) {
-              chatId = `-100${peerId.channelId.toString()}`
-              console.log(`${logPrefix}   PeerChannel ID: ${peerId.channelId}, chatId: ${chatId}`)
-            } else {
-              console.log(`${logPrefix}   ⚠️ peerId is not PeerChannel: ${peerId.constructor.name}`)
-            }
+          // Преобразуем peerId в chatId
+          let chatId: string | null = null
 
-            if (chatId) {
-              console.log(`${logPrefix}   Checking if chatId ${chatId} is in channelsMap...`)
-              console.log(`${logPrefix}   Channels in map: ${Array.from(channelsMap.keys()).join(', ')}`)
-              
-              if (channelsMap.has(chatId)) {
-                const channelTitle = channelsMap.get(chatId) || 'Unknown'
-                console.log(`${logPrefix} 📨 Получено сообщение из канала ${channelTitle} (${chatId})`)
-
-                // Логируем структуру message для отладки
-                console.log(`${logPrefix}   🔍 Debug: message.date type: ${typeof event.message.date}, value: ${event.message.date}`)
-                if (event.message.date) {
-                  console.log(`${logPrefix}   🔍 Debug: message.date instanceof Date: ${event.message.date instanceof Date}`)
-                }
-
-                // Отправляем сообщение боту через webhook
-                await sendMessageToBot(event.message, chatId, channelTitle)
-              } else {
-                console.log(`${logPrefix}   ⚠️ ChatId ${chatId} не найден в списке мониторинга`)
-              }
-            }
+          if (peerId instanceof Api.PeerChannel) {
+            chatId = `-100${peerId.channelId.toString()}`
+            console.log(`${logPrefix}   PeerChannel ID: ${peerId.channelId}, chatId: ${chatId}`)
           } else {
-            console.log(`${logPrefix}   ⚠️ Message has no peerId`)
+            console.log(`${logPrefix}   ⚠️ peerId is not PeerChannel: ${peerId.constructor.name}`)
+            return
+          }
+
+          if (chatId) {
+            console.log(`${logPrefix}   Checking if chatId ${chatId} is in channelsMap...`)
+            console.log(`${logPrefix}   Channels in map: ${Array.from(channelsMap.keys()).join(', ')}`)
+            
+            if (channelsMap.has(chatId)) {
+              const channelTitle = channelsMap.get(chatId) || 'Unknown'
+              console.log(`${logPrefix} 📨 Получено сообщение из канала ${channelTitle} (${chatId})`)
+
+              // Логируем структуру message для отладки
+              console.log(`${logPrefix}   🔍 Debug: message.date type: ${typeof message.date}, value: ${message.date}`)
+              if (message.date) {
+                console.log(`${logPrefix}   🔍 Debug: message.date instanceof Date: ${message.date instanceof Date}`)
+              }
+
+              // Получаем текст сообщения
+              let messageText = ''
+              if (message.message) {
+                messageText = message.message
+              } else if (message.media) {
+                // Если есть медиа, используем caption
+                if ((message.media as any).caption) {
+                  messageText = (message.media as any).caption
+                }
+              }
+              console.log(`${logPrefix}   Message text length: ${messageText.length}`)
+
+              // Отправляем сообщение боту через webhook
+              await sendMessageToBot(message, chatId, channelTitle)
+            } else {
+              console.log(`${logPrefix}   ⚠️ ChatId ${chatId} не найден в списке мониторинга`)
+            }
           }
         } else {
-          console.log(`${logPrefix}   ⚠️ Event has no message property`)
+          console.log(`${logPrefix}   ⚠️ Message has no peerId`)
         }
       } catch (error: any) {
         console.error(`${logPrefix} ❌ Ошибка обработки сообщения:`, error)
         console.error(`${logPrefix}   Stack:`, error.stack)
-        if (event.message) {
-          console.error(`${logPrefix}   Message object:`, JSON.stringify(event.message, null, 2).substring(0, 500))
+        if ((event as any).message) {
+          console.error(`${logPrefix}   Message object:`, JSON.stringify((event as any).message, null, 2).substring(0, 500))
         }
       }
-    }, { chats: [] }) // Подписываемся на все чаты
+    }, { 
+      // Подписываемся только на новые сообщения из каналов
+      func: (update: any) => {
+        return update instanceof Api.UpdateNewMessage || update instanceof Api.UpdateNewChannelMessage
+      }
+    })
 
     isMonitoring = true
     console.log('✅ Мониторинг каналов запущен')
@@ -323,4 +345,5 @@ export function getMonitoringStatus(): { isMonitoring: boolean; isConnected: boo
     isConnected: monitoringClient?.connected || false,
   }
 }
+
 
