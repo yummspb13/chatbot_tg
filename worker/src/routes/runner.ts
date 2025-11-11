@@ -3,6 +3,7 @@
  */
 
 import { Router } from 'express'
+import { startMonitoring, stopMonitoring, getMonitoringStatus } from '../monitor'
 
 const router = Router()
 
@@ -26,12 +27,21 @@ router.post('/start', async (req, res) => {
   isRunning = true
   console.log('🚀 Воркер запущен')
   
-  // TODO: Запустить мониторинг каналов через Client API
+  // Запускаем мониторинг каналов через Client API
+  const monitoringStarted = await startMonitoring()
+  if (!monitoringStarted) {
+    console.warn('⚠️ Не удалось запустить мониторинг каналов')
+    console.warn('   Проверьте:')
+    console.warn('   1. TELEGRAM_SESSION_STRING установлен?')
+    console.warn('   2. TELEGRAM_API_ID и TELEGRAM_API_HASH установлены?')
+    console.warn('   3. Каналы добавлены в MONITOR_CHANNELS или доступны через API?')
+  }
   
   return res.json({ 
     success: true, 
     message: 'Воркер запущен',
     isRunning: true,
+    monitoring: monitoringStarted,
     history: history || null
   })
 })
@@ -52,7 +62,8 @@ router.post('/stop', async (req, res) => {
   isRunning = false
   console.log('⏹ Воркер остановлен')
   
-  // TODO: Остановить мониторинг каналов
+  // Останавливаем мониторинг каналов
+  await stopMonitoring()
   
   return res.json({ 
     success: true, 
@@ -66,8 +77,10 @@ router.post('/stop', async (req, res) => {
  * Возвращает статус воркера
  */
 router.get('/status', async (req, res) => {
+  const monitoringStatus = getMonitoringStatus()
   return res.json({ 
     isRunning,
+    monitoring: monitoringStatus,
     timestamp: new Date().toISOString()
   })
 })
