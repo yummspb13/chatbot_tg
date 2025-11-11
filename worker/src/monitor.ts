@@ -336,9 +336,19 @@ export async function startMonitoring(): Promise<boolean> {
         // Логируем другие события для диагностики (но не обрабатываем)
         if (eventType.includes('Message') || eventType.includes('Update') || eventType.includes('Channel')) {
           console.log(`${logPrefix}   ⚠️ Пропускаю событие типа ${eventType}`)
-          // Для важных событий выводим больше информации
+          // Для важных событий выводим больше информации (без JSON.stringify, т.к. могут быть циклические ссылки)
           if (eventType.includes('Connection') || eventType.includes('State')) {
-            console.log(`${logPrefix}   🔍 Connection/State event:`, JSON.stringify(event).substring(0, 200))
+            // Безопасная сериализация - только основные поля
+            try {
+              const safeEvent = {
+                constructor: eventType,
+                _: (event as any)._?.constructor?.name || 'unknown',
+              }
+              console.log(`${logPrefix}   🔍 Connection/State event:`, safeEvent)
+            } catch (e) {
+              // Если даже это не работает, просто логируем тип
+              console.log(`${logPrefix}   🔍 Connection/State event: ${eventType}`)
+            }
           }
         }
         return
