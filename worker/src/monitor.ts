@@ -78,7 +78,7 @@ async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: st
       
       if (channels.length > 0) {
         console.log(`   ✅ Получено ${channels.length} каналов из базы данных`)
-        return channels.map(ch => ({
+        return channels.map((ch: { chatId: string; title: string }) => ({
           chatId: ch.chatId,
           title: ch.title,
         }))
