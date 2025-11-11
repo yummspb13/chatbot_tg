@@ -78,9 +78,22 @@ router.post('/stop', async (req, res) => {
  */
 router.get('/status', async (req, res) => {
   const monitoringStatus = getMonitoringStatus()
+  
+  // Проверяем переменные окружения для диагностики
+  const envCheck = {
+    hasSessionString: !!process.env.TELEGRAM_SESSION_STRING,
+    hasApiId: !!process.env.TELEGRAM_API_ID,
+    hasApiHash: !!process.env.TELEGRAM_API_HASH,
+    hasMainAppUrl: !!process.env.MAIN_APP_URL,
+    hasBotApiKey: !!process.env.BOT_API_KEY,
+    hasMonitorChannels: !!process.env.MONITOR_CHANNELS,
+    mainAppUrl: process.env.MAIN_APP_URL || 'NOT_SET',
+  }
+  
   return res.json({ 
     isRunning,
     monitoring: monitoringStatus,
+    envCheck,
     timestamp: new Date().toISOString()
   })
 })
