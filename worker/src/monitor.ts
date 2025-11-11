@@ -113,18 +113,31 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
   const webhookUrl = `${baseUrl}/api/tg/webhook`
 
   // Создаем update в формате Telegram Bot API
-  // message.date может быть Date объектом или числом (timestamp в секундах)
+  // message.date может быть Date объектом, числом (timestamp) или другим типом
   let messageDate: number
-  if (message.date) {
-    if (message.date instanceof Date) {
-      messageDate = Math.floor(message.date.getTime() / 1000)
-    } else if (typeof message.date === 'number') {
-      // Если это уже timestamp в секундах
-      messageDate = message.date
+  try {
+    if (message.date) {
+      // Проверяем тип message.date
+      if (message.date instanceof Date) {
+        messageDate = Math.floor(message.date.getTime() / 1000)
+      } else if (typeof message.date === 'number') {
+        // Если это уже timestamp в секундах
+        messageDate = message.date
+      } else if (typeof message.date === 'string') {
+        // Если это строка, пытаемся распарсить
+        const parsed = new Date(message.date)
+        messageDate = isNaN(parsed.getTime()) ? Math.floor(Date.now() / 1000) : Math.floor(parsed.getTime() / 1000)
+      } else {
+        // Для любых других типов используем текущее время
+        console.warn(`   ⚠️ Неожиданный тип message.date: ${typeof message.date}, значение: ${message.date}`)
+        messageDate = Math.floor(Date.now() / 1000)
+      }
     } else {
       messageDate = Math.floor(Date.now() / 1000)
     }
-  } else {
+  } catch (error: any) {
+    console.error(`   ❌ Ошибка обработки message.date: ${error.message}`)
+    console.error(`   message.date type: ${typeof message.date}, value: ${message.date}`)
     messageDate = Math.floor(Date.now() / 1000)
   }
 
