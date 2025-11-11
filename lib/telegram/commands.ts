@@ -35,7 +35,26 @@ export async function handleStart(ctx: Context) {
   if (!adminCheck) {
     console.log(`${logPrefix}    ❌ Доступ запрещен (не админ)`)
     // Добавляем детальную информацию в ответ для диагностики
-    const debugInfo = `\n\n🔍 Debug info:\nUser ID: ${ctx.from?.id}\nChat ID: ${ctx.chat?.id}\nExpected: ${process.env.TELEGRAM_ADMIN_CHAT_ID || 'НЕ УСТАНОВЛЕН'}`
+    const userId = ctx.from?.id
+    const chatId = ctx.chat?.id
+    const expectedId = process.env.TELEGRAM_ADMIN_CHAT_ID || 'НЕ УСТАНОВЛЕН'
+    const userIdStr = userId?.toString()?.trim()
+    const chatIdStr = chatId?.toString()?.trim()
+    const expectedIdStr = expectedId.toString().trim()
+    
+    const debugInfo = `\n\n🔍 Debug info:
+User ID: ${userId} (type: ${typeof userId})
+User ID string: "${userIdStr}"
+Chat ID: ${chatId} (type: ${typeof chatId})
+Chat ID string: "${chatIdStr}"
+Expected: "${expectedIdStr}"
+Сравнение userId === expected: ${userIdStr === expectedIdStr}
+Сравнение chatId === expected: ${chatIdStr === expectedIdStr}
+User ID length: ${userIdStr?.length || 0}
+Expected length: ${expectedIdStr.length}
+User ID === Expected (строго): ${userIdStr === expectedIdStr}
+User ID == Expected (нестрого): ${userIdStr == expectedIdStr}`
+    
     return ctx.reply('Доступ запрещен. Только администратор может использовать команды.' + debugInfo, getKeyboardIfPrivate(ctx))
   }
 
