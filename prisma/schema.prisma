@@ -7,6 +7,7 @@ generator client {
 
 datasource db {
   // Используем PostgreSQL для продакшена (Vercel)
+  // Изменено с sqlite на postgresql для работы на Vercel
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
