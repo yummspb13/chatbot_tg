@@ -65,7 +65,7 @@ async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: st
       })
       
       if (response.ok) {
-        const data = await response.json()
+        const data = await response.json() as { channels?: Array<{ chatId: string; title: string }> }
         const channels = data.channels || []
         console.log(`   ✅ Получено ${channels.length} каналов из основного приложения`)
         return channels
