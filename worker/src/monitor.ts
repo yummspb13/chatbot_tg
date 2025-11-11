@@ -172,6 +172,8 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
 
   try {
     console.log(`   🔄 Отправляю сообщение боту на ${webhookUrl}...`)
+    console.log(`   📤 Update payload:`, JSON.stringify(update, null, 2).substring(0, 500))
+    
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
@@ -180,10 +182,15 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
       body: JSON.stringify(update),
     })
 
+    const responseText = await response.text()
+    console.log(`   📥 Response status: ${response.status} ${response.statusText}`)
+    console.log(`   📥 Response body: ${responseText.substring(0, 200)}`)
+
     if (response.ok) {
       console.log(`   ✅ Сообщение отправлено боту через webhook`)
     } else {
       console.error(`   ❌ Ошибка отправки боту: ${response.status} ${response.statusText}`)
+      console.error(`   ❌ Response: ${responseText}`)
     }
   } catch (error: any) {
     console.error(`   ❌ Ошибка отправки боту: ${error.message}`)
