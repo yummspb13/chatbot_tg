@@ -7,7 +7,13 @@ import { startMonitoring, stopMonitoring, getMonitoringStatus } from '../monitor
 
 const router = Router()
 
-let isRunning = false
+// Экспортируем isRunning для проверки статуса
+export let isRunning = false
+
+// Функция для установки статуса (используется при автозапуске)
+export function setRunning(value: boolean) {
+  isRunning = value
+}
 
 /**
  * POST /runner/start

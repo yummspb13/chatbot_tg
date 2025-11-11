@@ -10,8 +10,9 @@ import express from 'express'
 import cors from 'cors'
 import { config } from 'dotenv'
 import { qrAuthRouter } from './routes/qr-auth'
-import { runnerRouter } from './routes/runner'
+import { runnerRouter, setRunning } from './routes/runner'
 import { channelsRouter } from './routes/channels'
+import { startMonitoring } from './monitor'
 
 config()
 
@@ -62,7 +63,7 @@ app.use('/auth/qr', qrAuthRouter)
 app.use('/runner', runnerRouter)
 app.use('/channels', channelsRouter)
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log('')
   console.log('═══════════════════════════════════════════════════════════')
   console.log('🚀 Telegram Client API Worker запущен')
@@ -70,5 +71,23 @@ app.listen(PORT, () => {
   console.log(`   Время: ${new Date().toISOString()}`)
   console.log('═══════════════════════════════════════════════════════════')
   console.log('')
+  
+  // Автоматически запускаем мониторинг при старте сервера
+  console.log('🔄 Автоматический запуск мониторинга...')
+  try {
+    setRunning(true)
+    const monitoringStarted = await startMonitoring()
+    if (monitoringStarted) {
+      console.log('✅ Мониторинг запущен автоматически')
+    } else {
+      console.warn('⚠️ Не удалось запустить мониторинг автоматически')
+      console.warn('   Запустите вручную: POST /runner/start')
+      setRunning(false)
+    }
+  } catch (error: any) {
+    console.error('❌ Ошибка автоматического запуска мониторинга:', error.message)
+    console.error('   Запустите вручную: POST /runner/start')
+    setRunning(false)
+  }
 })
 
