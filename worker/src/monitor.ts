@@ -41,6 +41,10 @@ function getMonitoringClient(): TelegramClient | null {
   const session = new StringSession(sessionString)
   monitoringClient = new TelegramClient(session, parseInt(apiId), apiHash, {
     connectionRetries: 5,
+    // Увеличиваем таймауты для стабильности
+    timeout: 10000,
+    requestRetries: 3,
+    retryDelay: 2000,
   })
 
   return monitoringClient
