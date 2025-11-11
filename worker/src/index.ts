@@ -22,8 +22,8 @@ const PORT = process.env.PORT || process.env.WORKER_PORT || 3001
 // Настройка CORS с явным указанием origin
 app.use(cors({
   origin: [
-    'https://chatbot-irhw19y8p-pixelprint.vercel.app',
-    'https://chatbot-irhw19y8p-pixelprint.vercel.app',
+    'https://chatbot-tg.vercel.app',
+    'https://chatbot-tg.vercel.app',
     /\.vercel\.app$/,
     'http://localhost:3000',
     'http://localhost:3001',
