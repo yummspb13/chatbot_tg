@@ -6,6 +6,9 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db/prisma'
 
+// Указываем, что это динамический роут (не статический)
+export const dynamic = 'force-dynamic'
+
 export async function GET(request: Request) {
   try {
     // Простая проверка авторизации (можно улучшить)
