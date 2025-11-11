@@ -5,6 +5,8 @@ import '@/lib/telegram/webhook-handlers'
 
 export async function POST(req: NextRequest) {
   const startTime = Date.now()
+  const logPrefix = `[${new Date().toISOString()}]`
+  
   try {
     const update = await req.json()
     
@@ -14,19 +16,25 @@ export async function POST(req: NextRequest) {
                       update.callback_query ? 'callback_query' : 
                       'unknown'
     
-    // Явное логирование с меткой времени для Vercel
-    const logPrefix = `[${new Date().toISOString()}]`
-    console.log(`${logPrefix} 📥 WEBHOOK: ${updateType}`)
+    console.log(`${logPrefix} 📥 WEBHOOK RECEIVED: ${updateType}`)
+    console.log(`${logPrefix} 📥 Full update:`, JSON.stringify(update, null, 2).substring(0, 1000))
     
     if (update.message) {
       const chatType = update.message.chat?.type || 'unknown'
       const chatId = update.message.chat?.id || 'unknown'
+      const userId = update.message.from?.id || 'unknown'
       const hasForward = !!update.message.forward_from_chat
-      console.log(`${logPrefix} 📨 MESSAGE: chatType=${chatType} chatId=${chatId} hasForward=${hasForward}`)
+      const text = update.message.text || ''
+      console.log(`${logPrefix} 📨 MESSAGE:`)
+      console.log(`${logPrefix}    chatType=${chatType}`)
+      console.log(`${logPrefix}    chatId=${chatId}`)
+      console.log(`${logPrefix}    userId=${userId}`)
+      console.log(`${logPrefix}    text="${text}"`)
+      console.log(`${logPrefix}    hasForward=${hasForward}`)
+      console.log(`${logPrefix}    isCommand=${text.startsWith('/')}`)
       
-      if (update.message.text) {
-        const textPreview = update.message.text.substring(0, 100)
-        console.log(`${logPrefix} 📨 TEXT: ${textPreview}`)
+      if (text.startsWith('/')) {
+        console.log(`${logPrefix}    🎯 COMMAND DETECTED: ${text}`)
       }
     }
     
@@ -35,10 +43,10 @@ export async function POST(req: NextRequest) {
     }
 
     const bot = getBot()
+    console.log(`${logPrefix} 🤖 Bot instance obtained, calling handleUpdate...`)
 
     // Используем handleUpdate для обработки обновления
     // Telegraf автоматически вызовет нужные обработчики
-    console.log(`${logPrefix} 🤖 Calling bot.handleUpdate...`)
     await bot.handleUpdate(update)
     
     const duration = Date.now() - startTime
@@ -47,7 +55,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, processed: true, duration: `${duration}ms` })
   } catch (error) {
     const duration = Date.now() - startTime
-    const logPrefix = `[${new Date().toISOString()}]`
     console.error(`${logPrefix} ❌ WEBHOOK ERROR:`, error)
     console.error(`${logPrefix} ❌ STACK:`, error instanceof Error ? error.stack : 'нет stack trace')
     return NextResponse.json(
