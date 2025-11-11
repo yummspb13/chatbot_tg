@@ -41,6 +41,13 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
 
   try {
     console.log(`[sendDraft] Отправляю POST запрос на ${apiUrl}...`)
+    console.log(`[sendDraft] Request body preview:`, JSON.stringify({
+      title: draft.title,
+      startDate: draft.startDate,
+      city: draft.city,
+      venue: draft.venue,
+    }, null, 2))
+    
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -52,6 +59,7 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
 
     console.log(`[sendDraft] Response status: ${response.status} ${response.statusText}`)
     console.log(`[sendDraft] Response Content-Type: ${response.headers.get('content-type')}`)
+    console.log(`[sendDraft] Response URL: ${response.url}`)
     
     // Проверяем, что ответ - это JSON, а не HTML
     const contentType = response.headers.get('content-type') || ''
@@ -59,13 +67,18 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
     
     if (!contentType.includes('application/json')) {
       console.error(`[sendDraft] ❌ API вернул не JSON, а ${contentType}`)
-      console.error(`[sendDraft] Response preview:`, responseText.substring(0, 500))
+      console.error(`[sendDraft] Response preview (первые 1000 символов):`, responseText.substring(0, 1000))
       
       // Если это HTML (вероятно 404 или ошибка), возвращаем понятную ошибку
       if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+        console.error(`[sendDraft] ❌ Endpoint не найден (404). Проверьте:`)
+        console.error(`[sendDraft]    1. Правильность URL: ${apiUrl}`)
+        console.error(`[sendDraft]    2. Существует ли endpoint на сервере Афиши`)
+        console.error(`[sendDraft]    3. Переменная AFISHA_DRAFT_URL в Vercel`)
+        
         return {
           success: false,
-          error: `API вернул HTML вместо JSON. Возможно, URL неправильный или endpoint не существует. Status: ${response.status}`,
+          error: `API вернул HTML вместо JSON. Endpoint не найден (404). URL: ${apiUrl}. Проверьте переменную AFISHA_DRAFT_URL в Vercel.`,
         }
       }
       
