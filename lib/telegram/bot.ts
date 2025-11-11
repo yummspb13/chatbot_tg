@@ -35,6 +35,7 @@ export function isAdmin(ctx: Context): boolean {
   const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID
   if (!adminChatId) {
     console.warn('⚠️ TELEGRAM_ADMIN_CHAT_ID не настроен')
+    console.warn('⚠️ Все переменные окружения:', Object.keys(process.env).filter(k => k.includes('TELEGRAM') || k.includes('ADMIN')).join(', '))
     return false
   }
 
@@ -44,10 +45,13 @@ export function isAdmin(ctx: Context): boolean {
 
   // Детальное логирование для диагностики
   console.log(`🔐 [isAdmin] Проверка доступа:`)
-  console.log(`   User ID: ${userId}`)
-  console.log(`   Chat ID: ${chatId}`)
-  console.log(`   Callback User ID: ${callbackUserId}`)
-  console.log(`   Expected Admin Chat ID: ${adminChatId}`)
+  console.log(`   User ID: ${userId} (type: ${typeof userId})`)
+  console.log(`   Chat ID: ${chatId} (type: ${typeof chatId})`)
+  console.log(`   Callback User ID: ${callbackUserId} (type: ${typeof callbackUserId})`)
+  console.log(`   Expected Admin Chat ID: ${adminChatId} (type: ${typeof adminChatId})`)
+  console.log(`   Сравнение userId === adminChatId: ${userId === adminChatId}`)
+  console.log(`   Сравнение chatId === adminChatId: ${chatId === adminChatId}`)
+  console.log(`   Сравнение callbackUserId === adminChatId: ${callbackUserId === adminChatId}`)
 
   // Проверяем по user ID (для личных сообщений)
   // Проверяем по chat ID (для групповых чатов)
@@ -58,6 +62,7 @@ export function isAdmin(ctx: Context): boolean {
 
   if (!isAdminUser) {
     console.log(`❌ [isAdmin] Access denied. User ID: ${userId}, Chat ID: ${chatId}, Expected: ${adminChatId}`)
+    console.log(`❌ [isAdmin] Все сравнения вернули false`)
   } else {
     console.log(`✅ [isAdmin] Access granted`)
   }
