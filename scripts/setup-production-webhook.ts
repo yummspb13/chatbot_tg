@@ -22,16 +22,53 @@ if (!TELEGRAM_BOT_TOKEN) {
 if (!VERCEL_URL) {
   console.error('❌ VERCEL_URL не указан')
   console.error('Использование: npm run webhook:set:prod <vercel-url>')
-  console.error('Пример: npm run webhook:set:prod https://your-app.vercel.app')
+  console.error('Пример: npm run webhook:set:prod https://chatbot-tg.vercel.app')
   process.exit(1)
 }
 
-const webhookUrl = `${VERCEL_URL}/api/tg/webhook`
+// Проверяем, что URL не является примером
+if (VERCEL_URL.includes('your-app') || VERCEL_URL.includes('example')) {
+  console.error('❌ ОШИБКА: Вы используете пример URL!')
+  console.error(`   Указанный URL: ${VERCEL_URL}`)
+  console.error('   Используйте реальный URL вашего Vercel приложения')
+  console.error('   Пример: npm run webhook:set:prod https://chatbot-tg.vercel.app')
+  process.exit(1)
+}
+
+// Убираем https:// если есть, потом добавим
+const cleanUrl = VERCEL_URL.replace(/^https?:\/\//, '').replace(/\/$/, '')
+const webhookUrl = `https://${cleanUrl}/api/tg/webhook`
 
 async function setupWebhook() {
   try {
     console.log(`🔧 Настройка webhook для продакшена...`)
     console.log(`📍 URL: ${webhookUrl}`)
+    console.log('')
+    
+    // Проверяем доступность endpoint перед установкой
+    try {
+      const testResponse = await fetch(`https://${cleanUrl}/api/tg/webhook`, { method: 'GET' })
+      if (testResponse.ok) {
+        const testData = await testResponse.json()
+        console.log('✅ Webhook endpoint доступен')
+        if (testData.aiProvider) {
+          console.log(`   AI Provider: ${testData.aiProvider}`)
+          if (testData.aiProvider === 'mock') {
+            console.error('   ⚠️  WARNING: AI_PROVIDER установлен как "mock"!')
+            console.error('      Измените на "openai" в Vercel Dashboard → Environment Variables')
+          }
+        }
+        console.log('')
+      } else {
+        console.warn(`⚠️  Webhook endpoint вернул статус ${testResponse.status}`)
+        console.warn('   Продолжаю установку webhook...')
+        console.log('')
+      }
+    } catch (error: any) {
+      console.warn(`⚠️  Не удалось проверить доступность endpoint: ${error.message}`)
+      console.warn('   Продолжаю установку webhook...')
+      console.log('')
+    }
 
     const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook`
     
@@ -42,6 +79,20 @@ async function setupWebhook() {
       },
       body: JSON.stringify({
         url: webhookUrl,
+        allowed_updates: [
+          'message',
+          'edited_message',
+          'channel_post',
+          'edited_channel_post',
+          'callback_query', // Важно для обработки кнопок!
+          'inline_query',
+          'chosen_inline_result',
+          'poll',
+          'poll_answer',
+          'my_chat_member',
+          'chat_member',
+          'chat_join_request',
+        ],
       }),
     })
 

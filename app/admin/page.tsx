@@ -88,6 +88,9 @@ export default async function AdminDashboard() {
         <Link href="/admin/settings" style={{ padding: '0.5rem 1rem', background: '#f0f0f0', borderRadius: '6px', textDecoration: 'none' }}>
           ⚙️ Настройки
         </Link>
+        <Link href="/admin/logs" style={{ padding: '0.5rem 1rem', background: '#f0f0f0', borderRadius: '6px', textDecoration: 'none' }}>
+          📋 Логи
+        </Link>
         <Link href="/admin/learning" style={{ padding: '0.5rem 1rem', background: '#f0f0f0', borderRadius: '6px', textDecoration: 'none' }}>
           🎓 Обучение
         </Link>

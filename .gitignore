@@ -56,3 +56,4 @@ worker/node_modules/
 # Temporary files
 *.tmp
 .cache/
+.env.bak

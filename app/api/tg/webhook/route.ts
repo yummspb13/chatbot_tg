@@ -2,8 +2,41 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getBot } from '@/lib/telegram/bot'
 // Импортируем для регистрации обработчиков
 import '@/lib/telegram/webhook-handlers'
+import { getAIClient } from '@/lib/ai/provider'
+import { memoryLogger } from '@/lib/logging/memory-logger'
+
+// Принудительно делаем роут динамическим
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
+// Логируем конфигурацию при первом импорте
+let configLogged = false
+function logConfiguration() {
+  if (!configLogged) {
+    const aiClient = getAIClient()
+    const provider = process.env.AI_PROVIDER || 'openai'
+    const isProduction = process.env.NODE_ENV === 'production'
+    
+    console.log('🚀 Webhook endpoint initialized')
+    console.log(`   Environment: ${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}`)
+    console.log(`   AI Provider: ${provider.toUpperCase()} (${aiClient.provider})`)
+    
+    if (provider.toLowerCase() === 'mock' && isProduction) {
+      console.error('   ⚠️  WARNING: Using MOCK AI provider in PRODUCTION!')
+    }
+    
+    if (provider.toLowerCase() === 'openai' && !process.env.OPENAI_API_KEY) {
+      console.error('   ⚠️  WARNING: OPENAI_API_KEY not set!')
+    }
+    
+    configLogged = true
+  }
+}
 
 export async function POST(req: NextRequest) {
+  // Логируем конфигурацию при первом запросе
+  logConfiguration()
+  
   const startTime = Date.now()
   const logPrefix = `[${new Date().toISOString()}]`
   
@@ -18,6 +51,12 @@ export async function POST(req: NextRequest) {
     
     console.log(`${logPrefix} 📥 WEBHOOK RECEIVED: ${updateType}`)
     console.log(`${logPrefix} 📥 Full update:`, JSON.stringify(update, null, 2).substring(0, 1000))
+    
+    memoryLogger.info(
+      `WEBHOOK RECEIVED: ${updateType}`,
+      { updateType, update: JSON.stringify(update, null, 2).substring(0, 500) },
+      'webhook'
+    )
     
     if (update.message) {
       const chatType = update.message.chat?.type || 'unknown'
@@ -40,6 +79,18 @@ export async function POST(req: NextRequest) {
     
     if (update.channel_post) {
       console.log(`${logPrefix} 📢 CHANNEL_POST: chatId=${update.channel_post.chat?.id}`)
+    }
+    
+    if (update.callback_query) {
+      const callback = update.callback_query
+      const userId = callback.from?.id || 'unknown'
+      const chatId = callback.message?.chat?.id || 'unknown'
+      const data = callback.data || 'no data'
+      console.log(`${logPrefix} 🔘 CALLBACK_QUERY:`)
+      console.log(`${logPrefix}    userId=${userId}`)
+      console.log(`${logPrefix}    chatId=${chatId}`)
+      console.log(`${logPrefix}    data="${data}"`)
+      console.log(`${logPrefix}    messageId=${callback.message?.message_id || 'unknown'}`)
     }
 
     const bot = getBot()
@@ -66,6 +117,17 @@ export async function POST(req: NextRequest) {
 
 // Для проверки webhook от Telegram
 export async function GET() {
-  return NextResponse.json({ status: 'ok' })
+  logConfiguration()
+  
+  const aiClient = getAIClient()
+  const provider = process.env.AI_PROVIDER || 'openai'
+  
+  return NextResponse.json({ 
+    status: 'ok',
+    environment: process.env.NODE_ENV || 'development',
+    aiProvider: provider,
+    aiProviderStatus: aiClient.provider,
+    timestamp: new Date().toISOString(),
+  })
 }
 

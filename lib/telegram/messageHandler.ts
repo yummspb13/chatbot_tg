@@ -78,7 +78,11 @@ async function getTelegramFileUrl(fileId: string): Promise<string | null> {
 /**
  * Обрабатывает новое сообщение из канала
  */
+import { memoryLogger } from '@/lib/logging/memory-logger'
+
 export async function handleChannelMessage(ctx: Context) {
+  const logPrefix = `[${new Date().toISOString()}]`
+  
   console.log('')
   console.log('═══════════════════════════════════════════════════════════')
   console.log('🔵 handleChannelMessage ВЫЗВАН')
@@ -89,6 +93,18 @@ export async function handleChannelMessage(ctx: Context) {
   console.log('   Has channelPost:', !!(ctx as any).channelPost)
   console.log('   Has editedChannelPost:', !!(ctx as any).editedChannelPost)
   console.log('   Full update keys:', Object.keys(ctx.update || {}))
+  
+  memoryLogger.info(
+    'handleChannelMessage ВЫЗВАН',
+    {
+      updateType: ctx.updateType,
+      chatType: ctx.chat?.type,
+      chatId: ctx.chat?.id,
+      hasMessage: !!ctx.message,
+      hasChannelPost: !!(ctx as any).channelPost,
+    },
+    'messageHandler'
+  )
   
   // Поддерживаем все возможные типы сообщений из каналов:
   // - message (если приходит как message)
@@ -147,6 +163,11 @@ export async function handleChannelMessage(ctx: Context) {
 
   // Проверяем, что это канал из нашей базы
   console.log('   🔍 Проверяю канал в базе данных...')
+  memoryLogger.info(
+    `STEP1: FIND_CHANNEL_IN_DB - Ищу канал с chatId: ${chatId}`,
+    { chatId },
+    'messageHandler'
+  )
   const channel = await prisma.channel.findFirst({
     where: {
       chatId,
@@ -312,48 +333,12 @@ export async function handleChannelMessage(ctx: Context) {
       console.log('   🖼 Изображений не найдено')
     }
 
-    // 5. Создание черновика
+    // 5. Подготовка данных для карточки одобрения
     // Сохраняем оригинальный текст в description если description не извлечен
     const description = extracted.description || text.substring(0, 1000) || null
 
-    console.log(`${getLogPrefix()} 💾 STEP5: CREATING_DRAFT`)
-    const draft = await prisma.draftEvent.create({
-      data: {
-        cityId: channel.cityId,
-        channelId: channel.id,
-        telegramMessageId: messageId,
-        telegramChatId: chatId,
-        sourceLink: formatTelegramLink(chatId, messageId),
-        title: extracted.title,
-        startDate: parseISOString(extracted.startDateIso),
-        endDate: extracted.endDateIso ? parseISOString(extracted.endDateIso) : null,
-        venue: extracted.venue || null,
-        description: description,
-        cityName: extracted.cityName || channel.city?.name || null,
-        coverImage: coverImageUrl,
-        gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
-        status: 'NEW',
-      },
-    })
-    console.log(`${getLogPrefix()} 💾 ✅ DRAFT_CREATED: id=${draft.id} title=${draft.title.substring(0, 50)}`)
-
-    // Сохраняем предсказание агента для последующего использования
-    // Сохраняем в LearningDecision с временным статусом (будет обновлен при callback)
-    const { saveDecision } = await import('@/lib/learning/decisionService')
-    await saveDecision({
-      telegramMessageId: draft.telegramMessageId,
-      telegramChatId: draft.telegramChatId,
-      originalText: text,
-      extractedFields: extracted,
-      userDecision: agentPrediction.decision, // Временно, будет обновлено при callback
-      agentPrediction: agentPrediction.decision as any,
-      agentConfidence: agentPrediction.confidence,
-      agentReasoning: agentPrediction.reasoning,
-    })
-    console.log('   💾 ✅ Предсказание агента сохранено')
-
-    // 6. Отправка карточки с кнопками в группу для одобрения
-    console.log(`${getLogPrefix()} 📤 STEP7: SEND_APPROVAL_CARD`)
+    // 6. Отправка карточки с кнопками в группу для одобрения ПЕРЕД созданием draft
+    console.log(`${getLogPrefix()} 📤 STEP6: SEND_APPROVAL_CARD (BEFORE DRAFT CREATION)`)
     // Используем TELEGRAM_PUBLISH_GROUP_ID для отправки карточек с кнопками
     // Это группа, где находится админ 120352240 для работы с кнопками
     const approvalChatId = process.env.TELEGRAM_PUBLISH_GROUP_ID || process.env.TELEGRAM_ADMIN_CHAT_ID
@@ -372,7 +357,26 @@ export async function handleChannelMessage(ctx: Context) {
       // Автоматический режим: проверяем порог уверенности
       if (agentPrediction.confidence >= settings.confidenceThreshold) {
         console.log('   🤖 ✅ Высокая уверенность, действую автоматически')
-        // Высокая уверенность - действуем автоматически
+        // Высокая уверенность - создаем draft и действуем автоматически
+        const draft = await prisma.draftEvent.create({
+          data: {
+            cityId: channel.cityId,
+            channelId: channel.id,
+            telegramMessageId: messageId,
+            telegramChatId: chatId,
+            sourceLink: formatTelegramLink(chatId, messageId),
+            title: extracted.title,
+            startDate: parseISOString(extracted.startDateIso),
+            endDate: extracted.endDateIso ? parseISOString(extracted.endDateIso) : null,
+            venue: extracted.venue || null,
+            description: description,
+            cityName: extracted.cityName || channel.city?.name || null,
+            coverImage: coverImageUrl,
+            gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
+            status: 'NEW',
+          },
+        })
+        
         if (agentPrediction.decision === 'APPROVED') {
           console.log('   🤖 ✅ Автоматическое одобрение...')
           // Автоматически отправляем в Афишу
@@ -388,7 +392,43 @@ export async function handleChannelMessage(ctx: Context) {
       // Низкая уверенность - отправляем на ручную проверку
     }
 
-    // Ручной режим или низкая уверенность - отправляем карточку в группу
+    // Ручной режим или низкая уверенность - создаем draft со статусом PENDING и отправляем карточку
+    console.log(`${getLogPrefix()} 💾 STEP5: CREATING_DRAFT (PENDING STATUS)`)
+    const draft = await prisma.draftEvent.create({
+      data: {
+        cityId: channel.cityId,
+        channelId: channel.id,
+        telegramMessageId: messageId,
+        telegramChatId: chatId,
+        sourceLink: formatTelegramLink(chatId, messageId),
+        title: extracted.title,
+        startDate: parseISOString(extracted.startDateIso),
+        endDate: extracted.endDateIso ? parseISOString(extracted.endDateIso) : null,
+        venue: extracted.venue || null,
+        description: description,
+        cityName: extracted.cityName || channel.city?.name || null,
+        coverImage: coverImageUrl,
+        gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
+        status: 'PENDING', // Статус PENDING - ждем одобрения
+      },
+    })
+    console.log(`${getLogPrefix()} 💾 ✅ DRAFT_CREATED (PENDING): id=${draft.id} title=${draft.title.substring(0, 50)}`)
+
+    // Сохраняем предсказание агента для последующего использования
+    const { saveDecision } = await import('@/lib/learning/decisionService')
+    await saveDecision({
+      telegramMessageId: draft.telegramMessageId,
+      telegramChatId: draft.telegramChatId,
+      originalText: text,
+      extractedFields: extracted,
+      userDecision: agentPrediction.decision, // Временно, будет обновлено при callback
+      agentPrediction: agentPrediction.decision as any,
+      agentConfidence: agentPrediction.confidence,
+      agentReasoning: agentPrediction.reasoning,
+    })
+    console.log('   💾 ✅ Предсказание агента сохранено')
+
+    // Формируем и отправляем карточку с кнопками
     console.log('   📤 Формирую сообщение для одобрения...')
     const messageText = formatDraftMessage(draft, channel, agentPrediction)
     const keyboard = {
@@ -401,12 +441,46 @@ export async function handleChannelMessage(ctx: Context) {
     }
 
     console.log(`${getLogPrefix()} 📤 SENDING: approval card to group ${approvalChatId}`)
-    await bot.telegram.sendMessage(approvalChatId, messageText, {
-      parse_mode: 'HTML',
-      reply_markup: keyboard,
-    })
-    console.log(`${getLogPrefix()} 📤 ✅ SENT: approval card sent to group`)
-    console.log(`${getLogPrefix()} ✅ SUCCESS: processing completed`)
+    memoryLogger.info(
+      `STEP6: SEND_APPROVAL_CARD - Отправляю карточку в группу`,
+      { approvalChatId, draftId: draft.id },
+      'messageHandler'
+    )
+    
+    try {
+      await bot.telegram.sendMessage(approvalChatId, messageText, {
+        parse_mode: 'HTML',
+        reply_markup: keyboard,
+      })
+      console.log(`${getLogPrefix()} 📤 ✅ SENT: approval card sent to group`)
+      console.log(`${getLogPrefix()} ✅ SUCCESS: approval card sent, waiting for user decision`)
+      memoryLogger.success(
+        `Карточка одобрения отправлена в группу`,
+        { approvalChatId, draftId: draft.id },
+        'messageHandler'
+      )
+    } catch (error: any) {
+      console.error(`${getLogPrefix()} ❌ ERROR sending approval card:`, error.message)
+      console.error(`${getLogPrefix()}    Chat ID: ${approvalChatId}`)
+      console.error(`${getLogPrefix()}    Error code: ${error.response?.error_code || 'unknown'}`)
+      console.error(`${getLogPrefix()}    Error description: ${error.response?.description || error.message}`)
+      console.error(`${getLogPrefix()}    💡 Проверьте:`)
+      console.error(`${getLogPrefix()}       1. Бот добавлен в группу как администратор?`)
+      console.error(`${getLogPrefix()}       2. Правильный ли ID группы? (используйте: npm run group:get-id)`)
+      console.error(`${getLogPrefix()}       3. Группа существует и доступна?`)
+      
+      memoryLogger.error(
+        `Ошибка отправки карточки одобрения: ${error.message}`,
+        {
+          approvalChatId,
+          draftId: draft.id,
+          errorCode: error.response?.error_code,
+          errorDescription: error.response?.description || error.message,
+        },
+        'messageHandler'
+      )
+      // Не бросаем ошибку дальше, чтобы не прерывать обработку
+    }
       } catch (error) {
         console.error('   ❌ ОШИБКА при обработке сообщения из канала:', error)
         console.error('   ❌ Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')

@@ -1,10 +1,11 @@
-import OpenAI from 'openai'
 import { z } from 'zod'
 import { parseISOString, toISOString } from '@/lib/utils/date'
+import { getAIClient } from '@/lib/ai/provider'
+import { mockExtractEvent } from '@/lib/ai/mock-provider'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Используем универсальный провайдер (OpenAI, DeepSeek или Mock)
+const aiClient = getAIClient()
+const { client: openai, getModel, provider } = aiClient
 
 const ExtractedEventSchema = z.object({
   title: z.string().nullable(),
@@ -27,14 +28,22 @@ export async function extractEvent(
   text: string,
   messageDate?: Date
 ): Promise<ExtractedEvent> {
-  console.log('      [OpenAI] Извлечение полей: отправляю запрос...')
-  console.log('      [OpenAI] Текст (первые 300 символов):', text.substring(0, 300))
+  console.log('      [AI] Извлечение полей: отправляю запрос...')
+  console.log('      [AI] Текст (первые 300 символов):', text.substring(0, 300))
   
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-  console.log('      [OpenAI] Модель:', model)
+  // Если mock провайдер - используем локальную логику
+  if (provider === 'mock') {
+    console.log('      [AI] Используется MOCK провайдер (локальное тестирование)')
+    const extracted = mockExtractEvent(text, messageDate || new Date())
+    console.log('      [AI] ✅ MOCK извлечение:', JSON.stringify(extracted, null, 2))
+    return extracted
+  }
+  
+  const model = getModel('gpt-4o-mini')
+  console.log('      [AI] Модель:', model)
 
   const currentDate = messageDate ? toISOString(messageDate) : new Date().toISOString()
-  console.log('      [OpenAI] Дата сообщения:', currentDate)
+  console.log('      [AI] Дата сообщения:', currentDate)
 
   const prompt = `Ты извлекаешь информацию о мероприятии из текста сообщения Telegram.
 
@@ -72,7 +81,7 @@ ${text}
 Верни только валидный JSON, без дополнительного текста.`
 
   try {
-    console.log('      [OpenAI] Запрос к API для извлечения полей...')
+    console.log('      [AI] Запрос к API для извлечения полей...')
     const response = await openai.chat.completions.create({
       model,
       messages: [
@@ -88,28 +97,28 @@ ${text}
       temperature: 0.2,
       response_format: { type: 'json_object' },
     })
-    console.log('      [OpenAI] Ответ получен, статус:', response.choices[0]?.finish_reason)
-    console.log('      [OpenAI] Использовано токенов:', response.usage?.total_tokens)
+    console.log('      [AI] Ответ получен, статус:', response.choices[0]?.finish_reason)
+    console.log('      [AI] Использовано токенов:', response.usage?.total_tokens)
 
     const content = response.choices[0]?.message?.content
     if (!content) {
-      console.error('      [OpenAI] ❌ Пустой ответ от OpenAI')
-      throw new Error('Empty response from OpenAI')
+      console.error('      [AI] ❌ Пустой ответ от AI провайдера')
+      throw new Error('Empty response from AI provider')
     }
-    console.log('      [OpenAI] Содержимое ответа:', content.substring(0, 500))
+    console.log('      [AI] Содержимое ответа:', content.substring(0, 500))
 
     const parsed = JSON.parse(content)
     const validated = ExtractedEventSchema.parse(parsed)
-    console.log('      [OpenAI] ✅ Извлечение успешно')
-    console.log('      [OpenAI] Извлеченные поля:', JSON.stringify(validated, null, 2))
+    console.log('      [AI] ✅ Извлечение успешно')
+    console.log('      [AI] Извлеченные поля:', JSON.stringify(validated, null, 2))
 
     // Конвертируем ISO строки в Date объекты для валидации
     if (validated.startDateIso) {
       try {
         parseISOString(validated.startDateIso)
-        console.log('      [OpenAI] ✅ startDateIso валидна:', validated.startDateIso)
+        console.log('      [AI] ✅ startDateIso валидна:', validated.startDateIso)
       } catch (e) {
-        console.log('      [OpenAI] ⚠️ startDateIso невалидна, обнуляю:', validated.startDateIso)
+        console.log('      [AI] ⚠️ startDateIso невалидна, обнуляю:', validated.startDateIso)
         validated.startDateIso = null
       }
     }
@@ -117,17 +126,17 @@ ${text}
     if (validated.endDateIso) {
       try {
         parseISOString(validated.endDateIso)
-        console.log('      [OpenAI] ✅ endDateIso валидна:', validated.endDateIso)
+        console.log('      [AI] ✅ endDateIso валидна:', validated.endDateIso)
       } catch (e) {
-        console.log('      [OpenAI] ⚠️ endDateIso невалидна, обнуляю:', validated.endDateIso)
+        console.log('      [AI] ⚠️ endDateIso невалидна, обнуляю:', validated.endDateIso)
         validated.endDateIso = null
       }
     }
 
     return validated
   } catch (error) {
-    console.error('      [OpenAI] ❌ Ошибка извлечения полей:', error)
-    console.error('      [OpenAI] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
+    console.error('      [AI] ❌ Ошибка извлечения полей:', error)
+    console.error('      [AI] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
     return {
       title: null,
       startDateIso: null,

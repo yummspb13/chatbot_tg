@@ -47,11 +47,53 @@ function getMonitoringClient(): TelegramClient | null {
 }
 
 /**
- * Получает список каналов из базы данных через API основного приложения
+ * Получает список каналов напрямую из базы данных через Prisma
  * Или использует переменную окружения с JSON списком каналов
  */
 async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: string }>> {
-  // Вариант 1: Получить из основного приложения через API
+  // Вариант 1: Получить напрямую из БД через Prisma (ПРИОРИТЕТ)
+  const databaseUrl = process.env.DATABASE_URL
+  if (databaseUrl) {
+    try {
+      // Динамически импортируем Prisma только если DATABASE_URL есть
+      const { PrismaClient } = await import('@prisma/client')
+      const prisma = new PrismaClient()
+      
+      console.log('   🔍 Получаю каналы напрямую из базы данных...')
+      
+      const channels = await prisma.channel.findMany({
+        where: {
+          isActive: true,
+        },
+        select: {
+          chatId: true,
+          title: true,
+        },
+        orderBy: {
+          title: 'asc',
+        },
+      })
+      
+      await prisma.$disconnect()
+      
+      if (channels.length > 0) {
+        console.log(`   ✅ Получено ${channels.length} каналов из базы данных`)
+        return channels.map(ch => ({
+          chatId: ch.chatId,
+          title: ch.title,
+        }))
+      } else {
+        console.warn('   ⚠️ В базе данных нет активных каналов')
+      }
+    } catch (error: any) {
+      console.warn('   ⚠️ Не удалось получить каналы из БД:', error.message)
+      // Продолжаем к следующим вариантам
+    }
+  } else {
+    console.warn('   ⚠️ DATABASE_URL не установлен, пропускаю прямой доступ к БД')
+  }
+
+  // Вариант 2: Получить из основного приложения через API (fallback)
   const mainAppUrl = process.env.MAIN_APP_URL || process.env.VERCEL_URL || process.env.BOT_WEBHOOK_URL
   const apiKey = process.env.BOT_API_KEY || process.env.WORKER_API_KEY
   
@@ -80,11 +122,9 @@ async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: st
     } catch (error: any) {
       console.warn('   ⚠️ Не удалось получить каналы из основного приложения:', error.message)
     }
-  } else {
-    console.warn('   ⚠️ MAIN_APP_URL или BOT_API_KEY не установлены')
   }
 
-  // Вариант 2: Использовать переменную окружения
+  // Вариант 3: Использовать переменную окружения
   const channelsEnv = process.env.MONITOR_CHANNELS
   if (channelsEnv) {
     try {
@@ -96,9 +136,9 @@ async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: st
     }
   }
 
-  // Вариант 3: Пустой список
+  // Вариант 4: Пустой список
   console.warn('   ⚠️ Каналы для мониторинга не найдены')
-  console.warn('      Установите MONITOR_CHANNELS или настройте MAIN_APP_URL и BOT_API_KEY')
+  console.warn('      Установите DATABASE_URL, MONITOR_CHANNELS или настройте MAIN_APP_URL и BOT_API_KEY')
   return []
 }
 
@@ -107,10 +147,16 @@ async function getChannelsToMonitor(): Promise<Array<{ chatId: string; title: st
  */
 async function sendMessageToBot(message: any, chatId: string, channelTitle: string): Promise<void> {
   // Используем MAIN_APP_URL как основной источник, затем BOT_WEBHOOK_URL, затем VERCEL_URL
-  const botWebhookUrl = process.env.MAIN_APP_URL || process.env.BOT_WEBHOOK_URL || process.env.VERCEL_URL || 'http://localhost:3000'
+  let botWebhookUrl = process.env.MAIN_APP_URL || process.env.BOT_WEBHOOK_URL || process.env.VERCEL_URL || 'http://localhost:3000'
   if (!botWebhookUrl) {
     console.error('❌ BOT_WEBHOOK_URL не установлен, не могу отправить сообщение боту')
     return
+  }
+  
+  // Автоматически добавляем https:// если его нет (но не для localhost)
+  if (!botWebhookUrl.startsWith('http://') && !botWebhookUrl.startsWith('https://')) {
+    botWebhookUrl = `https://${botWebhookUrl}`
+    console.log(`   💡 Добавлен https:// к MAIN_APP_URL: ${botWebhookUrl}`)
   }
   
   // Убираем /api/tg/webhook если есть в URL
@@ -174,13 +220,20 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
     console.log(`   🔄 Отправляю сообщение боту на ${webhookUrl}...`)
     console.log(`   📤 Update payload:`, JSON.stringify(update, null, 2).substring(0, 500))
     
+    // Добавляем timeout для fetch
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 секунд timeout
+    
     const response = await fetch(webhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(update),
+      signal: controller.signal,
     })
+
+    clearTimeout(timeoutId)
 
     const responseText = await response.text()
     console.log(`   📥 Response status: ${response.status} ${response.statusText}`)
@@ -193,7 +246,31 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
       console.error(`   ❌ Response: ${responseText}`)
     }
   } catch (error: any) {
-    console.error(`   ❌ Ошибка отправки боту: ${error.message}`)
+    // Улучшенная обработка ошибок
+    if (error.name === 'AbortError') {
+      console.error(`   ❌ Ошибка отправки боту: Timeout (10s) - сервер не отвечает`)
+      console.error(`   💡 Проверьте, что Next.js сервер запущен на ${webhookUrl}`)
+    } else if (error.code === 'ECONNREFUSED') {
+      console.error(`   ❌ Ошибка отправки боту: Connection refused`)
+      console.error(`   💡 Сервер недоступен. Убедитесь, что Next.js сервер запущен:`)
+      console.error(`      - Для локальной разработки: npm run dev`)
+      console.error(`      - URL: ${webhookUrl}`)
+    } else if (error.code === 'ENOTFOUND') {
+      console.error(`   ❌ Ошибка отправки боту: Host not found`)
+      console.error(`   💡 Не удалось найти хост. Проверьте URL: ${webhookUrl}`)
+    } else {
+      console.error(`   ❌ Ошибка отправки боту: ${error.message}`)
+      console.error(`   ❌ Error code: ${error.code || 'N/A'}`)
+      console.error(`   ❌ Error name: ${error.name || 'N/A'}`)
+      if (error.cause) {
+        console.error(`   ❌ Error cause: ${error.cause}`)
+      }
+      if (error.stack) {
+        console.error(`   ❌ Stack: ${error.stack.substring(0, 300)}`)
+      }
+    }
+    console.error(`   🔍 Webhook URL: ${webhookUrl}`)
+    console.error(`   🔍 Environment: MAIN_APP_URL=${process.env.MAIN_APP_URL || 'not set'}, BOT_WEBHOOK_URL=${process.env.BOT_WEBHOOK_URL || 'not set'}`)
   }
 }
 
@@ -240,17 +317,34 @@ export async function startMonitoring(): Promise<boolean> {
 
     // Подписываемся на обновления новых сообщений
     console.log('   📡 Регистрирую обработчик событий для новых сообщений...')
+    console.log('   📡 Ожидаю события: UpdateNewMessage, UpdateNewChannelMessage')
+    console.log('')
     
     // Обработчик для новых сообщений из каналов
     client.addEventHandler(async (event: any) => {
       const logPrefix = `[${new Date().toISOString()}]`
-      console.log(`${logPrefix} 📥 EVENT: ${event.constructor.name}`)
+      const eventType = event.constructor.name
+      
+      // Логируем ВСЕ события для диагностики
+      console.log(`${logPrefix} 📥 EVENT: ${eventType}`)
       
       // Проверяем, что это событие нового сообщения
-      if (!(event instanceof Api.UpdateNewMessage || event instanceof Api.UpdateNewChannelMessage)) {
-        // Пропускаем другие события
+      const isNewMessage = event instanceof Api.UpdateNewMessage
+      const isNewChannelMessage = event instanceof Api.UpdateNewChannelMessage
+      
+      if (!isNewMessage && !isNewChannelMessage) {
+        // Логируем другие события для диагностики (но не обрабатываем)
+        if (eventType.includes('Message') || eventType.includes('Update') || eventType.includes('Channel')) {
+          console.log(`${logPrefix}   ⚠️ Пропускаю событие типа ${eventType}`)
+          // Для важных событий выводим больше информации
+          if (eventType.includes('Connection') || eventType.includes('State')) {
+            console.log(`${logPrefix}   🔍 Connection/State event:`, JSON.stringify(event).substring(0, 200))
+          }
+        }
         return
       }
+      
+      console.log(`${logPrefix}   ✅ Это событие нового сообщения (${isNewMessage ? 'UpdateNewMessage' : 'UpdateNewChannelMessage'})`)
       
       try {
         // Получаем сообщение из события

@@ -7,6 +7,7 @@ import { getBot } from './bot'
 import { handleStart, handleStop, handleStatus, handleAuto, handleManual, handleSetThreshold, handleAddCity, handleAddChannel, handleListChannels, handleRemoveChannel } from './commands'
 import { handleChannelMessage } from './messageHandler'
 import { handleCallback } from './callbackHandler'
+import { memoryLogger } from '@/lib/logging/memory-logger'
 
 /**
  * Регистрирует все обработчики для бота
@@ -47,13 +48,47 @@ export function registerWebhookHandlers() {
   // Обработка пересланных сообщений из каналов (для ручного пересыла)
   // И обработка сообщений от worker'а (которые приходят как message с chat.type === 'channel')
   bot.on('message', async (ctx) => {
+    const logPrefix = `[${new Date().toISOString()}]`
+    
     // Обработка сообщений из каналов (от worker'а)
     // Worker отправляет сообщения как message с chat.type === 'channel'
     if (ctx.message && ctx.chat && (ctx.chat as any).type === 'channel') {
-      console.log('📨 [HANDLER] Получено сообщение из канала (от worker)!')
-      console.log('   Chat ID:', ctx.chat.id)
-      console.log('   Chat Title:', (ctx.chat as any).title)
-      await handleChannelMessage(ctx as any)
+      const chatId = ctx.chat.id
+      const chatTitle = (ctx.chat as any).title || 'не указано'
+      const messageId = ctx.message.message_id
+      const textLength = (ctx.message.text || ctx.message.caption || '').length
+      const hasForward = !!(ctx.message as any).forward_from_chat
+      
+      console.log(`${logPrefix} 📨 [HANDLER] Получено сообщение из канала (от worker)!`)
+      console.log(`${logPrefix}    Chat ID: ${chatId}`)
+      console.log(`${logPrefix}    Chat Title: ${chatTitle}`)
+      console.log(`${logPrefix}    Message ID: ${messageId}`)
+      console.log(`${logPrefix}    Text length: ${textLength}`)
+      console.log(`${logPrefix}    Has forward_from_chat: ${hasForward}`)
+      
+      memoryLogger.info(
+        `Получено сообщение из канала (от worker)`,
+        { chatId, chatTitle, messageId, textLength, hasForward },
+        'handler'
+      )
+      
+      try {
+        await handleChannelMessage(ctx as any)
+        console.log(`${logPrefix}    ✅ handleChannelMessage завершен успешно`)
+        memoryLogger.success(
+          `handleChannelMessage завершен успешно`,
+          { chatId, messageId },
+          'handler'
+        )
+      } catch (error: any) {
+        console.error(`${logPrefix}    ❌ Ошибка в handleChannelMessage:`, error.message)
+        console.error(`${logPrefix}    Stack:`, error.stack)
+        memoryLogger.error(
+          `Ошибка в handleChannelMessage: ${error.message}`,
+          { chatId, messageId, error: error.message, stack: error.stack },
+          'handler'
+        )
+      }
       return
     }
     

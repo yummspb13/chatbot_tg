@@ -8,24 +8,38 @@ import { saveDecision } from '@/lib/learning/decisionService'
  * Обрабатывает callback_query (нажатия на кнопки)
  */
 export async function handleCallback(ctx: Context) {
+  console.log('[handleCallback] Начало обработки callback_query')
+  console.log('[handleCallback] ctx.callbackQuery exists:', 'callbackQuery' in ctx)
+  
   if (!('callbackQuery' in ctx) || !ctx.callbackQuery) {
+    console.log('[handleCallback] ❌ callbackQuery отсутствует в ctx')
     return
   }
 
   const callback = ctx.callbackQuery
+  console.log('[handleCallback] callback type:', typeof callback)
+  console.log('[handleCallback] callback keys:', callback && typeof callback === 'object' ? Object.keys(callback) : 'not an object')
+  
   // Проверяем, что callback - это объект и имеет свойство data
   const data = callback && typeof callback === 'object' && 'data' in callback 
     ? (callback as any).data 
     : null
 
+  console.log('[handleCallback] callback data:', data)
+
   if (!data) {
+    console.log('[handleCallback] ❌ callback data отсутствует')
     return
   }
 
+  console.log('[handleCallback] Проверка админа...')
   // Проверяем, что это админ
   if (!isAdmin(ctx)) {
+    console.log('[handleCallback] ❌ Доступ запрещен (не админ)')
     return ctx.answerCbQuery('Доступ запрещен. Только администратор может использовать кнопки.')
   }
+  
+  console.log('[handleCallback] ✅ Админ подтвержден, обрабатываю callback...')
 
   try {
     if (data.startsWith('approve:')) {
@@ -45,17 +59,27 @@ export async function handleCallback(ctx: Context) {
  * Обработка кнопки "Принять"
  */
 async function handleApproveCallback(ctx: Context, draftId: number) {
+  console.log(`[handleApproveCallback] Начало обработки для draftId: ${draftId}`)
+  
   const draft = await prisma.draftEvent.findUnique({
     where: { id: draftId },
   })
 
   if (!draft) {
+    console.log(`[handleApproveCallback] Черновик ${draftId} не найден`)
     return ctx.answerCbQuery('Черновик не найден.')
   }
 
-  if (draft.status !== 'NEW') {
+  console.log(`[handleApproveCallback] Черновик ${draftId} найден, статус: "${draft.status}" (тип: ${typeof draft.status})`)
+  console.log(`[handleApproveCallback] Сравнение: PENDING === "${draft.status}": ${draft.status === 'PENDING'}, NEW === "${draft.status}": ${draft.status === 'NEW'}`)
+
+  // Проверяем статус - может быть PENDING (ожидает одобрения) или NEW (уже одобрен, но не обработан)
+  if (draft.status !== 'PENDING' && draft.status !== 'NEW') {
+    console.log(`[handleApproveCallback] ❌ Черновик ${draftId} уже обработан (статус: ${draft.status})`)
     return ctx.answerCbQuery('Этот черновик уже обработан.')
   }
+
+  console.log(`[handleApproveCallback] ✅ Черновик ${draftId} может быть обработан, продолжаю...`)
 
   // Получаем предсказание агента из последнего LearningDecision для этого сообщения
   const lastDecision = await prisma.learningDecision.findFirst({
@@ -77,6 +101,15 @@ async function handleApproveCallback(ctx: Context, draftId: number) {
   const agentReasoning = lastDecision?.agentReasoning || 'Решение принято пользователем'
 
   try {
+    // Если статус PENDING, меняем на NEW перед обработкой
+    if (draft.status === 'PENDING') {
+      await prisma.draftEvent.update({
+        where: { id: draftId },
+        data: { status: 'NEW' },
+      })
+      console.log(`✅ Draft ${draftId} status changed from PENDING to NEW`)
+    }
+    
     // Отправляем в Афишу
     const result = await handleApprove(draftId)
 
@@ -155,19 +188,29 @@ async function handleApproveCallback(ctx: Context, draftId: number) {
  * Обработка кнопки "Отказать"
  */
 async function handleRejectCallback(ctx: Context, draftId: number) {
+  console.log(`[handleRejectCallback] Начало обработки для draftId: ${draftId}`)
+  
   const draft = await prisma.draftEvent.findUnique({
     where: { id: draftId },
   })
 
   if (!draft) {
+    console.log(`[handleRejectCallback] Черновик ${draftId} не найден`)
     return ctx.answerCbQuery('Черновик не найден.')
   }
 
-  if (draft.status !== 'NEW') {
+  console.log(`[handleRejectCallback] Черновик ${draftId} найден, статус: "${draft.status}" (тип: ${typeof draft.status})`)
+  console.log(`[handleRejectCallback] Сравнение: PENDING === "${draft.status}": ${draft.status === 'PENDING'}, NEW === "${draft.status}": ${draft.status === 'NEW'}`)
+
+  // Проверяем статус - может быть PENDING (ожидает одобрения) или NEW (уже одобрен, но не обработан)
+  if (draft.status !== 'PENDING' && draft.status !== 'NEW') {
+    console.log(`[handleRejectCallback] ❌ Черновик ${draftId} уже обработан (статус: ${draft.status})`)
     return ctx.answerCbQuery('Этот черновик уже обработан.')
   }
 
-  // Обновляем статус
+  console.log(`[handleRejectCallback] ✅ Черновик ${draftId} может быть отклонен, продолжаю...`)
+
+  // Обновляем статус на REJECTED
   await prisma.draftEvent.update({
     where: { id: draftId },
     data: { status: 'REJECTED' },

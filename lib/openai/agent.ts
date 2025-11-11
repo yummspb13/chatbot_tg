@@ -1,11 +1,12 @@
-import OpenAI from 'openai'
 import { z } from 'zod'
 import { prisma } from '@/lib/db/prisma'
 import { UserDecision } from '@/lib/learning/decisionService'
+import { getAIClient } from '@/lib/ai/provider'
+import { mockPredictDecision } from '@/lib/ai/mock-provider'
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
+// Используем универсальный провайдер (OpenAI, DeepSeek или Mock)
+const aiClient = getAIClient()
+const { client: openai, getModel, provider } = aiClient
 
 const AgentPredictionSchema = z.object({
   decision: z.enum(['APPROVED', 'REJECTED']),
@@ -57,10 +58,23 @@ export async function predictDecision(
   originalText: string,
   extractedFields: Record<string, any>
 ): Promise<AgentPrediction> {
-  console.log('      [OpenAI] Предсказание решения: отправляю запрос...')
-  console.log('      [OpenAI] Текст (первые 200 символов):', originalText.substring(0, 200))
-  console.log('      [OpenAI] Извлеченные поля:', JSON.stringify(extractedFields, null, 2))
-  const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
+  console.log('      [AI] Предсказание решения: отправляю запрос...')
+  console.log('      [AI] Текст (первые 200 символов):', originalText.substring(0, 200))
+  console.log('      [AI] Извлеченные поля:', JSON.stringify(extractedFields, null, 2))
+  
+  // Если mock провайдер - используем локальную логику
+  if (provider === 'mock') {
+    console.log('      [AI] Используется MOCK провайдер (локальное тестирование)')
+    const prediction = mockPredictDecision(originalText, extractedFields)
+    console.log('      [AI] ✅ MOCK предсказание:', prediction.decision, 'confidence:', prediction.confidence)
+    return {
+      decision: prediction.decision as UserDecision,
+      confidence: prediction.confidence,
+      reasoning: prediction.reasoning,
+    }
+  }
+  
+  const model = getModel('gpt-4o-mini')
 
   // Получаем историю для контекста
   const history = await getLearningHistory(30)
@@ -99,7 +113,7 @@ ${history}
 Верни только валидный JSON, без дополнительного текста.`
 
   try {
-    console.log('      [OpenAI] Запрос к API для предсказания...')
+    console.log('      [AI] Запрос к API для предсказания...')
     const response = await openai.chat.completions.create({
       model,
       messages: [
@@ -115,19 +129,19 @@ ${history}
       temperature: 0.3,
       response_format: { type: 'json_object' },
     })
-    console.log('      [OpenAI] Ответ получен, статус:', response.choices[0]?.finish_reason)
-    console.log('      [OpenAI] Использовано токенов:', response.usage?.total_tokens)
+    console.log('      [AI] Ответ получен, статус:', response.choices[0]?.finish_reason)
+    console.log('      [AI] Использовано токенов:', response.usage?.total_tokens)
 
     const content = response.choices[0]?.message?.content
     if (!content) {
-      console.error('      [OpenAI] ❌ Пустой ответ от OpenAI')
-      throw new Error('Empty response from OpenAI')
+      console.error('      [AI] ❌ Пустой ответ от AI провайдера')
+      throw new Error('Empty response from AI provider')
     }
-    console.log('      [OpenAI] Содержимое ответа:', content.substring(0, 300))
+    console.log('      [AI] Содержимое ответа:', content.substring(0, 300))
 
     const parsed = JSON.parse(content)
     const validated = AgentPredictionSchema.parse(parsed)
-    console.log('      [OpenAI] ✅ Предсказание успешно:', validated.decision, 'confidence:', validated.confidence)
+    console.log('      [AI] ✅ Предсказание успешно:', validated.decision, 'confidence:', validated.confidence)
 
     return {
       decision: validated.decision as UserDecision,
@@ -135,8 +149,8 @@ ${history}
       reasoning: validated.reasoning,
     }
   } catch (error) {
-    console.error('      [OpenAI] ❌ Ошибка предсказания:', error)
-    console.error('      [OpenAI] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
+    console.error('      [AI] ❌ Ошибка предсказания:', error)
+    console.error('      [AI] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
     // По умолчанию отклоняем, если не можем предсказать
     return {
       decision: 'REJECTED',

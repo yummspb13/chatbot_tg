@@ -23,12 +23,20 @@
     "cities:list": "tsx scripts/list-cities.ts",
     "debug:channels": "tsx scripts/debug-channel.ts",
     "check:setup": "tsx scripts/check-channel-setup.ts",
+    "check:production:env": "tsx scripts/check-production-env.ts",
+    "check:worker:status": "tsx scripts/check-worker-status.ts",
+    "check:channels:db": "tsx scripts/check-channels-in-db.ts",
     "diagnose": "tsx scripts/diagnose-channel-issue.ts",
     "client:setup": "tsx scripts/setup-client-api.ts",
     "worker:dev": "cd worker && npm run dev",
     "worker:start": "cd worker && npm start",
     "worker:install": "cd worker && npm install",
-    "admin:password-hash": "tsx scripts/generate-password-hash.ts"
+    "worker:channels": "tsx scripts/generate-monitor-channels.ts",
+    "admin:password-hash": "tsx scripts/generate-password-hash.ts",
+    "ai:switch": "tsx scripts/switch-ai-provider.ts",
+    "ai:status": "tsx scripts/switch-ai-provider.ts",
+    "group:get-id": "tsx scripts/get-group-id.ts",
+    "send:pending-approvals": "tsx scripts/send-pending-approvals.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.0",
