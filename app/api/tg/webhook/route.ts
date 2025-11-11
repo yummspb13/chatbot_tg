@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
 
     // Используем handleUpdate для обработки обновления
     // Telegraf автоматически вызовет нужные обработчики
+    console.log(`${logPrefix} 🤖 Calling bot.handleUpdate...`)
     await bot.handleUpdate(update)
     
     const duration = Date.now() - startTime
