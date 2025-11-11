@@ -39,30 +39,34 @@ export function isAdmin(ctx: Context): boolean {
     return false
   }
 
-  const userId = ctx.from?.id?.toString()
-  const chatId = ctx.chat?.id?.toString()
-  const callbackUserId = ctx.callbackQuery?.from?.id?.toString()
+  // Приводим все к строкам для сравнения
+  const adminChatIdStr = adminChatId.toString().trim()
+  const userId = ctx.from?.id?.toString()?.trim()
+  const chatId = ctx.chat?.id?.toString()?.trim()
+  const callbackUserId = ctx.callbackQuery?.from?.id?.toString()?.trim()
 
   // Детальное логирование для диагностики
   console.log(`🔐 [isAdmin] Проверка доступа:`)
-  console.log(`   User ID: ${userId} (type: ${typeof userId})`)
-  console.log(`   Chat ID: ${chatId} (type: ${typeof chatId})`)
-  console.log(`   Callback User ID: ${callbackUserId} (type: ${typeof callbackUserId})`)
-  console.log(`   Expected Admin Chat ID: ${adminChatId} (type: ${typeof adminChatId})`)
-  console.log(`   Сравнение userId === adminChatId: ${userId === adminChatId}`)
-  console.log(`   Сравнение chatId === adminChatId: ${chatId === adminChatId}`)
-  console.log(`   Сравнение callbackUserId === adminChatId: ${callbackUserId === adminChatId}`)
-
+  console.log(`   User ID: "${userId}" (type: ${typeof userId})`)
+  console.log(`   Chat ID: "${chatId}" (type: ${typeof chatId})`)
+  console.log(`   Callback User ID: "${callbackUserId}" (type: ${typeof callbackUserId})`)
+  console.log(`   Expected Admin Chat ID: "${adminChatIdStr}" (type: ${typeof adminChatIdStr})`)
+  
   // Проверяем по user ID (для личных сообщений)
   // Проверяем по chat ID (для групповых чатов)
   // Проверяем callback_query user ID
-  const isAdminUser = userId === adminChatId || 
-                      chatId === adminChatId || 
-                      callbackUserId === adminChatId
+  // Используем == вместо === для более гибкого сравнения (но все уже строки)
+  const isAdminUser = (userId && userId === adminChatIdStr) || 
+                      (chatId && chatId === adminChatIdStr) || 
+                      (callbackUserId && callbackUserId === adminChatIdStr)
+
+  console.log(`   Сравнение userId === adminChatIdStr: ${userId === adminChatIdStr}`)
+  console.log(`   Сравнение chatId === adminChatIdStr: ${chatId === adminChatIdStr}`)
+  console.log(`   Сравнение callbackUserId === adminChatIdStr: ${callbackUserId === adminChatIdStr}`)
+  console.log(`   Результат isAdminUser: ${isAdminUser}`)
 
   if (!isAdminUser) {
-    console.log(`❌ [isAdmin] Access denied. User ID: ${userId}, Chat ID: ${chatId}, Expected: ${adminChatId}`)
-    console.log(`❌ [isAdmin] Все сравнения вернули false`)
+    console.log(`❌ [isAdmin] Access denied. User ID: "${userId}", Chat ID: "${chatId}", Expected: "${adminChatIdStr}"`)
   } else {
     console.log(`✅ [isAdmin] Access granted`)
   }
