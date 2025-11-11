@@ -291,8 +291,19 @@ export async function startMonitoring(): Promise<boolean> {
   try {
     // Подключаемся к Telegram
     if (!client.connected) {
+      console.log('   🔌 Подключаюсь к Telegram...')
       await client.connect()
       console.log('✅ Подключен к Telegram через Client API')
+    } else {
+      console.log('   ✅ Уже подключен к Telegram')
+    }
+    
+    // Проверяем, что соединение действительно работает
+    try {
+      await client.getMe()
+      console.log('   ✅ Соединение с Telegram подтверждено (getMe успешен)')
+    } catch (error: any) {
+      console.warn('   ⚠️ Предупреждение: getMe не удался, но продолжаю:', error.message)
     }
 
     // Получаем список каналов для мониторинга
@@ -333,7 +344,8 @@ export async function startMonitoring(): Promise<boolean> {
     }
     
     // Обработчик для новых сообщений из каналов
-    client.addEventHandler(async (event: any) => {
+    // Используем фильтр для более эффективной обработки
+    const eventHandler = async (event: any) => {
       const logPrefix = `[${new Date().toISOString()}]`
       const eventType = event.constructor.name
       
@@ -435,6 +447,25 @@ export async function startMonitoring(): Promise<boolean> {
         if ((event as any).message) {
           console.error(`${logPrefix}   Message object:`, JSON.stringify((event as any).message, null, 2).substring(0, 500))
         }
+      }
+    }
+    
+    // Регистрируем обработчик с фильтром для новых сообщений из каналов
+    client.addEventHandler(eventHandler, {
+      // Фильтруем только события новых сообщений
+      func: (event: any) => {
+        return event instanceof Api.UpdateNewMessage || event instanceof Api.UpdateNewChannelMessage
+      }
+    })
+    
+    // Также регистрируем обработчик для всех событий (для диагностики)
+    client.addEventHandler(async (event: any) => {
+      const logPrefix = `[${new Date().toISOString()}]`
+      const eventType = event.constructor.name
+      
+      // Логируем только важные события для диагностики
+      if (eventType.includes('Connection') || eventType.includes('State')) {
+        console.log(`${logPrefix} 📡 Connection/State: ${eventType}`)
       }
     })
 
