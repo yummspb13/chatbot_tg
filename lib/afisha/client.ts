@@ -31,6 +31,7 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
   console.log(`[sendDraft] Отправка черновика в Афишу: ${draft.title}`)
   console.log(`[sendDraft] API URL: ${apiUrl}`)
   console.log(`[sendDraft] BOT_API_KEY установлен: ${!!apiKey}`)
+  console.log(`[sendDraft] AFISHA_DRAFT_URL из env: ${process.env.AFISHA_DRAFT_URL || 'не установлен (используется дефолт)'}`)
 
   if (!apiKey) {
     const error = 'BOT_API_KEY is not set'
