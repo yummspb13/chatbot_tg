@@ -226,12 +226,20 @@ export async function startMonitoring(): Promise<boolean> {
             const channelTitle = channelsMap.get(chatId) || 'Unknown'
             console.log(`📨 Получено сообщение из канала ${channelTitle} (${chatId})`)
 
+            // Логируем структуру message для отладки
+            console.log(`   🔍 Debug: message.date type: ${typeof event.message.date}, value: ${event.message.date}`)
+            if (event.message.date) {
+              console.log(`   🔍 Debug: message.date instanceof Date: ${event.message.date instanceof Date}`)
+            }
+
             // Отправляем сообщение боту через webhook
             await sendMessageToBot(event.message, chatId, channelTitle)
           }
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Ошибка обработки сообщения:', error)
+        console.error('   Stack:', error.stack)
+        console.error('   Message object:', JSON.stringify(event.message, null, 2).substring(0, 500))
       }
     })
 
