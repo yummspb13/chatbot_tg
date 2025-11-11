@@ -91,6 +91,12 @@ export async function POST(req: NextRequest) {
       console.log(`${logPrefix}    chatId=${chatId}`)
       console.log(`${logPrefix}    data="${data}"`)
       console.log(`${logPrefix}    messageId=${callback.message?.message_id || 'unknown'}`)
+      
+      memoryLogger.info(
+        `CALLBACK_QUERY received`,
+        { userId, chatId, data, messageId: callback.message?.message_id },
+        'webhook'
+      )
     }
 
     const bot = getBot()
