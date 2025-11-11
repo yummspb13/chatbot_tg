@@ -227,39 +227,65 @@ export async function startMonitoring(): Promise<boolean> {
     console.log(`   ✅ Channels map создан, размер: ${channelsMap.size}`)
 
     // Подписываемся на обновления
+    console.log('   📡 Регистрирую обработчик событий...')
     client.addEventHandler(async (event: any) => {
+      const logPrefix = `[${new Date().toISOString()}]`
+      console.log(`${logPrefix} 📥 EVENT: ${event.constructor.name}`)
+      
       try {
         // Проверяем, что это сообщение из канала
-        if (event.message && event.message.peerId) {
-          const peerId = event.message.peerId
+        if (event.message) {
+          console.log(`${logPrefix}   ✅ Event has message`)
+          console.log(`${logPrefix}   Message ID: ${event.message.id}`)
+          console.log(`${logPrefix}   Message peerId: ${event.message.peerId ? event.message.peerId.constructor.name : 'null'}`)
+          
+          if (event.message.peerId) {
+            const peerId = event.message.peerId
 
-          // Преобразуем peerId в chatId
-          let chatId: string | null = null
+            // Преобразуем peerId в chatId
+            let chatId: string | null = null
 
-          if (peerId instanceof Api.PeerChannel) {
-            chatId = `-100${peerId.channelId.toString()}`
-          }
-
-          if (chatId && channelsMap.has(chatId)) {
-            const channelTitle = channelsMap.get(chatId) || 'Unknown'
-            console.log(`📨 Получено сообщение из канала ${channelTitle} (${chatId})`)
-
-            // Логируем структуру message для отладки
-            console.log(`   🔍 Debug: message.date type: ${typeof event.message.date}, value: ${event.message.date}`)
-            if (event.message.date) {
-              console.log(`   🔍 Debug: message.date instanceof Date: ${event.message.date instanceof Date}`)
+            if (peerId instanceof Api.PeerChannel) {
+              chatId = `-100${peerId.channelId.toString()}`
+              console.log(`${logPrefix}   PeerChannel ID: ${peerId.channelId}, chatId: ${chatId}`)
+            } else {
+              console.log(`${logPrefix}   ⚠️ peerId is not PeerChannel: ${peerId.constructor.name}`)
             }
 
-            // Отправляем сообщение боту через webhook
-            await sendMessageToBot(event.message, chatId, channelTitle)
+            if (chatId) {
+              console.log(`${logPrefix}   Checking if chatId ${chatId} is in channelsMap...`)
+              console.log(`${logPrefix}   Channels in map: ${Array.from(channelsMap.keys()).join(', ')}`)
+              
+              if (channelsMap.has(chatId)) {
+                const channelTitle = channelsMap.get(chatId) || 'Unknown'
+                console.log(`${logPrefix} 📨 Получено сообщение из канала ${channelTitle} (${chatId})`)
+
+                // Логируем структуру message для отладки
+                console.log(`${logPrefix}   🔍 Debug: message.date type: ${typeof event.message.date}, value: ${event.message.date}`)
+                if (event.message.date) {
+                  console.log(`${logPrefix}   🔍 Debug: message.date instanceof Date: ${event.message.date instanceof Date}`)
+                }
+
+                // Отправляем сообщение боту через webhook
+                await sendMessageToBot(event.message, chatId, channelTitle)
+              } else {
+                console.log(`${logPrefix}   ⚠️ ChatId ${chatId} не найден в списке мониторинга`)
+              }
+            }
+          } else {
+            console.log(`${logPrefix}   ⚠️ Message has no peerId`)
           }
+        } else {
+          console.log(`${logPrefix}   ⚠️ Event has no message property`)
         }
       } catch (error: any) {
-        console.error('❌ Ошибка обработки сообщения:', error)
-        console.error('   Stack:', error.stack)
-        console.error('   Message object:', JSON.stringify(event.message, null, 2).substring(0, 500))
+        console.error(`${logPrefix} ❌ Ошибка обработки сообщения:`, error)
+        console.error(`${logPrefix}   Stack:`, error.stack)
+        if (event.message) {
+          console.error(`${logPrefix}   Message object:`, JSON.stringify(event.message, null, 2).substring(0, 500))
+        }
       }
-    })
+    }, { chats: [] }) // Подписываемся на все чаты
 
     isMonitoring = true
     console.log('✅ Мониторинг каналов запущен')
