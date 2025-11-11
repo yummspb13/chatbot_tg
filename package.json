@@ -13,6 +13,7 @@
     "db:studio": "prisma studio",
     "webhook:set": "tsx scripts/setup-webhook.ts",
     "webhook:set:prod": "tsx scripts/setup-production-webhook.ts",
+    "webhook:check": "tsx scripts/check-webhook.ts",
     "webhook:info": "tsx scripts/get-webhook-info.ts",
     "webhook:delete": "tsx scripts/delete-webhook.ts",
     "tunnel:start": "bash scripts/start-tunnel.sh",
