@@ -104,5 +104,59 @@ router.get('/status', async (req, res) => {
   })
 })
 
+/**
+ * POST /runner/wake
+ * Пробуждает воркер (проверяет статус и перезапускает мониторинг если нужно)
+ * Используется для пробуждения Worker после idle timeout на Render.com
+ */
+router.post('/wake', async (req, res) => {
+  console.log('🔔 Запрос на пробуждение Worker...')
+  
+  const monitoringStatus = getMonitoringStatus()
+  
+  // Если Worker не запущен или мониторинг не работает, запускаем заново
+  if (!isRunning || !monitoringStatus.isMonitoring || !monitoringStatus.isConnected) {
+    console.log('   ⚠️ Worker не работает, запускаю заново...')
+    
+    // Останавливаем старый мониторинг если был
+    if (isRunning) {
+      await stopMonitoring()
+    }
+    
+    // Запускаем заново
+    isRunning = true
+    const monitoringStarted = await startMonitoring()
+    
+    if (monitoringStarted) {
+      console.log('   ✅ Worker пробужден и мониторинг запущен')
+      return res.json({
+        success: true,
+        message: 'Worker пробужден и мониторинг запущен',
+        wasSleeping: true,
+        isRunning: true,
+        monitoring: monitoringStarted
+      })
+    } else {
+      console.warn('   ⚠️ Не удалось запустить мониторинг после пробуждения')
+      return res.json({
+        success: false,
+        message: 'Worker пробужден, но не удалось запустить мониторинг',
+        wasSleeping: true,
+        isRunning: true,
+        monitoring: false
+      })
+    }
+  } else {
+    console.log('   ✅ Worker уже работает, пробуждение не требуется')
+    return res.json({
+      success: true,
+      message: 'Worker уже работает',
+      wasSleeping: false,
+      isRunning: true,
+      monitoring: monitoringStatus
+    })
+  }
+})
+
 export { router as runnerRouter }
 
