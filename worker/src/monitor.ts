@@ -196,6 +196,51 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
     messageDate = Math.floor(Date.now() / 1000)
   }
 
+  // Извлекаем информацию о фотографиях из сообщения
+  let photo: any[] | undefined = undefined
+  let document: any | undefined = undefined
+  
+  if (message.media) {
+    const media = message.media as any
+    // Проверяем, есть ли фото
+    if (media.photo) {
+      // Telegram Client API возвращает Photo объект, нужно преобразовать в формат Bot API
+      // Photo содержит sizes - массив размеров
+      try {
+        const photoSizes = (media.photo as any).sizes || []
+        if (photoSizes.length > 0) {
+          // Преобразуем в формат Bot API (массив объектов с file_id)
+          photo = photoSizes.map((size: any) => ({
+            file_id: size.location?.volumeId?.toString() + '_' + size.location?.localId?.toString() || '',
+            file_unique_id: size.location?.volumeId?.toString() + '_' + size.location?.localId?.toString() || '',
+            width: size.w || 0,
+            height: size.h || 0,
+            file_size: size.s || 0,
+          }))
+          console.log(`   🖼 Найдено фото в сообщении: ${photo.length} размеров`)
+        }
+      } catch (error: any) {
+        console.warn(`   ⚠️ Ошибка извлечения фото: ${error.message}`)
+      }
+    }
+    
+    // Проверяем, есть ли document (может быть изображением)
+    if (media.document) {
+      const doc = media.document as any
+      const mimeType = doc.mimeType || ''
+      if (mimeType.startsWith('image/')) {
+        document = {
+          file_id: doc.id?.toString() || '',
+          file_unique_id: doc.id?.toString() || '',
+          file_name: doc.attributes?.find((attr: any) => attr.fileName)?.fileName || '',
+          mime_type: mimeType,
+          file_size: doc.size || 0,
+        }
+        console.log(`   🖼 Найден document-изображение: ${mimeType}`)
+      }
+    }
+  }
+
   const update = {
     update_id: Date.now(),
     message: {
@@ -217,6 +262,8 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
       },
       text: message.message || message.text || '',
       caption: message.message || message.text || (message.media && (message.media as any).caption) || '',
+      ...(photo && photo.length > 0 ? { photo } : {}),
+      ...(document ? { document } : {}),
     },
   }
 
