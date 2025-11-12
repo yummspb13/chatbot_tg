@@ -219,7 +219,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
           // Для Bot API нужно использовать специальный формат
           // Пока передаем информацию о размерах, но file_id будет получен через Bot API
           // Используем временный идентификатор на основе location
-          photo = photoSizes.map((size: any, index: number) => {
+          const photoArray = photoSizes.map((size: any, index: number) => {
             const location = size.location
             // Создаем временный идентификатор (будет заменен на реальный file_id через Bot API)
             const tempId = location 
@@ -236,6 +236,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
               _clientApiLocation: location,
             }
           })
+          photo = photoArray
           console.log(`   🖼 Создано ${photo.length} объектов фото (временные file_id)`)
         }
       } catch (error: any) {
