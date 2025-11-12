@@ -237,7 +237,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
             }
           })
           photo = photoArray
-          console.log(`   🖼 Создано ${photo.length} объектов фото (временные file_id)`)
+          console.log(`   🖼 Создано ${photoArray.length} объектов фото (временные file_id)`)
         }
       } catch (error: any) {
         console.warn(`   ⚠️ Ошибка извлечения фото: ${error.message}`)
