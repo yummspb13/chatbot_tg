@@ -419,8 +419,24 @@ export async function startMonitoring(): Promise<boolean> {
     // Подключаемся к Telegram
     if (!client.connected) {
       console.log('   🔌 Подключаюсь к Telegram...')
-      await client.connect()
-      console.log('✅ Подключен к Telegram через Client API')
+      try {
+        await client.connect()
+        console.log('✅ Подключен к Telegram через Client API')
+      } catch (error: any) {
+        if (error.errorMessage?.includes('AUTH_KEY_DUPLICATED') || 
+            error.message?.includes('AUTH_KEY_DUPLICATED') ||
+            error.errorMessage?.includes('406')) {
+          console.error('   ❌ ОШИБКА: AUTH_KEY_DUPLICATED')
+          console.error('   ⚠️ Сессия используется одновременно в нескольких местах!')
+          console.error('   💡 Решения:')
+          console.error('      1. Остановите локальный Worker (если запущен)')
+          console.error('      2. Проверьте, не запущено ли несколько инстансов на Render.com')
+          console.error('      3. Создайте новую сессию через QR-код')
+          console.error('   📖 Подробнее: см. FIX_AUTH_KEY_DUPLICATED.md')
+          throw error
+        }
+        throw error
+      }
     } else {
       console.log('   ✅ Уже подключен к Telegram')
     }
