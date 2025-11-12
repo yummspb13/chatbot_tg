@@ -197,30 +197,50 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
   }
 
   // Извлекаем информацию о фотографиях из сообщения
+  // ВАЖНО: Telegram Client API и Bot API используют разные форматы file_id
+  // Мы передаем информацию о наличии фото, но file_id нужно будет получить через Bot API
   let photo: any[] | undefined = undefined
   let document: any | undefined = undefined
   
   if (message.media) {
     const media = message.media as any
+    console.log(`   🔍 Проверяю медиа в сообщении...`)
+    console.log(`   🔍 Media type: ${media.constructor?.name || typeof media}`)
+    
     // Проверяем, есть ли фото
     if (media.photo) {
-      // Telegram Client API возвращает Photo объект, нужно преобразовать в формат Bot API
-      // Photo содержит sizes - массив размеров
       try {
-        const photoSizes = (media.photo as any).sizes || []
+        const photoObj = media.photo as any
+        // Telegram Client API Photo содержит sizes - массив размеров
+        const photoSizes = photoObj.sizes || []
+        console.log(`   🖼 Найдено фото: ${photoSizes.length} размеров`)
+        
         if (photoSizes.length > 0) {
-          // Преобразуем в формат Bot API (массив объектов с file_id)
-          photo = photoSizes.map((size: any) => ({
-            file_id: size.location?.volumeId?.toString() + '_' + size.location?.localId?.toString() || '',
-            file_unique_id: size.location?.volumeId?.toString() + '_' + size.location?.localId?.toString() || '',
-            width: size.w || 0,
-            height: size.h || 0,
-            file_size: size.s || 0,
-          }))
-          console.log(`   🖼 Найдено фото в сообщении: ${photo.length} размеров`)
+          // Для Bot API нужно использовать специальный формат
+          // Пока передаем информацию о размерах, но file_id будет получен через Bot API
+          // Используем временный идентификатор на основе location
+          photo = photoSizes.map((size: any, index: number) => {
+            const location = size.location
+            // Создаем временный идентификатор (будет заменен на реальный file_id через Bot API)
+            const tempId = location 
+              ? `${location.volumeId}_${location.localId}_${index}` 
+              : `temp_${Date.now()}_${index}`
+            
+            return {
+              file_id: tempId, // Временный ID, будет заменен
+              file_unique_id: tempId,
+              width: size.w || 0,
+              height: size.h || 0,
+              file_size: size.s || 0,
+              // Сохраняем оригинальную информацию для получения реального file_id
+              _clientApiLocation: location,
+            }
+          })
+          console.log(`   🖼 Создано ${photo.length} объектов фото (временные file_id)`)
         }
       } catch (error: any) {
         console.warn(`   ⚠️ Ошибка извлечения фото: ${error.message}`)
+        console.warn(`   ⚠️ Stack: ${error.stack?.substring(0, 200)}`)
       }
     }
     
@@ -228,17 +248,23 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
     if (media.document) {
       const doc = media.document as any
       const mimeType = doc.mimeType || ''
+      console.log(`   🔍 Найден document: ${mimeType}`)
+      
       if (mimeType.startsWith('image/')) {
         document = {
-          file_id: doc.id?.toString() || '',
-          file_unique_id: doc.id?.toString() || '',
+          file_id: doc.id?.toString() || `doc_${Date.now()}`, // Временный ID
+          file_unique_id: doc.id?.toString() || `doc_${Date.now()}`,
           file_name: doc.attributes?.find((attr: any) => attr.fileName)?.fileName || '',
           mime_type: mimeType,
           file_size: doc.size || 0,
+          // Сохраняем оригинальную информацию
+          _clientApiDocument: doc,
         }
         console.log(`   🖼 Найден document-изображение: ${mimeType}`)
       }
     }
+  } else {
+    console.log(`   🔍 Медиа в сообщении не найдено`)
   }
 
   const update = {
