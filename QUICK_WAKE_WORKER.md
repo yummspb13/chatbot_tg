@@ -6,15 +6,16 @@
 
 ## Решение 1: Пробуждение через Worker напрямую (РАБОТАЕТ СЕЙЧАС)
 
-Пока endpoint `/api/worker/wake` не задеплоен, используйте прямой вызов Worker:
+⚠️ **ВАЖНО:** Endpoint `/runner/wake` работает только через **POST**, а не GET!
 
+Используйте curl:
 ```bash
 curl -X POST https://chatbot-tg.onrender.com/runner/wake
 ```
 
-Или через браузер откройте:
+❌ **НЕ работает в браузере** (браузер делает GET запрос):
 ```
-https://chatbot-tg.onrender.com/runner/wake
+https://chatbot-tg.onrender.com/runner/wake  ← Это НЕ сработает!
 ```
 
 ## Решение 2: Пробуждение через Vercel (после деплоя)
@@ -36,10 +37,12 @@ https://chatbot-tg.vercel.app/api/worker/wake
 
 1. Зарегистрируйтесь на [cron-job.org](https://cron-job.org) (бесплатно)
 2. Создайте новую задачу:
-   - **URL**: `https://chatbot-tg.onrender.com/runner/wake` (прямой вызов Worker)
-   - **Метод**: POST
+   - **URL**: `https://chatbot-tg.onrender.com/runner/wake`
+   - **Метод**: ⚠️ **POST** (обязательно, не GET!)
    - **Частота**: каждые 5-10 минут
    - **Описание**: "Пробуждение Worker каждые 5 минут"
+   
+   ⚠️ **Важно:** В cron-job.org выберите метод **POST**, иначе получите ошибку "Cannot GET"
 
 3. **Альтернатива** (после деплоя Vercel):
    - **URL**: `https://chatbot-tg.vercel.app/api/worker/wake`
