@@ -89,7 +89,9 @@ router.post('/start', async (req, res) => {
           }
           
           // После сканирования QR-кода, повторно вызываем ExportLoginToken
+          // ВАЖНО: Делаем это сразу, пока токен не истек
           try {
+            console.log('   [Worker] 🔄 Повторно вызываю ExportLoginToken после сканирования QR...')
             const result = await client.invoke(
               new Api.auth.ExportLoginToken({
                 apiId,
@@ -109,14 +111,16 @@ router.post('/start', async (req, res) => {
               console.log('   [Worker] ⏳ QR-код еще не отсканирован, продолжаем ждать...')
             } else if (result instanceof Api.auth.LoginTokenMigrateTo) {
               console.log('   [Worker] 🔄 Требуется миграция на DC:', result.dcId)
-              console.log('   [Worker] Выполняю ImportLoginToken для миграции...')
+              console.log('   [Worker] Выполняю ImportLoginToken для миграции (сразу, пока токен не истек)...')
               
               // Сохраняем токен миграции для использования с паролем
               sessionEntry.migrateToDcId = result.dcId
               sessionEntry.migrateToken = result.token
               
+              // ВАЖНО: Импортируем токен сразу, не дожидаясь истечения
               // Используем ImportLoginToken на текущем клиенте (Telegram Client API обработает миграцию)
               try {
+                console.log('   [Worker] ⚡ Импортирую токен миграции немедленно...')
                 const migrateResult = await client.invoke(
                   new Api.auth.ImportLoginToken({
                     token: result.token,
