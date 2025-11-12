@@ -7,6 +7,8 @@ import { predictDecision } from '@/lib/openai/agent'
 import { formatTelegramLink } from '@/lib/afisha/client'
 import { parseISOString, formatMoscowDate } from '@/lib/utils/date'
 import { getBot } from './bot'
+import { extractLinks } from '@/lib/utils/link-extractor'
+import { geocodeVenue } from '@/lib/utils/geocoding'
 
 // Включаем логирование всех запросов к Prisma
 if (process.env.DEBUG_PRISMA === 'true') {
@@ -447,6 +449,27 @@ export async function handleChannelMessage(ctx: Context) {
     // Сохраняем оригинальный текст в description если description не извлечен
     const description = extracted.description || text.substring(0, 1000) || null
 
+    // 5.5. Генерация adminNotes
+    console.log('   📝 Шаг 5.5: Генерация adminNotes...')
+    const telegramLink = formatTelegramLink(chatId, messageId)
+    const links = extractLinks(text)
+    let coordinates: { lat: number; lng: number } | null = null
+    
+    // Получаем координаты места, если есть venue и cityName
+    if (extracted.venue && (extracted.cityName || channel.city?.name)) {
+      const cityName = extracted.cityName || channel.city?.name || ''
+      console.log(`   📍 Пытаюсь получить координаты для: "${extracted.venue}", ${cityName}`)
+      coordinates = await geocodeVenue(extracted.venue, cityName)
+    }
+    
+    const adminNotes = JSON.stringify({
+      telegramLink,
+      ticketLinks: links.tickets,
+      organizerLinks: links.organizers,
+      coordinates: coordinates ? { lat: coordinates.lat, lng: coordinates.lng } : null,
+    })
+    console.log('   📝 ✅ AdminNotes сгенерированы:', adminNotes.substring(0, 200))
+
     // 6. Отправка карточки с кнопками в группу для одобрения ПЕРЕД созданием draft
     console.log(`${getLogPrefix()} 📤 STEP6: SEND_APPROVAL_CARD (BEFORE DRAFT CREATION)`)
     // Используем TELEGRAM_PUBLISH_GROUP_ID для отправки карточек с кнопками
@@ -491,6 +514,7 @@ export async function handleChannelMessage(ctx: Context) {
             cityName: extracted.cityName || channel.city?.name || null,
             coverImage: coverImageUrl,
             gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
+            adminNotes: adminNotes,
             status: 'NEW',
           },
         })
@@ -527,6 +551,7 @@ export async function handleChannelMessage(ctx: Context) {
         cityName: extracted.cityName || channel.city?.name || null,
         coverImage: coverImageUrl,
         gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
+        adminNotes: adminNotes,
         status: 'PENDING', // Статус PENDING - ждем одобрения
       },
     })

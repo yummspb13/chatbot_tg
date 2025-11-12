@@ -65,6 +65,7 @@ model DraftEvent {
   cityName    String?
   coverImage  String? // URL главного изображения
   gallery     String? // JSON массив URL изображений (TEXT в SQLite)
+  adminNotes  String? // JSON строка с админ-заметками: ссылки на пост, билеты, координаты
 
   status    String   @default("NEW") // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
   createdAt DateTime @default(now())
