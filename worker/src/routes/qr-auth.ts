@@ -144,15 +144,26 @@ router.post('/start', async (req, res) => {
                     sessionEntry.authSessionString = sessionString
                   } catch (getMeError: any) {
                     console.log('   [Worker] ❌ getMe() ошибка:', getMeError.errorMessage || getMeError.message)
+                    // ВАЖНО: Проверяем, действительно ли требуется пароль
+                    // Если 2FA отключена, не устанавливаем флаг пароля
                     if (getMeError.errorMessage?.includes('PASSWORD') || 
                         getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
-                      console.log('   [Worker] ⚠️ Требуется пароль 2FA (определено через getMe после миграции)')
-                      sessionEntry.authPasswordRequired = true
-                    } else {
-                      // Если другая ошибка, все равно пробуем установить флаг пароля
-                      console.log('   [Worker] ⚠️ Устанавливаю флаг password_required из-за ошибки getMe')
-                      sessionEntry.authPasswordRequired = true
+                      // Проверяем, действительно ли включена 2FA
+                      try {
+                        const passwordInfo = await client.invoke(new Api.account.GetPassword())
+                        if (passwordInfo && passwordInfo.hasPassword) {
+                          console.log('   [Worker] ⚠️ Требуется пароль 2FA (2FA включена)')
+                          sessionEntry.authPasswordRequired = true
+                        } else {
+                          console.log('   [Worker] ✅ 2FA отключена, пароль не требуется')
+                          // Не устанавливаем флаг пароля, продолжаем попытки авторизации
+                        }
+                      } catch (checkPasswordError: any) {
+                        // Если не удалось проверить, не устанавливаем флаг пароля
+                        console.log('   [Worker] ⚠️ Не удалось проверить статус 2FA, продолжаю без пароля')
+                      }
                     }
+                    // Если другая ошибка (не связанная с паролем), не устанавливаем флаг пароля
                   }
                 }
               } catch (migrateError: any) {
@@ -172,15 +183,24 @@ router.post('/start', async (req, res) => {
                     console.log('   [Worker] Сессия сохранена после истечения токена')
                   } catch (getMeError: any) {
                     console.log('   [Worker] ❌ getMe() ошибка после истечения токена:', getMeError.errorMessage || getMeError.message)
+                    // ВАЖНО: Проверяем, действительно ли требуется пароль
                     if (getMeError.errorMessage?.includes('PASSWORD') || 
                         getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
-                      console.log('   [Worker] ⚠️ Требуется пароль 2FA')
-                      sessionEntry.authPasswordRequired = true
-                    } else {
-                      // Если другая ошибка, все равно пробуем установить флаг пароля
-                      console.log('   [Worker] ⚠️ Устанавливаю флаг password_required')
-                      sessionEntry.authPasswordRequired = true
+                      // Проверяем, действительно ли включена 2FA
+                      try {
+                        const passwordInfo = await client.invoke(new Api.account.GetPassword())
+                        if (passwordInfo && passwordInfo.hasPassword) {
+                          console.log('   [Worker] ⚠️ Требуется пароль 2FA (2FA включена)')
+                          sessionEntry.authPasswordRequired = true
+                        } else {
+                          console.log('   [Worker] ✅ 2FA отключена, пароль не требуется')
+                          // Не устанавливаем флаг пароля
+                        }
+                      } catch (checkPasswordError: any) {
+                        console.log('   [Worker] ⚠️ Не удалось проверить статус 2FA, продолжаю без пароля')
+                      }
                     }
+                    // Если другая ошибка, не устанавливаем флаг пароля
                   }
                 } else if (migrateError.errorMessage?.includes('PASSWORD') || 
                     migrateError.errorMessage?.includes('SESSION_PASSWORD_NEEDED') ||
@@ -368,11 +388,24 @@ router.post('/status', async (req, res) => {
     } catch (getMeError: any) {
       console.log('   [Worker] getMe() ошибка:', getMeError.errorMessage || getMeError.message)
       if (getMeError.errorMessage?.includes('PASSWORD') || getMeError.errorMessage?.includes('SESSION_PASSWORD_NEEDED')) {
-        sessionData.authPasswordRequired = true
-        return res.json({
-          status: 'password_required',
-          hint: getMeError.hint || 'Требуется пароль двухфакторной аутентификации',
-        })
+        // ВАЖНО: Проверяем, действительно ли включена 2FA перед установкой флага
+        try {
+          const passwordInfo = await client.invoke(new Api.account.GetPassword())
+          if (passwordInfo && passwordInfo.hasPassword) {
+            console.log('   [Worker] ⚠️ 2FA включена, требуется пароль')
+            sessionData.authPasswordRequired = true
+            return res.json({
+              status: 'password_required',
+              hint: getMeError.hint || 'Требуется пароль двухфакторной аутентификации',
+            })
+          } else {
+            console.log('   [Worker] ✅ 2FA отключена, продолжаю без пароля')
+            // Не устанавливаем флаг пароля, продолжаем проверку
+          }
+        } catch (checkPasswordError: any) {
+          console.log('   [Worker] ⚠️ Не удалось проверить статус 2FA, продолжаю без пароля')
+          // Не устанавливаем флаг пароля, продолжаем проверку
+        }
       }
       // Если другая ошибка (например, AUTH_KEY_UNREGISTERED), продолжаем проверку
     }
