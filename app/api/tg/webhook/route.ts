@@ -41,7 +41,31 @@ export async function POST(req: NextRequest) {
   const logPrefix = `[${new Date().toISOString()}]`
   
   try {
-    const update = await req.json()
+    // Читаем body для проверки типа сообщения
+    const bodyText = await req.text()
+    const update = JSON.parse(bodyText)
+    
+    // Пробуждаем Worker если он уснул (только для сообщений из каналов)
+    // Это помогает, если Worker уснул из-за idle timeout на Render.com
+    const isChannelMessage = update.message?.chat?.type === 'channel' || 
+                             update.channel_post ||
+                             (update.message && update.message.forward_from_chat)
+    
+    if (isChannelMessage) {
+      // Если это сообщение из канала, но Worker мог уснуть,
+      // пробуждаем его асинхронно (не блокируем обработку)
+      const { wakeWorkerIfNeeded } = await import('@/lib/worker/wake-worker')
+      wakeWorkerIfNeeded().catch((error) => {
+        console.warn(`${logPrefix} ⚠️ Не удалось пробудить Worker:`, error.message)
+      })
+    }
+    
+    // Создаем новый request с body для дальнейшей обработки
+    req = new NextRequest(req.url, {
+      method: req.method,
+      headers: req.headers,
+      body: bodyText,
+    })
     
     // Логируем тип обновления для диагностики
     const updateType = update.message ? 'message' : 
