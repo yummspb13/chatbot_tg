@@ -91,7 +91,7 @@ async function getTelegramFileUrl(fileId: string): Promise<string | null> {
       console.error('         [Telegram] ⚠️ Нужно скачивать файлы через Client API в Worker')
     } else {
       console.error('         [Telegram] ❌ Ошибка получения URL файла:', error.message || error)
-      console.error('         [Telegram] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
+    console.error('         [Telegram] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
     }
   }
   return null
@@ -344,7 +344,7 @@ export async function handleChannelMessage(ctx: Context) {
     
     let coverImageUrl: string | null = null
     const galleryUrls: string[] = []
-    
+
     // Проверяем, есть ли base64 буферы от Worker (Client API)
     const photoBuffers: Array<{ index: number; data: string; mimeType: string }> = []
     if (message.photo && Array.isArray(message.photo)) {
@@ -449,21 +449,43 @@ export async function handleChannelMessage(ctx: Context) {
     // 4.6. Группировка фото из одного поста
     // Если сообщение содержит только фото (без текста) и есть существующий draft с таким же chatId,
     // добавляем фото в gallery существующего draft вместо создания нового
-    // Ищем draft с близким messageId (в пределах 10 сообщений назад), так как сообщения приходят последовательно
+    // Ищем draft по времени сообщения (все сообщения из одного поста имеют одинаковое время) ИЛИ по близкому messageId
     if ((!text || text.trim().length === 0) && photoBuffers.length > 0) {
       console.log(`   🔗 Проверяю возможность группировки фото (messageId: ${messageId}, text empty: ${!text || text.trim().length === 0})`)
       const currentMessageIdNum = parseInt(messageId, 10)
+      const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
       
-      if (!isNaN(currentMessageIdNum)) {
-        // Ищем draft с messageId в диапазоне от (currentMessageIdNum - 10) до (currentMessageIdNum - 1)
-        // Это покрывает случаи, когда сообщения приходят последовательно (126, 127, 128, 129, 130)
+      // Стратегия 1: Ищем draft с таким же временем сообщения (все сообщения из одного поста имеют одинаковое время)
+      const timeWindow = 5 // 5 секунд - сообщения из одного поста имеют одинаковое время
+      const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
+      const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
+      
+      console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, messageId=${messageId}, время=${messageTimestamp}`)
+      console.log(`   🔗 Стратегия 1: По времени сообщения (${searchStart.toISOString()} - ${searchEnd.toISOString()})`)
+      
+      let existingDraftForGrouping = await prisma.draftEvent.findFirst({
+        where: {
+          telegramChatId: chatId,
+          createdAt: {
+            gte: searchStart,
+            lte: searchEnd,
+          },
+          status: {
+            in: ['NEW', 'PENDING'],
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+      
+      // Стратегия 2: Если не нашли по времени, ищем по messageId (в обе стороны - на случай, если сообщение с текстом придет позже)
+      if (!existingDraftForGrouping && !isNaN(currentMessageIdNum)) {
         const minMessageId = Math.max(1, currentMessageIdNum - 10).toString()
-        const maxMessageId = (currentMessageIdNum - 1).toString()
+        const maxMessageId = (currentMessageIdNum + 10).toString() // Ищем и вперед тоже
         
-        console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, messageId=${messageId}`)
-        console.log(`   🔗 Ищу draft с messageId в диапазоне: ${minMessageId} - ${maxMessageId}`)
+        console.log(`   🔗 Стратегия 2: По messageId в диапазоне: ${minMessageId} - ${maxMessageId}`)
         
-        // Ищем все drafts с близкими messageId в том же chatId
         const possibleDrafts = await prisma.draftEvent.findMany({
           where: {
             telegramChatId: chatId,
@@ -476,17 +498,18 @@ export async function handleChannelMessage(ctx: Context) {
             },
           },
           orderBy: {
-            telegramMessageId: 'desc', // Берем самый близкий по messageId
+            telegramMessageId: 'desc',
           },
-          take: 1, // Берем только один (самый близкий)
+          take: 1,
         })
         
-        const existingDraftForGrouping = possibleDrafts.length > 0 ? possibleDrafts[0] : null
+        existingDraftForGrouping = possibleDrafts.length > 0 ? possibleDrafts[0] : null
+      }
       
-        if (existingDraftForGrouping) {
-          console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
-          console.log(`   🔗 Draft messageId: ${existingDraftForGrouping.telegramMessageId}, текущий messageId: ${messageId}`)
-          console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
+      if (existingDraftForGrouping) {
+        console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
+        console.log(`   🔗 Draft messageId: ${existingDraftForGrouping.telegramMessageId}, текущий messageId: ${messageId}`)
+        console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
         
         // Парсим существующую gallery
         let existingGallery: string[] = []
@@ -522,73 +545,19 @@ export async function handleChannelMessage(ctx: Context) {
         return // Не создаем новый draft, только обновляем существующий
       } else {
         console.log(`   ⚠️ Draft для группировки не найден (сообщение будет пропущено, так как нет текста)`)
+        console.log(`   ⚠️ Попробую создать временный draft для последующей группировки...`)
+        
+        // Если draft не найден, но есть фото - создаем временный draft БЕЗ текста
+        // Это нужно на случай, если сообщение с текстом придет позже
+        // Но это не сработает, так как для создания draft нужны title и startDate
+        // Поэтому просто пропускаем и надеемся, что сообщение с текстом придет раньше
+        
         memoryLogger.warn(`Draft для группировки не найден`, { 
           messageId, 
           chatId, 
-          messageTimestamp,
-          timeWindow 
+          messageTimestamp
         }, 'messageHandler')
-          return // Пропускаем сообщение без текста, если нет draft для группировки
-        }
-      } else {
-        console.log(`   ⚠️ Не удалось распарсить messageId как число: ${messageId}`)
-        // Если messageId не число, используем старый метод по времени
-        const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
-        const timeWindow = 30
-        const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
-        const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
-        
-        const existingDraftForGrouping = await prisma.draftEvent.findFirst({
-          where: {
-            telegramChatId: chatId,
-            createdAt: {
-              gte: searchStart,
-              lte: searchEnd,
-            },
-            status: {
-              in: ['NEW', 'PENDING'],
-            },
-          },
-          orderBy: {
-            createdAt: 'desc',
-          },
-        })
-        
-        if (existingDraftForGrouping) {
-          console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото (по времени)`)
-          console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
-          
-          let existingGallery: string[] = []
-          if (existingDraftForGrouping.gallery) {
-            try {
-              existingGallery = JSON.parse(existingDraftForGrouping.gallery)
-            } catch (e) {
-              console.warn('   ⚠️ Ошибка парсинга существующей gallery:', e)
-            }
-          }
-          
-          for (const photoBuffer of photoBuffers) {
-            existingGallery.push(`base64:${photoBuffer.data}`)
-          }
-          
-          await prisma.draftEvent.update({
-            where: { id: existingDraftForGrouping.id },
-            data: {
-              gallery: JSON.stringify(existingGallery),
-            },
-          })
-          
-          console.log(`   ✅ Добавлено ${photoBuffers.length} фото в gallery draft ${existingDraftForGrouping.id}`)
-          memoryLogger.success(`Фото добавлены в gallery существующего draft`, { 
-            draftId: existingDraftForGrouping.id, 
-            addedCount: photoBuffers.length,
-            totalCount: existingGallery.length 
-          }, 'messageHandler')
-          return
-        } else {
-          console.log(`   ⚠️ Draft для группировки не найден (по времени)`)
-          return
-        }
+        return // Пропускаем сообщение без текста, если нет draft для группировки
       }
     }
 
@@ -598,19 +567,32 @@ export async function handleChannelMessage(ctx: Context) {
 
     // 5.5. Генерация adminNotes
     console.log('   📝 Шаг 5.5: Генерация adminNotes...')
+    console.log(`   📝 Исходный текст для анализа (первые 500 символов): ${text.substring(0, 500)}`)
     const telegramLink = formatTelegramLink(chatId, messageId)
+    console.log(`   📝 Telegram ссылка: ${telegramLink}`)
+    
     const links = extractLinks(text)
     console.log(`   📝 Найдено ссылок: билеты=${links.tickets.length}, организаторы=${links.organizers.length}`)
     if (links.tickets.length > 0) {
       console.log(`   📝 Ссылки на билеты: ${links.tickets.join(', ')}`)
+    } else {
+      console.log(`   📝 ⚠️ Ссылки на билеты не найдены в тексте`)
     }
     if (links.organizers.length > 0) {
       console.log(`   📝 Ссылки организаторов: ${links.organizers.join(', ')}`)
+    } else {
+      console.log(`   📝 ⚠️ Ссылки организаторов не найдены в тексте`)
     }
     
     let coordinates: { lat: number; lng: number } | null = null
     
     // Получаем координаты места, если есть venue и cityName
+    console.log(`   📍 Проверка условий для геокодинга:`)
+    console.log(`   📍   extracted.venue: ${extracted.venue || 'null'}`)
+    console.log(`   📍   extracted.cityName: ${extracted.cityName || 'null'}`)
+    console.log(`   📍   channel.city?.name: ${channel.city?.name || 'null'}`)
+    console.log(`   📍   YANDEX_MAPS_API_KEY установлен: ${!!process.env.YANDEX_MAPS_API_KEY}`)
+    
     if (extracted.venue && (extracted.cityName || channel.city?.name)) {
       const cityName = extracted.cityName || channel.city?.name || ''
       console.log(`   📍 Пытаюсь получить координаты для: "${extracted.venue}", ${cityName}`)

@@ -204,7 +204,7 @@ async function handleApproveCallback(ctx: Context, draftId: number) {
       { draftId, eventId: result.eventId },
       'callbackHandler'
     )
-    
+
     await ctx.answerCbQuery('✅ Черновик создан в Афише!')
 
     // Публикуем в группу, если настроена

@@ -157,8 +157,8 @@ router.post('/start', async (req, res) => {
                         const passwordInfo = await client.invoke(new Api.account.GetPassword())
                         if (passwordInfo && passwordInfo.hasPassword) {
                           console.log('   [Worker] ⚠️ Требуется пароль 2FA (2FA включена)')
-                          sessionEntry.authPasswordRequired = true
-                        } else {
+                      sessionEntry.authPasswordRequired = true
+                    } else {
                           console.log('   [Worker] ✅ 2FA отключена, пароль не требуется')
                           // Не устанавливаем флаг пароля, продолжаем попытки авторизации
                         }
@@ -195,8 +195,8 @@ router.post('/start', async (req, res) => {
                         const passwordInfo = await client.invoke(new Api.account.GetPassword())
                         if (passwordInfo && passwordInfo.hasPassword) {
                           console.log('   [Worker] ⚠️ Требуется пароль 2FA (2FA включена)')
-                          sessionEntry.authPasswordRequired = true
-                        } else {
+                      sessionEntry.authPasswordRequired = true
+                    } else {
                           console.log('   [Worker] ✅ 2FA отключена, пароль не требуется')
                           // Не устанавливаем флаг пароля
                         }
@@ -397,11 +397,11 @@ router.post('/status', async (req, res) => {
           const passwordInfo = await client.invoke(new Api.account.GetPassword())
           if (passwordInfo && passwordInfo.hasPassword) {
             console.log('   [Worker] ⚠️ 2FA включена, требуется пароль')
-            sessionData.authPasswordRequired = true
-            return res.json({
-              status: 'password_required',
-              hint: getMeError.hint || 'Требуется пароль двухфакторной аутентификации',
-            })
+        sessionData.authPasswordRequired = true
+        return res.json({
+          status: 'password_required',
+          hint: getMeError.hint || 'Требуется пароль двухфакторной аутентификации',
+        })
           } else {
             console.log('   [Worker] ✅ 2FA отключена, продолжаю без пароля')
             // Не устанавливаем флаг пароля, продолжаем проверку

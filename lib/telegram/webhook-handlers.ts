@@ -73,7 +73,7 @@ export function registerWebhookHandlers() {
       )
       
       try {
-        await handleChannelMessage(ctx as any)
+      await handleChannelMessage(ctx as any)
         console.log(`${logPrefix}    ✅ handleChannelMessage завершен успешно`)
         memoryLogger.success(
           `handleChannelMessage завершен успешно`,

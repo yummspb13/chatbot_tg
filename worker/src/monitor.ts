@@ -426,7 +426,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
       console.error(`   ❌ Ошибка отправки боту: Host not found`)
       console.error(`   💡 Не удалось найти хост. Проверьте URL: ${webhookUrl}`)
     } else {
-      console.error(`   ❌ Ошибка отправки боту: ${error.message}`)
+    console.error(`   ❌ Ошибка отправки боту: ${error.message}`)
       console.error(`   ❌ Error code: ${error.code || 'N/A'}`)
       console.error(`   ❌ Error name: ${error.name || 'N/A'}`)
       if (error.cause) {
@@ -460,8 +460,8 @@ export async function startMonitoring(): Promise<boolean> {
     if (!client.connected) {
       console.log('   🔌 Подключаюсь к Telegram...')
       try {
-        await client.connect()
-        console.log('✅ Подключен к Telegram через Client API')
+      await client.connect()
+      console.log('✅ Подключен к Telegram через Client API')
       } catch (error: any) {
         if (error.errorMessage?.includes('AUTH_KEY_DUPLICATED') || 
             error.message?.includes('AUTH_KEY_DUPLICATED') ||

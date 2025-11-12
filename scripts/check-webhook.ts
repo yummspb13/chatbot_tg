@@ -59,15 +59,15 @@ async function checkWebhook() {
         } else if (!hasCorrectPath) {
           console.log('⚠️ Webhook URL не заканчивается на /api/tg/webhook')
           console.log(`   Текущий URL: ${url}`)
-          console.log('')
-          console.log('Обновите webhook командой:')
+        console.log('')
+        console.log('Обновите webhook командой:')
           console.log(`   npm run webhook:set:prod <vercel-url>`)
           console.log('')
         } else if (isVercel) {
           console.log('✅ Webhook настроен правильно для продакшена!')
           console.log(`   URL: ${url}`)
-          console.log('')
-        } else {
+        console.log('')
+      } else {
           console.log('⚠️ Webhook установлен, но URL не похож на Vercel')
           console.log(`   Текущий URL: ${url}`)
           console.log('')
