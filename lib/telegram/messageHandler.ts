@@ -337,12 +337,17 @@ export async function handleChannelMessage(ctx: Context) {
 
     // 4.5. Обработка изображений
     console.log('   🖼 Шаг 4.5: Обработка изображений...')
+    memoryLogger.info(`Обработка изображений`, { messageId, chatId }, 'messageHandler')
+    
     let coverImageUrl: string | null = null
     const galleryUrls: string[] = []
     
     // Проверяем, есть ли base64 буферы от Worker (Client API)
     const photoBuffers: Array<{ index: number; data: string; mimeType: string }> = []
     if (message.photo && Array.isArray(message.photo)) {
+      console.log(`   🖼 Найдено photo в message: ${message.photo.length} элементов`)
+      memoryLogger.info(`Найдено photo в message`, { count: message.photo.length, messageId, chatId }, 'messageHandler')
+      
       for (const photoItem of message.photo) {
         if (photoItem._clientApiBuffer) {
           photoBuffers.push({
@@ -351,8 +356,18 @@ export async function handleChannelMessage(ctx: Context) {
             mimeType: 'image/jpeg',
           })
           console.log(`   🖼 Найден base64 буфер от Worker (${photoItem._clientApiBuffer.length} символов)`)
+          memoryLogger.info(`Найден base64 буфер от Worker`, { 
+            bufferLength: photoItem._clientApiBuffer.length, 
+            messageId, 
+            chatId 
+          }, 'messageHandler')
+        } else {
+          console.log(`   🖼 Photo элемент без _clientApiBuffer:`, photoItem.file_id || 'нет file_id')
         }
       }
+    } else {
+      console.log(`   🖼 Photo в message отсутствует или не массив`)
+      memoryLogger.info(`Photo в message отсутствует`, { messageId, chatId }, 'messageHandler')
     }
     
     // Если есть base64 буферы, сохраняем их для загрузки в Cloudinary при одобрении
@@ -360,6 +375,11 @@ export async function handleChannelMessage(ctx: Context) {
     if (photoBuffers.length > 0) {
       console.log(`   🖼 Найдено ${photoBuffers.length} base64 буферов от Worker`)
       console.log(`   🖼 ⚠️ Изображения НЕ загружаются в Cloudinary сейчас - только при одобрении!`)
+      memoryLogger.info(`Найдены base64 буферы от Worker`, { 
+        count: photoBuffers.length, 
+        messageId, 
+        chatId 
+      }, 'messageHandler')
       
       // Сохраняем base64 буферы в coverImage и gallery как JSON
       // В handleApprove мы будем использовать их для загрузки в Cloudinary
@@ -367,11 +387,23 @@ export async function handleChannelMessage(ctx: Context) {
         // Первое изображение - coverImage (сохраняем как base64)
         coverImageUrl = `base64:${photoBuffers[0].data}`
         console.log(`   🖼 ✅ Cover image сохранен как base64 (${photoBuffers[0].data.length} символов)`)
+        memoryLogger.success(`Cover image сохранен как base64`, { 
+          bufferLength: photoBuffers[0].data.length, 
+          messageId, 
+          chatId 
+        }, 'messageHandler')
         
         // Остальные - gallery
         for (let i = 1; i < photoBuffers.length; i++) {
           galleryUrls.push(`base64:${photoBuffers[i].data}`)
           console.log(`   🖼 ✅ Изображение ${i + 1} сохранено как base64`)
+        }
+        if (galleryUrls.length > 0) {
+          memoryLogger.success(`Gallery сохранена как base64`, { 
+            count: galleryUrls.length, 
+            messageId, 
+            chatId 
+          }, 'messageHandler')
         }
       }
     } else if (images.length > 0) {
@@ -402,6 +434,13 @@ export async function handleChannelMessage(ctx: Context) {
       }
     } else {
       console.log('   🖼 Изображений не найдено')
+      memoryLogger.warn(`Изображения не найдены в сообщении`, { 
+        messageId, 
+        chatId,
+        hasPhoto: !!message.photo,
+        imagesCount: images.length,
+        photoBuffersCount: photoBuffers.length
+      }, 'messageHandler')
     }
 
     // 5. Подготовка данных для карточки одобрения
@@ -698,8 +737,20 @@ export async function handleApprove(draftId: number) {
 
   // Загружаем изображения в Cloudinary (только для одобренных черновиков)
   console.log(`[handleApprove] Загружаю изображения в Cloudinary для draftId: ${draftId}`)
+  memoryLogger.info(`Начинаю загрузку изображений в Cloudinary`, { draftId }, 'callbackHandler')
+  
   let cloudinaryCoverImage: string | undefined = undefined
   let cloudinaryGallery: string[] = []
+  
+  // Проверяем, есть ли изображения в черновике
+  console.log(`[handleApprove] Проверка изображений в черновике:`)
+  console.log(`[handleApprove]   coverImage: ${draft.coverImage ? (draft.coverImage.startsWith('base64:') ? 'base64 буфер' : 'URL') : 'отсутствует'}`)
+  console.log(`[handleApprove]   gallery: ${gallery.length} изображений`)
+  memoryLogger.info(`Проверка изображений в черновике`, { 
+    hasCoverImage: !!draft.coverImage, 
+    coverImageType: draft.coverImage ? (draft.coverImage.startsWith('base64:') ? 'base64' : 'url') : 'none',
+    galleryCount: gallery.length 
+  }, 'callbackHandler')
   
   try {
     const { uploadImageFromUrl, uploadImageFromBuffer, uploadMultipleImages } = await import('@/lib/cloudinary/upload')
@@ -707,6 +758,7 @@ export async function handleApprove(draftId: number) {
     // Загружаем coverImage если есть
     if (draft.coverImage) {
       console.log(`[handleApprove] Загружаю coverImage в Cloudinary...`)
+      memoryLogger.info(`Загрузка coverImage в Cloudinary`, { draftId }, 'callbackHandler')
       try {
         // Проверяем, это base64 буфер от Worker или URL
         if (draft.coverImage.startsWith('base64:')) {
@@ -717,14 +769,17 @@ export async function handleApprove(draftId: number) {
           const result = await uploadImageFromBuffer(buffer, 'approved')
           cloudinaryCoverImage = result.url
           console.log(`[handleApprove] ✅ CoverImage загружен в Cloudinary из Buffer: ${result.url.substring(0, 100)}...`)
+          memoryLogger.success(`CoverImage загружен в Cloudinary`, { draftId, url: result.url.substring(0, 100) }, 'callbackHandler')
         } else {
           // Это URL - загружаем из URL
           const result = await uploadImageFromUrl(draft.coverImage, 'approved')
           cloudinaryCoverImage = result.url
           console.log(`[handleApprove] ✅ CoverImage загружен в Cloudinary из URL: ${result.url.substring(0, 100)}...`)
+          memoryLogger.success(`CoverImage загружен в Cloudinary из URL`, { draftId, url: result.url.substring(0, 100) }, 'callbackHandler')
         }
       } catch (error: any) {
         console.error(`[handleApprove] ❌ Ошибка загрузки coverImage в Cloudinary:`, error.message)
+        memoryLogger.error(`Ошибка загрузки coverImage в Cloudinary`, { draftId, error: error.message }, 'callbackHandler')
         // Используем оригинальный URL если загрузка не удалась
         cloudinaryCoverImage = draft.coverImage.startsWith('base64:') ? undefined : draft.coverImage
       }
@@ -771,13 +826,25 @@ export async function handleApprove(draftId: number) {
       }
       
       console.log(`[handleApprove] ✅ Всего загружено ${cloudinaryGallery.length} изображений в Cloudinary`)
+      memoryLogger.success(`Gallery загружена в Cloudinary`, { draftId, count: cloudinaryGallery.length }, 'callbackHandler')
     }
   } catch (error: any) {
     console.error(`[handleApprove] ❌ Критическая ошибка при загрузке в Cloudinary:`, error.message)
+    memoryLogger.error(`Критическая ошибка при загрузке в Cloudinary`, { draftId, error: error.message }, 'callbackHandler')
     // Используем оригинальные URL если Cloudinary недоступен (но не base64)
     cloudinaryCoverImage = draft.coverImage?.startsWith('base64:') ? undefined : draft.coverImage || undefined
     cloudinaryGallery = gallery.filter(img => !img.startsWith('base64:'))
   }
+
+  // Логируем итоговые данные перед отправкой в Афишу
+  console.log(`[handleApprove] Итоговые данные для отправки в Афишу:`)
+  console.log(`[handleApprove]   coverImage: ${cloudinaryCoverImage ? cloudinaryCoverImage.substring(0, 100) + '...' : 'отсутствует'}`)
+  console.log(`[handleApprove]   gallery: ${cloudinaryGallery.length} изображений`)
+  memoryLogger.info(`Отправка в Афишу с изображениями`, { 
+    draftId, 
+    hasCoverImage: !!cloudinaryCoverImage,
+    galleryCount: cloudinaryGallery.length 
+  }, 'callbackHandler')
 
   // Отправляем в Афишу с Cloudinary URL
   const { sendDraft } = await import('@/lib/afisha/client')
