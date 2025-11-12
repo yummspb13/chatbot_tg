@@ -55,6 +55,16 @@ function extractImagesFromMessage(message: any): string[] {
  */
 async function getTelegramFileUrl(fileId: string): Promise<string | null> {
   console.log('         [Telegram] Получаю информацию о файле, file_id:', fileId)
+  
+  // Проверяем, не является ли это временным file_id от Worker (Client API)
+  // Временные file_id имеют формат: volumeId_localId_index или temp_timestamp_index
+  if (fileId.startsWith('temp_') || fileId.match(/^\d+_\d+_\d+$/)) {
+    console.log('         [Telegram] ⚠️ Это временный file_id от Worker (Client API)')
+    console.log('         [Telegram] ⚠️ Временные file_id не работают с Bot API')
+    console.log('         [Telegram] ⚠️ Нужно скачивать файлы через Client API в Worker')
+    return null
+  }
+  
   try {
     const bot = getBot()
     const file = await bot.telegram.getFile(fileId)
@@ -68,9 +78,19 @@ async function getTelegramFileUrl(fileId: string): Promise<string | null> {
     } else {
       console.log('         [Telegram] ⚠️ file_path отсутствует в ответе')
     }
-  } catch (error) {
-    console.error('         [Telegram] ❌ Ошибка получения URL файла:', error)
-    console.error('         [Telegram] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
+  } catch (error: any) {
+    // Обрабатываем ошибку invalid file_id
+    if (error.response?.description?.includes('invalid file_id') || 
+        error.message?.includes('invalid file_id') ||
+        error.response?.error_code === 400) {
+      console.error('         [Telegram] ❌ Ошибка: invalid file_id')
+      console.error('         [Telegram] ⚠️ Это может быть временный file_id от Worker (Client API)')
+      console.error('         [Telegram] ⚠️ Временные file_id не работают с Bot API')
+      console.error('         [Telegram] ⚠️ Нужно скачивать файлы через Client API в Worker')
+    } else {
+      console.error('         [Telegram] ❌ Ошибка получения URL файла:', error.message || error)
+      console.error('         [Telegram] Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
+    }
   }
   return null
 }
