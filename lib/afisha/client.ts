@@ -44,9 +44,29 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
     console.log(`[sendDraft] Request body preview:`, JSON.stringify({
       title: draft.title,
       startDate: draft.startDate,
+      endDate: draft.endDate,
       city: draft.city,
       venue: draft.venue,
+      description: draft.description ? draft.description.substring(0, 100) + '...' : null,
+      coverImage: draft.coverImage ? (draft.coverImage.substring(0, 80) + '...') : null,
+      gallery: draft.gallery ? `${draft.gallery.length} изображений` : null,
+      sourceLinks: draft.sourceLinks,
     }, null, 2))
+    
+    if (draft.coverImage) {
+      console.log(`[sendDraft] ✅ CoverImage отправляется: ${draft.coverImage.substring(0, 100)}`)
+    } else {
+      console.log(`[sendDraft] ⚠️ CoverImage отсутствует`)
+    }
+    
+    if (draft.gallery && draft.gallery.length > 0) {
+      console.log(`[sendDraft] ✅ Gallery отправляется: ${draft.gallery.length} изображений`)
+      draft.gallery.forEach((url, index) => {
+        console.log(`[sendDraft]    Gallery[${index}]: ${url.substring(0, 100)}`)
+      })
+    } else {
+      console.log(`[sendDraft] ⚠️ Gallery отсутствует или пуста`)
+    }
     
     const response = await fetch(apiUrl, {
       method: 'POST',
