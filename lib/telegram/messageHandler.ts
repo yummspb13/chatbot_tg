@@ -447,38 +447,46 @@ export async function handleChannelMessage(ctx: Context) {
     }
 
     // 4.6. Группировка фото из одного поста
-    // Если сообщение содержит только фото (без текста) и есть существующий draft с таким же chatId и временем,
+    // Если сообщение содержит только фото (без текста) и есть существующий draft с таким же chatId,
     // добавляем фото в gallery существующего draft вместо создания нового
+    // Ищем draft с близким messageId (в пределах 10 сообщений назад), так как сообщения приходят последовательно
     if ((!text || text.trim().length === 0) && photoBuffers.length > 0) {
       console.log(`   🔗 Проверяю возможность группировки фото (messageId: ${messageId}, text empty: ${!text || text.trim().length === 0})`)
-      const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
-      const timeWindow = 30 // 30 секунд - увеличиваем окно, так как сообщения могут приходить с задержкой
-      const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
-      const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
+      const currentMessageIdNum = parseInt(messageId, 10)
       
-      console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, время сообщения=${messageTimestamp}, окно=${timeWindow}с`)
-      console.log(`   🔗 Диапазон поиска: ${searchStart.toISOString()} - ${searchEnd.toISOString()}`)
-      
-      const existingDraftForGrouping = await prisma.draftEvent.findFirst({
-        where: {
-          telegramChatId: chatId,
-          createdAt: {
-            gte: searchStart,
-            lte: searchEnd,
+      if (!isNaN(currentMessageIdNum)) {
+        // Ищем draft с messageId в диапазоне от (currentMessageIdNum - 10) до (currentMessageIdNum - 1)
+        // Это покрывает случаи, когда сообщения приходят последовательно (126, 127, 128, 129, 130)
+        const minMessageId = Math.max(1, currentMessageIdNum - 10).toString()
+        const maxMessageId = (currentMessageIdNum - 1).toString()
+        
+        console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, messageId=${messageId}`)
+        console.log(`   🔗 Ищу draft с messageId в диапазоне: ${minMessageId} - ${maxMessageId}`)
+        
+        // Ищем все drafts с близкими messageId в том же chatId
+        const possibleDrafts = await prisma.draftEvent.findMany({
+          where: {
+            telegramChatId: chatId,
+            telegramMessageId: {
+              gte: minMessageId,
+              lte: maxMessageId,
+            },
+            status: {
+              in: ['NEW', 'PENDING'],
+            },
           },
-          status: {
-            in: ['NEW', 'PENDING'],
+          orderBy: {
+            telegramMessageId: 'desc', // Берем самый близкий по messageId
           },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      })
+          take: 1, // Берем только один (самый близкий)
+        })
+        
+        const existingDraftForGrouping = possibleDrafts.length > 0 ? possibleDrafts[0] : null
       
-      if (existingDraftForGrouping) {
-        console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
-        console.log(`   🔗 Draft создан: ${existingDraftForGrouping.createdAt.toISOString()}, messageId: ${existingDraftForGrouping.telegramMessageId}`)
-        console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
+        if (existingDraftForGrouping) {
+          console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
+          console.log(`   🔗 Draft messageId: ${existingDraftForGrouping.telegramMessageId}, текущий messageId: ${messageId}`)
+          console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
         
         // Парсим существующую gallery
         let existingGallery: string[] = []
@@ -520,7 +528,67 @@ export async function handleChannelMessage(ctx: Context) {
           messageTimestamp,
           timeWindow 
         }, 'messageHandler')
-        return // Пропускаем сообщение без текста, если нет draft для группировки
+          return // Пропускаем сообщение без текста, если нет draft для группировки
+        }
+      } else {
+        console.log(`   ⚠️ Не удалось распарсить messageId как число: ${messageId}`)
+        // Если messageId не число, используем старый метод по времени
+        const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
+        const timeWindow = 30
+        const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
+        const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
+        
+        const existingDraftForGrouping = await prisma.draftEvent.findFirst({
+          where: {
+            telegramChatId: chatId,
+            createdAt: {
+              gte: searchStart,
+              lte: searchEnd,
+            },
+            status: {
+              in: ['NEW', 'PENDING'],
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        })
+        
+        if (existingDraftForGrouping) {
+          console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото (по времени)`)
+          console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
+          
+          let existingGallery: string[] = []
+          if (existingDraftForGrouping.gallery) {
+            try {
+              existingGallery = JSON.parse(existingDraftForGrouping.gallery)
+            } catch (e) {
+              console.warn('   ⚠️ Ошибка парсинга существующей gallery:', e)
+            }
+          }
+          
+          for (const photoBuffer of photoBuffers) {
+            existingGallery.push(`base64:${photoBuffer.data}`)
+          }
+          
+          await prisma.draftEvent.update({
+            where: { id: existingDraftForGrouping.id },
+            data: {
+              gallery: JSON.stringify(existingGallery),
+            },
+          })
+          
+          console.log(`   ✅ Добавлено ${photoBuffers.length} фото в gallery draft ${existingDraftForGrouping.id}`)
+          memoryLogger.success(`Фото добавлены в gallery существующего draft`, { 
+            draftId: existingDraftForGrouping.id, 
+            addedCount: photoBuffers.length,
+            totalCount: existingGallery.length 
+          }, 'messageHandler')
+          return
+        } else {
+          console.log(`   ⚠️ Draft для группировки не найден (по времени)`)
+          return
+        }
       }
     }
 
