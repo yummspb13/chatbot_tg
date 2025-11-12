@@ -450,14 +450,21 @@ export async function handleChannelMessage(ctx: Context) {
     // Если сообщение содержит только фото (без текста) и есть существующий draft с таким же chatId и временем,
     // добавляем фото в gallery существующего draft вместо создания нового
     if ((!text || text.trim().length === 0) && photoBuffers.length > 0) {
+      console.log(`   🔗 Проверяю возможность группировки фото (messageId: ${messageId}, text empty: ${!text || text.trim().length === 0})`)
       const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
-      const timeWindow = 10 // 10 секунд
+      const timeWindow = 30 // 30 секунд - увеличиваем окно, так как сообщения могут приходить с задержкой
+      const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
+      const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
+      
+      console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, время сообщения=${messageTimestamp}, окно=${timeWindow}с`)
+      console.log(`   🔗 Диапазон поиска: ${searchStart.toISOString()} - ${searchEnd.toISOString()}`)
+      
       const existingDraftForGrouping = await prisma.draftEvent.findFirst({
         where: {
           telegramChatId: chatId,
           createdAt: {
-            gte: new Date((messageTimestamp - timeWindow) * 1000),
-            lte: new Date((messageTimestamp + timeWindow) * 1000),
+            gte: searchStart,
+            lte: searchEnd,
           },
           status: {
             in: ['NEW', 'PENDING'],
@@ -469,7 +476,8 @@ export async function handleChannelMessage(ctx: Context) {
       })
       
       if (existingDraftForGrouping) {
-        console.log(`   🔗 Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
+        console.log(`   🔗 ✅ Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
+        console.log(`   🔗 Draft создан: ${existingDraftForGrouping.createdAt.toISOString()}, messageId: ${existingDraftForGrouping.telegramMessageId}`)
         console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
         
         // Парсим существующую gallery
@@ -477,6 +485,7 @@ export async function handleChannelMessage(ctx: Context) {
         if (existingDraftForGrouping.gallery) {
           try {
             existingGallery = JSON.parse(existingDraftForGrouping.gallery)
+            console.log(`   🖼 Существующая gallery: ${existingGallery.length} фото`)
           } catch (e) {
             console.warn('   ⚠️ Ошибка парсинга существующей gallery:', e)
           }
@@ -497,7 +506,21 @@ export async function handleChannelMessage(ctx: Context) {
         
         console.log(`   ✅ Добавлено ${photoBuffers.length} фото в gallery draft ${existingDraftForGrouping.id}`)
         console.log(`   📊 Всего фото в gallery: ${existingGallery.length}`)
+        memoryLogger.success(`Фото добавлены в gallery существующего draft`, { 
+          draftId: existingDraftForGrouping.id, 
+          addedCount: photoBuffers.length,
+          totalCount: existingGallery.length 
+        }, 'messageHandler')
         return // Не создаем новый draft, только обновляем существующий
+      } else {
+        console.log(`   ⚠️ Draft для группировки не найден (сообщение будет пропущено, так как нет текста)`)
+        memoryLogger.warn(`Draft для группировки не найден`, { 
+          messageId, 
+          chatId, 
+          messageTimestamp,
+          timeWindow 
+        }, 'messageHandler')
+        return // Пропускаем сообщение без текста, если нет draft для группировки
       }
     }
 
@@ -509,6 +532,14 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('   📝 Шаг 5.5: Генерация adminNotes...')
     const telegramLink = formatTelegramLink(chatId, messageId)
     const links = extractLinks(text)
+    console.log(`   📝 Найдено ссылок: билеты=${links.tickets.length}, организаторы=${links.organizers.length}`)
+    if (links.tickets.length > 0) {
+      console.log(`   📝 Ссылки на билеты: ${links.tickets.join(', ')}`)
+    }
+    if (links.organizers.length > 0) {
+      console.log(`   📝 Ссылки организаторов: ${links.organizers.join(', ')}`)
+    }
+    
     let coordinates: { lat: number; lng: number } | null = null
     
     // Получаем координаты места, если есть venue и cityName
@@ -516,6 +547,13 @@ export async function handleChannelMessage(ctx: Context) {
       const cityName = extracted.cityName || channel.city?.name || ''
       console.log(`   📍 Пытаюсь получить координаты для: "${extracted.venue}", ${cityName}`)
       coordinates = await geocodeVenue(extracted.venue, cityName)
+      if (coordinates) {
+        console.log(`   📍 ✅ Координаты получены: ${coordinates.lat}, ${coordinates.lng}`)
+      } else {
+        console.log(`   📍 ⚠️ Координаты не найдены (возможно, нет YANDEX_MAPS_API_KEY или место не найдено)`)
+      }
+    } else {
+      console.log(`   📍 ⚠️ Нет venue или cityName для геокодинга: venue=${extracted.venue || 'null'}, cityName=${extracted.cityName || channel.city?.name || 'null'}`)
     }
     
     const adminNotes = JSON.stringify({
@@ -524,7 +562,13 @@ export async function handleChannelMessage(ctx: Context) {
       organizerLinks: links.organizers,
       coordinates: coordinates ? { lat: coordinates.lat, lng: coordinates.lng } : null,
     })
-    console.log('   📝 ✅ AdminNotes сгенерированы:', adminNotes.substring(0, 200))
+    console.log('   📝 ✅ AdminNotes сгенерированы:', adminNotes)
+    memoryLogger.info(`AdminNotes сгенерированы`, { 
+      telegramLink, 
+      ticketLinksCount: links.tickets.length,
+      organizerLinksCount: links.organizers.length,
+      hasCoordinates: !!coordinates 
+    }, 'messageHandler')
 
     // 6. Отправка карточки с кнопками в группу для одобрения ПЕРЕД созданием draft
     console.log(`${getLogPrefix()} 📤 STEP6: SEND_APPROVAL_CARD (BEFORE DRAFT CREATION)`)
