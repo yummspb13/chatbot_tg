@@ -206,29 +206,35 @@ export async function handleChannelMessage(ctx: Context) {
     return // Канал не отслеживается
   }
   console.log(`   ✅ Канал найден: "${channel.title}" (ID: ${channel.id})`)
+  memoryLogger.info(`Канал найден в базе`, { channelId: channel.id, channelTitle: channel.title, chatId }, 'messageHandler')
 
   // Проверяем, что бот запущен
   console.log('   🔍 Проверяю статус бота...')
+  memoryLogger.info(`Проверка статуса бота`, {}, 'messageHandler')
   const settings = await getBotSettings()
   console.log('   📊 Настройки бота:', {
     isRunning: settings.isRunning,
     mode: settings.mode,
     confidenceThreshold: settings.confidenceThreshold
   })
+  memoryLogger.info(`Настройки бота получены`, { isRunning: settings.isRunning, mode: settings.mode }, 'messageHandler')
   
   if (!settings.isRunning) {
     console.log(`   ❌ Бот не запущен (isRunning = false), пропускаю сообщение из канала ${channel.title}`)
     console.log('   💡 Запустите бота командой /start')
+    memoryLogger.warn(`Бот не запущен, сообщение пропущено`, { chatId, channelTitle: channel.title }, 'messageHandler')
     console.log('═══════════════════════════════════════════════════════════')
     console.log('')
     return
   }
   console.log('   ✅ Бот запущен')
+  memoryLogger.info(`Бот запущен, продолжаю обработку`, {}, 'messageHandler')
   
   console.log(`   📨 Получено сообщение из канала: ${channel.title} (${chatId})`)
 
   const messageId = message.message_id.toString()
   console.log('   📝 Message ID:', messageId)
+  memoryLogger.info(`Проверка дубликатов`, { messageId, chatId }, 'messageHandler')
   // text уже извлечен выше из message.text или message.caption
 
   // Проверяем, не обрабатывали ли мы уже это сообщение
@@ -242,11 +248,13 @@ export async function handleChannelMessage(ctx: Context) {
 
   if (existingDraft) {
     console.log('   ⏭ Сообщение уже обработано (черновик существует, ID:', existingDraft.id, ')')
+    memoryLogger.warn(`Сообщение уже обработано`, { messageId, chatId, draftId: existingDraft.id }, 'messageHandler')
     console.log('═══════════════════════════════════════════════════════════')
     console.log('')
     return // Уже обработано
   }
   console.log('   ✅ Дубликатов не найдено, продолжаю обработку')
+  memoryLogger.info(`Дубликатов не найдено, начинаю обработку`, { messageId, chatId }, 'messageHandler')
 
   // Сохраняем оригинальный текст для обучения (во временное хранилище или прямо в DraftEvent)
   // Для MVP сохраним в description если его нет, или создадим отдельное поле позже
