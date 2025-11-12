@@ -10,6 +10,7 @@ export type AfishaDraftRequest = {
   coverImage?: string
   gallery?: string[]
   sourceLinks?: string[]
+  adminNotes?: string // Текстовая строка с заметками для админа
 }
 
 export type AfishaDraftResponse = {
@@ -51,6 +52,7 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
       coverImage: draft.coverImage ? (draft.coverImage.substring(0, 80) + '...') : null,
       gallery: draft.gallery ? `${draft.gallery.length} изображений` : null,
       sourceLinks: draft.sourceLinks,
+      adminNotes: draft.adminNotes ? (draft.adminNotes.substring(0, 200) + '...') : null,
     }, null, 2))
     
     if (draft.coverImage) {
@@ -66,6 +68,13 @@ export async function sendDraft(draft: AfishaDraftRequest): Promise<AfishaDraftR
       })
     } else {
       console.log(`[sendDraft] ⚠️ Gallery отсутствует или пуста`)
+    }
+    
+    if (draft.adminNotes) {
+      console.log(`[sendDraft] ✅ AdminNotes отправляется: ${draft.adminNotes.length} символов`)
+      console.log(`[sendDraft]    Preview: ${draft.adminNotes.substring(0, 200)}...`)
+    } else {
+      console.log(`[sendDraft] ⚠️ AdminNotes отсутствует`)
     }
     
     const response = await fetch(apiUrl, {

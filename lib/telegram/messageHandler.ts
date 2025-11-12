@@ -556,18 +556,49 @@ export async function handleChannelMessage(ctx: Context) {
       console.log(`   📍 ⚠️ Нет venue или cityName для геокодинга: venue=${extracted.venue || 'null'}, cityName=${extracted.cityName || channel.city?.name || 'null'}`)
     }
     
-    const adminNotes = JSON.stringify({
-      telegramLink,
-      ticketLinks: links.tickets,
-      organizerLinks: links.organizers,
-      coordinates: coordinates ? { lat: coordinates.lat, lng: coordinates.lng } : null,
-    })
-    console.log('   📝 ✅ AdminNotes сгенерированы:', adminNotes)
+    // Формируем adminNotes как читаемый текст (не JSON)
+    const adminNotesParts: string[] = []
+    
+    // Добавляем ссылку на пост в Telegram
+    adminNotesParts.push(`Источники:`)
+    adminNotesParts.push(`1. ${telegramLink}`)
+    
+    // Добавляем ссылки на билеты
+    if (links.tickets.length > 0) {
+      links.tickets.forEach((link, index) => {
+        adminNotesParts.push(`${index + 2}. ${link}`)
+      })
+    }
+    
+    // Добавляем ссылки организаторов
+    if (links.organizers.length > 0) {
+      if (adminNotesParts.length > 0) {
+        adminNotesParts.push('') // Пустая строка для разделения
+      }
+      adminNotesParts.push(`Ссылки организаторов:`)
+      links.organizers.forEach((link, index) => {
+        adminNotesParts.push(`${index + 1}. ${link}`)
+      })
+    }
+    
+    // Добавляем координаты места
+    if (coordinates) {
+      if (adminNotesParts.length > 0) {
+        adminNotesParts.push('') // Пустая строка для разделения
+      }
+      adminNotesParts.push(`Координаты места:`)
+      adminNotesParts.push(`lat: ${coordinates.lat}, lng: ${coordinates.lng}`)
+    }
+    
+    const adminNotes = adminNotesParts.join('\n')
+    console.log('   📝 ✅ AdminNotes сгенерированы (текст):')
+    console.log('   📝 ' + adminNotes.split('\n').join('\n   📝 '))
     memoryLogger.info(`AdminNotes сгенерированы`, { 
       telegramLink, 
       ticketLinksCount: links.tickets.length,
       organizerLinksCount: links.organizers.length,
-      hasCoordinates: !!coordinates 
+      hasCoordinates: !!coordinates,
+      adminNotesLength: adminNotes.length
     }, 'messageHandler')
 
     // 6. Отправка карточки с кнопками в группу для одобрения ПЕРЕД созданием draft
@@ -975,6 +1006,47 @@ export async function handleApprove(draftId: number) {
   const { sendDraft } = await import('@/lib/afisha/client')
   const { toISOString: dateToISO } = await import('@/lib/utils/date')
 
+  // Парсим adminNotes из базы (там хранится как текст, но может быть JSON в старых записях)
+  let adminNotesText: string | undefined = undefined
+  if (draft.adminNotes) {
+    try {
+      // Пытаемся распарсить как JSON (для старых записей)
+      const parsed = JSON.parse(draft.adminNotes)
+      // Если это JSON объект, преобразуем в текст
+      if (typeof parsed === 'object' && parsed !== null) {
+        const parts: string[] = []
+        if (parsed.telegramLink) {
+          parts.push(`Источники:`)
+          parts.push(`1. ${parsed.telegramLink}`)
+        }
+        if (parsed.ticketLinks && parsed.ticketLinks.length > 0) {
+          parsed.ticketLinks.forEach((link: string, index: number) => {
+            parts.push(`${index + 2}. ${link}`)
+          })
+        }
+        if (parsed.organizerLinks && parsed.organizerLinks.length > 0) {
+          if (parts.length > 0) parts.push('')
+          parts.push(`Ссылки организаторов:`)
+          parsed.organizerLinks.forEach((link: string, index: number) => {
+            parts.push(`${index + 1}. ${link}`)
+          })
+        }
+        if (parsed.coordinates) {
+          if (parts.length > 0) parts.push('')
+          parts.push(`Координаты места:`)
+          parts.push(`lat: ${parsed.coordinates.lat}, lng: ${parsed.coordinates.lng}`)
+        }
+        adminNotesText = parts.join('\n')
+      } else {
+        // Уже текст
+        adminNotesText = draft.adminNotes
+      }
+    } catch (e) {
+      // Не JSON, значит уже текст
+      adminNotesText = draft.adminNotes
+    }
+  }
+
   const response = await sendDraft({
     title: draft.title,
     startDate: dateToISO(draft.startDate),
@@ -985,6 +1057,7 @@ export async function handleApprove(draftId: number) {
     coverImage: cloudinaryCoverImage,
     gallery: cloudinaryGallery.length > 0 ? cloudinaryGallery : undefined,
     sourceLinks: draft.sourceLink ? [draft.sourceLink] : undefined,
+    adminNotes: adminNotesText,
   })
 
   if (response.isDuplicate) {
