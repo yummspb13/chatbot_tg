@@ -198,9 +198,10 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
 
   // Извлекаем информацию о фотографиях из сообщения
   // ВАЖНО: Telegram Client API и Bot API используют разные форматы file_id
-  // Мы передаем информацию о наличии фото, но file_id нужно будет получить через Bot API
+  // Мы скачиваем файлы через Client API и передаем их как base64 или сохраняем оригинальную информацию
   let photo: any[] | undefined = undefined
   let document: any | undefined = undefined
+  let photoBuffers: Array<{ index: number; buffer: Buffer; mimeType: string }> = []
   
   if (message.media) {
     const media = message.media as any
@@ -216,28 +217,55 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
         console.log(`   🖼 Найдено фото: ${photoSizes.length} размеров`)
         
         if (photoSizes.length > 0) {
-          // Для Bot API нужно использовать специальный формат
-          // Пока передаем информацию о размерах, но file_id будет получен через Bot API
-          // Используем временный идентификатор на основе location
-          const photoArray = photoSizes.map((size: any, index: number) => {
-            const location = size.location
-            // Создаем временный идентификатор (будет заменен на реальный file_id через Bot API)
-            const tempId = location 
-              ? `${location.volumeId}_${location.localId}_${index}` 
-              : `temp_${Date.now()}_${index}`
-            
-            return {
-              file_id: tempId, // Временный ID, будет заменен
-              file_unique_id: tempId,
-              width: size.w || 0,
-              height: size.h || 0,
-              file_size: size.s || 0,
-              // Сохраняем оригинальную информацию для получения реального file_id
-              _clientApiLocation: location,
+          // Берем самое большое изображение (последний элемент)
+          const largestPhoto = photoSizes[photoSizes.length - 1]
+          
+          // Скачиваем фото через Client API
+          const client = getMonitoringClient()
+          if (client) {
+            try {
+              console.log(`   🖼 Скачиваю фото через Client API...`)
+              const buffer = await client.downloadMedia(message, {
+                thumb: -1, // Берем самое большое изображение
+              }) as Buffer
+              
+              if (buffer) {
+                console.log(`   🖼 ✅ Фото скачано: ${buffer.length} bytes`)
+                photoBuffers.push({
+                  index: 0,
+                  buffer,
+                  mimeType: 'image/jpeg', // Telegram обычно возвращает JPEG
+                })
+                
+                // Создаем временный file_id для передачи в webhook
+                // В handleApprove мы будем использовать buffer для загрузки в Cloudinary
+                photo = [{
+                  file_id: `client_api_photo_${Date.now()}`,
+                  file_unique_id: `client_api_photo_${Date.now()}`,
+                  width: largestPhoto.w || 0,
+                  height: largestPhoto.h || 0,
+                  file_size: buffer.length,
+                  _clientApiBuffer: buffer.toString('base64'), // Сохраняем как base64 для передачи
+                }]
+                console.log(`   🖼 ✅ Фото подготовлено для передачи (base64: ${buffer.length} bytes)`)
+              }
+            } catch (downloadError: any) {
+              console.warn(`   ⚠️ Ошибка скачивания фото: ${downloadError.message}`)
+              // Если не удалось скачать, передаем информацию о наличии фото
+              const location = largestPhoto.location
+              const tempId = location 
+                ? `${location.volumeId}_${location.localId}` 
+                : `temp_${Date.now()}`
+              photo = [{
+                file_id: tempId,
+                file_unique_id: tempId,
+                width: largestPhoto.w || 0,
+                height: largestPhoto.h || 0,
+                file_size: largestPhoto.s || 0,
+                _clientApiLocation: location,
+              }]
             }
-          })
-          photo = photoArray
-          console.log(`   🖼 Создано ${photoArray.length} объектов фото (временные file_id)`)
+          }
         }
       } catch (error: any) {
         console.warn(`   ⚠️ Ошибка извлечения фото: ${error.message}`)
@@ -252,16 +280,37 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
       console.log(`   🔍 Найден document: ${mimeType}`)
       
       if (mimeType.startsWith('image/')) {
-        document = {
-          file_id: doc.id?.toString() || `doc_${Date.now()}`, // Временный ID
-          file_unique_id: doc.id?.toString() || `doc_${Date.now()}`,
-          file_name: doc.attributes?.find((attr: any) => attr.fileName)?.fileName || '',
-          mime_type: mimeType,
-          file_size: doc.size || 0,
-          // Сохраняем оригинальную информацию
-          _clientApiDocument: doc,
+        // Скачиваем document через Client API
+        const client = getMonitoringClient()
+        if (client) {
+          try {
+            console.log(`   🖼 Скачиваю document-изображение через Client API...`)
+            const buffer = await client.downloadMedia(message) as Buffer
+            
+            if (buffer) {
+              console.log(`   🖼 ✅ Document скачан: ${buffer.length} bytes`)
+              document = {
+                file_id: `client_api_doc_${Date.now()}`,
+                file_unique_id: `client_api_doc_${Date.now()}`,
+                file_name: doc.attributes?.find((attr: any) => attr.fileName)?.fileName || '',
+                mime_type: mimeType,
+                file_size: buffer.length,
+                _clientApiBuffer: buffer.toString('base64'), // Сохраняем как base64
+              }
+              console.log(`   🖼 ✅ Document подготовлен для передачи`)
+            }
+          } catch (downloadError: any) {
+            console.warn(`   ⚠️ Ошибка скачивания document: ${downloadError.message}`)
+            document = {
+              file_id: doc.id?.toString() || `doc_${Date.now()}`,
+              file_unique_id: doc.id?.toString() || `doc_${Date.now()}`,
+              file_name: doc.attributes?.find((attr: any) => attr.fileName)?.fileName || '',
+              mime_type: mimeType,
+              file_size: doc.size || 0,
+              _clientApiDocument: doc,
+            }
+          }
         }
-        console.log(`   🖼 Найден document-изображение: ${mimeType}`)
       }
     }
   } else {

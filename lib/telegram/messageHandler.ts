@@ -339,9 +339,46 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('   🖼 Шаг 4.5: Обработка изображений...')
     let coverImageUrl: string | null = null
     const galleryUrls: string[] = []
-
-    if (images.length > 0) {
+    
+    // Проверяем, есть ли base64 буферы от Worker (Client API)
+    const photoBuffers: Array<{ index: number; data: string; mimeType: string }> = []
+    if (message.photo && Array.isArray(message.photo)) {
+      for (const photoItem of message.photo) {
+        if (photoItem._clientApiBuffer) {
+          photoBuffers.push({
+            index: photoItem.file_id?.includes('_0') ? 0 : photoBuffers.length,
+            data: photoItem._clientApiBuffer,
+            mimeType: 'image/jpeg',
+          })
+          console.log(`   🖼 Найден base64 буфер от Worker (${photoItem._clientApiBuffer.length} символов)`)
+        }
+      }
+    }
+    
+    // Если есть base64 буферы, сохраняем их для загрузки в Cloudinary при одобрении
+    // НЕ загружаем в Cloudinary сейчас - только при одобрении!
+    if (photoBuffers.length > 0) {
+      console.log(`   🖼 Найдено ${photoBuffers.length} base64 буферов от Worker`)
+      console.log(`   🖼 ⚠️ Изображения НЕ загружаются в Cloudinary сейчас - только при одобрении!`)
+      
+      // Сохраняем base64 буферы в coverImage и gallery как JSON
+      // В handleApprove мы будем использовать их для загрузки в Cloudinary
+      if (photoBuffers.length > 0) {
+        // Первое изображение - coverImage (сохраняем как base64)
+        coverImageUrl = `base64:${photoBuffers[0].data}`
+        console.log(`   🖼 ✅ Cover image сохранен как base64 (${photoBuffers[0].data.length} символов)`)
+        
+        // Остальные - gallery
+        for (let i = 1; i < photoBuffers.length; i++) {
+          galleryUrls.push(`base64:${photoBuffers[i].data}`)
+          console.log(`   🖼 ✅ Изображение ${i + 1} сохранено как base64`)
+        }
+      }
+    } else if (images.length > 0) {
+      // Если нет base64 буферов, пытаемся получить URL через Bot API
       console.log('   🖼 Найдено изображений:', images.length)
+      console.log('   🖼 ⚠️ Нет base64 буферов от Worker, пытаюсь получить URL через Bot API...')
+      
       // Первое изображение - coverImage
       console.log('   🖼 Получаю URL для первого изображения (file_id:', images[0], ')...')
       const firstImageUrl = await getTelegramFileUrl(images[0])
@@ -659,7 +696,90 @@ export async function handleApprove(draftId: number) {
     }
   }
 
-  // Отправляем в Афишу
+  // Загружаем изображения в Cloudinary (только для одобренных черновиков)
+  console.log(`[handleApprove] Загружаю изображения в Cloudinary для draftId: ${draftId}`)
+  let cloudinaryCoverImage: string | undefined = undefined
+  let cloudinaryGallery: string[] = []
+  
+  try {
+    const { uploadImageFromUrl, uploadImageFromBuffer, uploadMultipleImages } = await import('@/lib/cloudinary/upload')
+    
+    // Загружаем coverImage если есть
+    if (draft.coverImage) {
+      console.log(`[handleApprove] Загружаю coverImage в Cloudinary...`)
+      try {
+        // Проверяем, это base64 буфер от Worker или URL
+        if (draft.coverImage.startsWith('base64:')) {
+          // Это base64 буфер от Worker - загружаем из Buffer
+          const base64Data = draft.coverImage.substring(7) // Убираем префикс "base64:"
+          const buffer = Buffer.from(base64Data, 'base64')
+          console.log(`[handleApprove] Загружаю coverImage из base64 буфера (${buffer.length} bytes)...`)
+          const result = await uploadImageFromBuffer(buffer, 'approved')
+          cloudinaryCoverImage = result.url
+          console.log(`[handleApprove] ✅ CoverImage загружен в Cloudinary из Buffer: ${result.url.substring(0, 100)}...`)
+        } else {
+          // Это URL - загружаем из URL
+          const result = await uploadImageFromUrl(draft.coverImage, 'approved')
+          cloudinaryCoverImage = result.url
+          console.log(`[handleApprove] ✅ CoverImage загружен в Cloudinary из URL: ${result.url.substring(0, 100)}...`)
+        }
+      } catch (error: any) {
+        console.error(`[handleApprove] ❌ Ошибка загрузки coverImage в Cloudinary:`, error.message)
+        // Используем оригинальный URL если загрузка не удалась
+        cloudinaryCoverImage = draft.coverImage.startsWith('base64:') ? undefined : draft.coverImage
+      }
+    }
+    
+    // Загружаем gallery если есть
+    if (gallery.length > 0) {
+      console.log(`[handleApprove] Загружаю ${gallery.length} изображений gallery в Cloudinary...`)
+      
+      // Разделяем base64 буферы и URL
+      const base64Images: Buffer[] = []
+      const urlImages: string[] = []
+      
+      for (const image of gallery) {
+        if (image.startsWith('base64:')) {
+          const base64Data = image.substring(7)
+          base64Images.push(Buffer.from(base64Data, 'base64'))
+        } else {
+          urlImages.push(image)
+        }
+      }
+      
+      // Загружаем base64 буферы
+      for (let i = 0; i < base64Images.length; i++) {
+        try {
+          console.log(`[handleApprove] Загружаю gallery изображение ${i + 1} из base64 буфера...`)
+          const result = await uploadImageFromBuffer(base64Images[i], 'approved')
+          cloudinaryGallery.push(result.url)
+          console.log(`[handleApprove] ✅ Gallery изображение ${i + 1} загружено в Cloudinary`)
+        } catch (error: any) {
+          console.error(`[handleApprove] ❌ Ошибка загрузки gallery изображения ${i + 1}:`, error.message)
+        }
+      }
+      
+      // Загружаем URL изображения
+      if (urlImages.length > 0) {
+        try {
+          const results = await uploadMultipleImages(urlImages, 'approved')
+          cloudinaryGallery.push(...results.map(r => r.url))
+          console.log(`[handleApprove] ✅ Загружено ${results.length} URL изображений в Cloudinary`)
+        } catch (error: any) {
+          console.error(`[handleApprove] ❌ Ошибка загрузки URL изображений:`, error.message)
+        }
+      }
+      
+      console.log(`[handleApprove] ✅ Всего загружено ${cloudinaryGallery.length} изображений в Cloudinary`)
+    }
+  } catch (error: any) {
+    console.error(`[handleApprove] ❌ Критическая ошибка при загрузке в Cloudinary:`, error.message)
+    // Используем оригинальные URL если Cloudinary недоступен (но не base64)
+    cloudinaryCoverImage = draft.coverImage?.startsWith('base64:') ? undefined : draft.coverImage || undefined
+    cloudinaryGallery = gallery.filter(img => !img.startsWith('base64:'))
+  }
+
+  // Отправляем в Афишу с Cloudinary URL
   const { sendDraft } = await import('@/lib/afisha/client')
   const { toISOString: dateToISO } = await import('@/lib/utils/date')
 
@@ -670,8 +790,8 @@ export async function handleApprove(draftId: number) {
     venue: draft.venue || undefined,
     city: draft.cityName || draft.city?.name || undefined,
     description: draft.description || undefined,
-    coverImage: draft.coverImage || undefined,
-    gallery: gallery.length > 0 ? gallery : undefined,
+    coverImage: cloudinaryCoverImage,
+    gallery: cloudinaryGallery.length > 0 ? cloudinaryGallery : undefined,
     sourceLinks: draft.sourceLink ? [draft.sourceLink] : undefined,
   })
 
