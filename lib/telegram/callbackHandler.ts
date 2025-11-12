@@ -98,6 +98,20 @@ async function handleApproveCallback(ctx: Context, draftId: number) {
   }
 
   console.log(`[handleApproveCallback] ✅ Черновик ${draftId} может быть обработан, продолжаю...`)
+  
+  // Логируем adminNotes для отладки
+  if (draft.adminNotes) {
+    try {
+      const adminNotes = JSON.parse(draft.adminNotes)
+      console.log(`[handleApproveCallback] 📝 AdminNotes для draftId ${draftId}:`, JSON.stringify(adminNotes, null, 2))
+      memoryLogger.info(`AdminNotes для черновика`, { draftId, adminNotes }, 'callbackHandler')
+    } catch (e) {
+      console.warn(`[handleApproveCallback] ⚠️ Не удалось распарсить adminNotes:`, e)
+    }
+  } else {
+    console.log(`[handleApproveCallback] ⚠️ AdminNotes отсутствуют для draftId ${draftId}`)
+    memoryLogger.warn(`AdminNotes отсутствуют`, { draftId }, 'callbackHandler')
+  }
 
   // Получаем предсказание агента из последнего LearningDecision для этого сообщения
   const lastDecision = await prisma.learningDecision.findFirst({

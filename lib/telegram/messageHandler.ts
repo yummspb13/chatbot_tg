@@ -314,6 +314,27 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('   🔍 Шаг 3: Проверка дубликатов...')
     const startDate = parseISOString(extracted.startDateIso)
     console.log('   📅 Парсинг даты:', extracted.startDateIso, '->', startDate.toISOString())
+    
+    // Проверяем, есть ли уже draft с таким же chatId и временем (в пределах 10 секунд)
+    // Это нужно для объединения нескольких фото из одного поста
+    const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
+    const timeWindow = 10 // 10 секунд
+    const existingDraftForGrouping = await prisma.draftEvent.findFirst({
+      where: {
+        telegramChatId: chatId,
+        createdAt: {
+          gte: new Date((messageTimestamp - timeWindow) * 1000),
+          lte: new Date((messageTimestamp + timeWindow) * 1000),
+        },
+        status: {
+          in: ['NEW', 'PENDING'],
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    })
+    
     const duplicate = await prisma.draftEvent.findFirst({
       where: {
         title: {
@@ -331,6 +352,40 @@ export async function handleChannelMessage(ctx: Context) {
       return
     }
     console.log('   ✅ Дубликатов не найдено')
+    
+    // Если есть draft для группировки и текущее сообщение содержит только фото (без текста или с пустым текстом)
+    // то добавляем фото в gallery существующего draft
+    if (existingDraftForGrouping && (!text || text.trim().length === 0) && photoBuffers.length > 0) {
+      console.log(`   🔗 Найден существующий draft ${existingDraftForGrouping.id} для группировки фото`)
+      console.log(`   🖼 Добавляю ${photoBuffers.length} фото в gallery существующего draft`)
+      
+      // Парсим существующую gallery
+      let existingGallery: string[] = []
+      if (existingDraftForGrouping.gallery) {
+        try {
+          existingGallery = JSON.parse(existingDraftForGrouping.gallery)
+        } catch (e) {
+          console.warn('   ⚠️ Ошибка парсинга существующей gallery:', e)
+        }
+      }
+      
+      // Добавляем новые фото
+      for (const photoBuffer of photoBuffers) {
+        existingGallery.push(`base64:${photoBuffer.data}`)
+      }
+      
+      // Обновляем draft
+      await prisma.draftEvent.update({
+        where: { id: existingDraftForGrouping.id },
+        data: {
+          gallery: JSON.stringify(existingGallery),
+        },
+      })
+      
+      console.log(`   ✅ Добавлено ${photoBuffers.length} фото в gallery draft ${existingDraftForGrouping.id}`)
+      console.log(`   📊 Всего фото в gallery: ${existingGallery.length}`)
+      return // Не создаем новый draft, только обновляем существующий
+    }
 
     // 4. Предсказание агента
     console.log('   🤖 Шаг 4: Предсказание агента...')
