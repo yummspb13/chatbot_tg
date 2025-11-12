@@ -233,7 +233,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
                 thumb: -1, // Берем самое большое изображение
               }) as Buffer
               
-              if (buffer) {
+              if (buffer && buffer.length > 0) {
                 console.log(`   🖼 ✅ Фото скачано: ${buffer.length} bytes`)
                 photoBuffers.push({
                   index: 0,
@@ -252,6 +252,34 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
                   _clientApiBuffer: buffer.toString('base64'), // Сохраняем как base64 для передачи
                 }]
                 console.log(`   🖼 ✅ Фото подготовлено для передачи (base64: ${buffer.length} bytes)`)
+              } else {
+                console.warn(`   ⚠️ Фото не скачано: buffer пустой или null (${buffer ? buffer.length : 'null'} bytes)`)
+                console.warn(`   ⚠️ Пробую скачать без параметра thumb...`)
+                // Пробуем скачать без параметра thumb
+                try {
+                  const buffer2 = await client.downloadMedia(message) as Buffer
+                  if (buffer2 && buffer2.length > 0) {
+                    console.log(`   🖼 ✅ Фото скачано без thumb: ${buffer2.length} bytes`)
+                    photoBuffers.push({
+                      index: 0,
+                      buffer: buffer2,
+                      mimeType: 'image/jpeg',
+                    })
+                    photo = [{
+                      file_id: `client_api_photo_${Date.now()}`,
+                      file_unique_id: `client_api_photo_${Date.now()}`,
+                      width: largestPhoto.w || 0,
+                      height: largestPhoto.h || 0,
+                      file_size: buffer2.length,
+                      _clientApiBuffer: buffer2.toString('base64'),
+                    }]
+                    console.log(`   🖼 ✅ Фото подготовлено для передачи (base64: ${buffer2.length} bytes)`)
+                  } else {
+                    console.warn(`   ⚠️ Фото не скачано и без thumb: buffer пустой`)
+                  }
+                } catch (error2: any) {
+                  console.warn(`   ⚠️ Ошибка скачивания без thumb: ${error2.message}`)
+                }
               }
             } catch (downloadError: any) {
               console.warn(`   ⚠️ Ошибка скачивания фото: ${downloadError.message}`)
@@ -297,7 +325,7 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
             console.log(`   🖼 Скачиваю document-изображение через Client API...`)
             const buffer = await client.downloadMedia(message) as Buffer
             
-            if (buffer) {
+            if (buffer && buffer.length > 0) {
               console.log(`   🖼 ✅ Document скачан: ${buffer.length} bytes`)
               document = {
                 file_id: `client_api_doc_${Date.now()}`,
@@ -308,6 +336,8 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
                 _clientApiBuffer: buffer.toString('base64'), // Сохраняем как base64
               }
               console.log(`   🖼 ✅ Document подготовлен для передачи`)
+            } else {
+              console.warn(`   ⚠️ Document не скачан: buffer пустой или null (${buffer ? buffer.length : 'null'} bytes)`)
             }
           } catch (downloadError: any) {
             console.warn(`   ⚠️ Ошибка скачивания document: ${downloadError.message}`)
