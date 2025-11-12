@@ -14,26 +14,42 @@ export async function wakeWorkerIfNeeded(): Promise<boolean> {
     console.log(`[wakeWorker] Проверяю статус Worker: ${WORKER_URL}`)
     
     // Сначала проверяем статус
-    const statusResponse = await fetch(`${WORKER_URL}/runner/status`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      // Короткий timeout для быстрой проверки
-      signal: AbortSignal.timeout(5000),
-    })
+    let statusResponse: Response
+    try {
+      statusResponse = await fetch(`${WORKER_URL}/runner/status`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        // Короткий timeout для быстрой проверки
+        signal: AbortSignal.timeout(10000), // Увеличиваем до 10 секунд
+      })
+    } catch (fetchError: any) {
+      // Если не удалось подключиться (Worker уснул), пробуждаем
+      if (fetchError.name === 'AbortError' || fetchError.code === 'ECONNREFUSED' || fetchError.code === 'ETIMEDOUT') {
+        console.warn(`[wakeWorker] ⚠️ Worker недоступен (возможно уснул), пытаюсь пробудить...`)
+        console.warn(`[wakeWorker]    Ошибка: ${fetchError.name || fetchError.code || fetchError.message}`)
+        return await tryWakeWorker()
+      }
+      throw fetchError
+    }
     
     if (!statusResponse.ok) {
-      console.warn(`[wakeWorker] Не удалось проверить статус Worker: ${statusResponse.status}`)
+      console.warn(`[wakeWorker] ⚠️ Не удалось проверить статус Worker: ${statusResponse.status}`)
       // Пытаемся пробудить в любом случае
       return await tryWakeWorker()
     }
     
     const status = await statusResponse.json()
+    console.log(`[wakeWorker] Статус Worker:`, {
+      isRunning: status.isRunning,
+      isMonitoring: status.monitoring?.isMonitoring,
+      isConnected: status.monitoring?.isConnected,
+    })
     
     // Если Worker работает и мониторинг активен, ничего не делаем
     if (status.isRunning && status.monitoring?.isMonitoring && status.monitoring?.isConnected) {
-      console.log(`[wakeWorker] ✅ Worker уже работает`)
+      console.log(`[wakeWorker] ✅ Worker уже работает и мониторинг активен`)
       return true
     }
     
@@ -44,11 +60,11 @@ export async function wakeWorkerIfNeeded(): Promise<boolean> {
   } catch (error: any) {
     // Если не удалось проверить статус (Worker может быть уснувшим), пытаемся пробудить
     if (error.name === 'AbortError' || error.code === 'ECONNREFUSED' || error.code === 'ETIMEDOUT') {
-      console.warn(`[wakeWorker] Worker недоступен (возможно уснул), пытаюсь пробудить...`)
+      console.warn(`[wakeWorker] ⚠️ Worker недоступен (возможно уснул), пытаюсь пробудить...`)
       return await tryWakeWorker()
     }
     
-    console.error(`[wakeWorker] Ошибка проверки статуса Worker:`, error.message)
+    console.error(`[wakeWorker] ❌ Ошибка проверки статуса Worker:`, error.message)
     return false
   }
 }
