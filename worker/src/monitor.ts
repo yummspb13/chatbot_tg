@@ -207,9 +207,11 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
     const media = message.media as any
     console.log(`   🔍 Проверяю медиа в сообщении...`)
     console.log(`   🔍 Media type: ${media.constructor?.name || typeof media}`)
+    console.log(`   🔍 Media keys: ${Object.keys(media).join(', ')}`)
     
     // Проверяем, есть ли фото
     if (media.photo) {
+      console.log(`   🖼 media.photo найден!`)
       try {
         const photoObj = media.photo as any
         // Telegram Client API Photo содержит sizes - массив размеров
@@ -217,14 +219,16 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
         console.log(`   🖼 Найдено фото: ${photoSizes.length} размеров`)
         
         if (photoSizes.length > 0) {
+          console.log(`   🖼 Найдено ${photoSizes.length} размеров фото`)
           // Берем самое большое изображение (последний элемент)
           const largestPhoto = photoSizes[photoSizes.length - 1]
+          console.log(`   🖼 Использую самое большое фото: ${largestPhoto.w}x${largestPhoto.h}`)
           
           // Скачиваем фото через Client API
           const client = getMonitoringClient()
           if (client) {
             try {
-              console.log(`   🖼 Скачиваю фото через Client API...`)
+              console.log(`   🖼 Скачиваю фото через Client API (message.id: ${message.id})...`)
               const buffer = await client.downloadMedia(message, {
                 thumb: -1, // Берем самое большое изображение
               }) as Buffer
@@ -265,12 +269,18 @@ async function sendMessageToBot(message: any, chatId: string, channelTitle: stri
                 _clientApiLocation: location,
               }]
             }
+          } else {
+            console.log(`   ⚠️ Client не доступен для скачивания фото`)
           }
+        } else {
+          console.log(`   ⚠️ photoSizes пустой массив`)
         }
       } catch (error: any) {
         console.warn(`   ⚠️ Ошибка извлечения фото: ${error.message}`)
         console.warn(`   ⚠️ Stack: ${error.stack?.substring(0, 200)}`)
       }
+    } else {
+      console.log(`   ⚠️ media.photo отсутствует`)
     }
     
     // Проверяем, есть ли document (может быть изображением)
@@ -574,6 +584,22 @@ export async function startMonitoring(): Promise<boolean> {
                 }
               }
               console.log(`${logPrefix}   Message text length: ${messageText.length}`)
+              
+              // Проверяем наличие медиа в сообщении
+              if (message.media) {
+                const media = message.media as any
+                console.log(`${logPrefix}   🔍 Медиа найдено в сообщении: ${media.constructor?.name || typeof media}`)
+                if (media.photo) {
+                  console.log(`${logPrefix}   🖼 Найдено фото в медиа`)
+                } else if (media.document) {
+                  const doc = media.document as any
+                  console.log(`${logPrefix}   📄 Найден document: ${doc.mimeType || 'unknown'}`)
+                } else {
+                  console.log(`${logPrefix}   ⚠️ Медиа есть, но не фото и не document`)
+                }
+              } else {
+                console.log(`${logPrefix}   ⚠️ Медиа в сообщении отсутствует`)
+              }
 
               // Отправляем сообщение боту через webhook
               await sendMessageToBot(message, chatId, channelTitle)
