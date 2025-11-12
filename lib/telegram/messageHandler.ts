@@ -143,6 +143,12 @@ export async function handleChannelMessage(ctx: Context) {
 
   // Если нет текста и нет изображений, пропускаем
   const images = extractImagesFromMessage(message)
+  console.log('   🖼 Изображений найдено:', images.length)
+  if (images.length > 0) {
+    console.log('   🖼 File IDs:', images)
+    console.log('   🖼 Message photo:', message.photo ? `есть (${message.photo.length} размеров)` : 'нет')
+    console.log('   🖼 Message document:', message.document ? `есть (${message.document.mime_type || 'unknown'})` : 'нет')
+  }
   if (!text && images.length === 0) {
     console.log('   ⏭ Пропущено: нет текста и нет изображений')
     return // Пропускаем сообщения без текста и изображений

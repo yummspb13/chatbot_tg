@@ -26,6 +26,7 @@
     "check:production:env": "tsx scripts/check-production-env.ts",
     "check:worker:status": "tsx scripts/check-worker-status.ts",
     "check:channels:db": "tsx scripts/check-channels-in-db.ts",
+    "check:draft:images": "tsx scripts/check-draft-images.ts",
     "diagnose": "tsx scripts/diagnose-channel-issue.ts",
     "client:setup": "tsx scripts/setup-client-api.ts",
     "worker:dev": "cd worker && npm run dev",
