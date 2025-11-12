@@ -20,6 +20,10 @@ export default function QRAuthPage() {
   async function startAuth() {
     try {
       setStatus('loading')
+      // Сбрасываем предыдущие данные
+      setAuthToken(null)
+      setPassword('')
+      setPasswordError(null)
       
       // Используем воркер вместо прямого вызова API
       const workerUrl = process.env.NEXT_PUBLIC_WORKER_URL || 'http://localhost:3001'
