@@ -591,12 +591,27 @@ export async function startMonitoring(): Promise<boolean> {
 
           if (chatId) {
             console.log(`${logPrefix}   Checking if chatId ${chatId} is in channelsMap...`)
-            console.log(`${logPrefix}   Channels in map: ${Array.from(channelsMap.keys()).join(', ')}`)
+            console.log(`${logPrefix}   Channels in map (${channelsMap.size}): ${Array.from(channelsMap.keys()).join(', ')}`)
             
-            if (channelsMap.has(chatId)) {
-              const channelTitle = channelsMap.get(chatId) || 'Unknown'
-              console.log(`${logPrefix} 📨 Получено сообщение из канала ${channelTitle} (${chatId})`)
-
+            // Проверяем точное совпадение и также пробуем без минуса (на случай если формат отличается)
+            const chatIdVariants = [
+              chatId, // Оригинальный формат "-1001234567890"
+              chatId.replace(/^-100/, ''), // Без "-100" (только цифры)
+              chatId.startsWith('-') ? chatId : `-${chatId}`, // С минусом если нет
+            ]
+            
+            let foundChatId: string | null = null
+            for (const variant of chatIdVariants) {
+              if (channelsMap.has(variant)) {
+                foundChatId = variant
+                break
+              }
+            }
+            
+            if (foundChatId || channelsMap.has(chatId)) {
+              const actualChatId = foundChatId || chatId
+              const channelTitle = channelsMap.get(actualChatId) || 'Unknown'
+              console.log(`${logPrefix} 📨 Получено сообщение из канала ${channelTitle} (${actualChatId})`)
               // Логируем структуру message для отладки
               console.log(`${logPrefix}   🔍 Debug: message.date type: ${typeof message.date}, value: ${message.date}`)
               if (message.date) {
@@ -632,7 +647,7 @@ export async function startMonitoring(): Promise<boolean> {
               }
 
               // Отправляем сообщение боту через webhook
-              await sendMessageToBot(message, chatId, channelTitle)
+              await sendMessageToBot(message, actualChatId, channelTitle)
             } else {
               console.log(`${logPrefix}   ⚠️ ChatId ${chatId} не найден в списке мониторинга`)
             }

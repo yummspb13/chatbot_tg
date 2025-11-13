@@ -451,59 +451,78 @@ export async function handleChannelMessage(ctx: Context) {
     // добавляем фото в gallery существующего draft вместо создания нового
     // Ищем draft по времени сообщения (все сообщения из одного поста имеют одинаковое время) ИЛИ по близкому messageId
     if ((!text || text.trim().length === 0) && photoBuffers.length > 0) {
-      console.log(`   🔗 Проверяю возможность группировки фото (messageId: ${messageId}, text empty: ${!text || text.trim().length === 0})`)
+      console.log(`   🔗 Проверяю возможность группировки фото (messageId: ${messageId}, text empty: ${!text || text.trim().length === 0}, photoBuffers: ${photoBuffers.length})`)
       const currentMessageIdNum = parseInt(messageId, 10)
       const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
       
-      // Стратегия 1: Ищем draft с таким же временем сообщения (все сообщения из одного поста имеют одинаковое время)
-      const timeWindow = 5 // 5 секунд - сообщения из одного поста имеют одинаковое время
-      const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
-      const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
+      // Пробуем найти draft несколько раз с задержкой (на случай, если draft еще создается)
+      let existingDraftForGrouping = null
+      const maxRetries = 3
+      const retryDelay = 2000 // 2 секунды
       
-      console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, messageId=${messageId}, время=${messageTimestamp}`)
-      console.log(`   🔗 Стратегия 1: По времени сообщения (${searchStart.toISOString()} - ${searchEnd.toISOString()})`)
-      
-      let existingDraftForGrouping = await prisma.draftEvent.findFirst({
-        where: {
-          telegramChatId: chatId,
-          createdAt: {
-            gte: searchStart,
-            lte: searchEnd,
-          },
-          status: {
-            in: ['NEW', 'PENDING'],
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      })
-      
-      // Стратегия 2: Если не нашли по времени, ищем по messageId (в обе стороны - на случай, если сообщение с текстом придет позже)
-      if (!existingDraftForGrouping && !isNaN(currentMessageIdNum)) {
-        const minMessageId = Math.max(1, currentMessageIdNum - 10).toString()
-        const maxMessageId = (currentMessageIdNum + 10).toString() // Ищем и вперед тоже
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        console.log(`   🔗 Попытка ${attempt}/${maxRetries} найти draft для группировки...`)
         
-        console.log(`   🔗 Стратегия 2: По messageId в диапазоне: ${minMessageId} - ${maxMessageId}`)
+        // Стратегия 1: Ищем draft с таким же временем сообщения (все сообщения из одного поста имеют одинаковое время)
+        const timeWindow = 30 // 30 секунд - увеличиваем окно, так как draft может создаваться с задержкой
+        const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
+        const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
         
-        const possibleDrafts = await prisma.draftEvent.findMany({
+        console.log(`   🔗 Ищу draft для группировки: chatId=${chatId}, messageId=${messageId}, время=${messageTimestamp}`)
+        console.log(`   🔗 Стратегия 1: По времени создания draft (${searchStart.toISOString()} - ${searchEnd.toISOString()})`)
+        
+        existingDraftForGrouping = await prisma.draftEvent.findFirst({
           where: {
             telegramChatId: chatId,
-            telegramMessageId: {
-              gte: minMessageId,
-              lte: maxMessageId,
+            createdAt: {
+              gte: searchStart,
+              lte: searchEnd,
             },
             status: {
               in: ['NEW', 'PENDING'],
             },
           },
           orderBy: {
-            telegramMessageId: 'desc',
+            createdAt: 'desc',
           },
-          take: 1,
         })
         
-        existingDraftForGrouping = possibleDrafts.length > 0 ? possibleDrafts[0] : null
+        // Стратегия 2: Если не нашли по времени, ищем по messageId (в обе стороны)
+        if (!existingDraftForGrouping && !isNaN(currentMessageIdNum)) {
+          const minMessageId = Math.max(1, currentMessageIdNum - 10).toString()
+          const maxMessageId = (currentMessageIdNum + 10).toString() // Ищем и вперед тоже
+          
+          console.log(`   🔗 Стратегия 2: По messageId в диапазоне: ${minMessageId} - ${maxMessageId}`)
+          
+          const possibleDrafts = await prisma.draftEvent.findMany({
+            where: {
+              telegramChatId: chatId,
+              telegramMessageId: {
+                gte: minMessageId,
+                lte: maxMessageId,
+              },
+              status: {
+                in: ['NEW', 'PENDING'],
+              },
+            },
+            orderBy: {
+              telegramMessageId: 'desc',
+            },
+            take: 1,
+          })
+          
+          existingDraftForGrouping = possibleDrafts.length > 0 ? possibleDrafts[0] : null
+        }
+        
+        if (existingDraftForGrouping) {
+          console.log(`   🔗 ✅ Найден draft на попытке ${attempt}`)
+          break
+        }
+        
+        if (attempt < maxRetries) {
+          console.log(`   🔗 ⏳ Draft не найден, жду ${retryDelay}ms перед следующей попыткой...`)
+          await new Promise(resolve => setTimeout(resolve, retryDelay))
+        }
       }
       
       if (existingDraftForGrouping) {
