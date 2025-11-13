@@ -563,20 +563,86 @@ export async function handleChannelMessage(ctx: Context) {
         }, 'messageHandler')
         return // Не создаем новый draft, только обновляем существующий
       } else {
-        console.log(`   ⚠️ Draft для группировки не найден (сообщение будет пропущено, так как нет текста)`)
-        console.log(`   ⚠️ Попробую создать временный draft для последующей группировки...`)
+        console.log(`   ⚠️ Draft для группировки не найден, сохраняю фото в pendingGallery...`)
         
-        // Если draft не найден, но есть фото - создаем временный draft БЕЗ текста
-        // Это нужно на случай, если сообщение с текстом придет позже
-        // Но это не сработает, так как для создания draft нужны title и startDate
-        // Поэтому просто пропускаем и надеемся, что сообщение с текстом придет раньше
+        // Сохраняем фото в pendingGallery существующего draft (если есть) или создаем временную запись
+        // Ищем любой draft с близким временем, даже если он не в статусе NEW/PENDING
+        const timeWindow = 60 // 60 секунд - широкое окно для поиска
+        const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
+        const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
         
-        memoryLogger.warn(`Draft для группировки не найден`, { 
-          messageId, 
-          chatId, 
-          messageTimestamp
-        }, 'messageHandler')
-        return // Пропускаем сообщение без текста, если нет draft для группировки
+        let draftForPendingGallery = await prisma.draftEvent.findFirst({
+          where: {
+            telegramChatId: chatId,
+            createdAt: {
+              gte: searchStart,
+              lte: searchEnd,
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        })
+        
+        // Если не нашли по времени, ищем по messageId
+        if (!draftForPendingGallery && !isNaN(currentMessageIdNum)) {
+          const minMessageId = Math.max(1, currentMessageIdNum - 10).toString()
+          const maxMessageId = (currentMessageIdNum + 10).toString()
+          
+          draftForPendingGallery = await prisma.draftEvent.findFirst({
+            where: {
+              telegramChatId: chatId,
+              telegramMessageId: {
+                gte: minMessageId,
+                lte: maxMessageId,
+              },
+            },
+            orderBy: {
+              telegramMessageId: 'desc',
+            },
+          })
+        }
+        
+        if (draftForPendingGallery) {
+          // Обновляем pendingGallery существующего draft
+          let existingPendingGallery: string[] = []
+          if (draftForPendingGallery.pendingGallery) {
+            try {
+              existingPendingGallery = JSON.parse(draftForPendingGallery.pendingGallery)
+            } catch (e) {
+              console.warn('   ⚠️ Ошибка парсинга существующей pendingGallery:', e)
+            }
+          }
+          
+          // Добавляем новые фото
+          for (const photoBuffer of photoBuffers) {
+            existingPendingGallery.push(`base64:${photoBuffer.data}`)
+          }
+          
+          await prisma.draftEvent.update({
+            where: { id: draftForPendingGallery.id },
+            data: {
+              pendingGallery: JSON.stringify(existingPendingGallery),
+            },
+          })
+          
+          console.log(`   ✅ Сохранено ${photoBuffers.length} фото в pendingGallery draft ${draftForPendingGallery.id}`)
+          console.log(`   📊 Всего фото в pendingGallery: ${existingPendingGallery.length}`)
+          memoryLogger.success(`Фото сохранены в pendingGallery`, { 
+            draftId: draftForPendingGallery.id, 
+            addedCount: photoBuffers.length,
+            totalCount: existingPendingGallery.length 
+          }, 'messageHandler')
+        } else {
+          console.log(`   ⚠️ Не найден draft для сохранения pendingGallery, фото будут потеряны`)
+          memoryLogger.warn(`Draft для pendingGallery не найден, фото потеряны`, { 
+            messageId, 
+            chatId, 
+            messageTimestamp
+          }, 'messageHandler')
+        }
+        
+        return // Пропускаем сообщение без текста
       }
     }
 
@@ -698,6 +764,47 @@ export async function handleChannelMessage(ctx: Context) {
       // Автоматический режим: проверяем порог уверенности
       if (agentPrediction.confidence >= settings.confidenceThreshold) {
         console.log('   🤖 ✅ Высокая уверенность, действую автоматически')
+        // Проверяем pendingGallery перед созданием draft (для AUTO режима)
+        const messageTimestampAuto = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
+        const timeWindowAuto = 60
+        const searchStartAuto = new Date((messageTimestampAuto - timeWindowAuto) * 1000)
+        const searchEndAuto = new Date((messageTimestampAuto + timeWindowAuto) * 1000)
+        
+        const draftWithPendingGalleryAuto = await prisma.draftEvent.findFirst({
+          where: {
+            telegramChatId: chatId,
+            createdAt: {
+              gte: searchStartAuto,
+              lte: searchEndAuto,
+            },
+            pendingGallery: {
+              not: null,
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
+        })
+        
+        if (draftWithPendingGalleryAuto && draftWithPendingGalleryAuto.pendingGallery) {
+          try {
+            const pendingPhotosAuto: string[] = JSON.parse(draftWithPendingGalleryAuto.pendingGallery)
+            console.log(`   ✅ Найдено ${pendingPhotosAuto.length} фото в pendingGallery (AUTO режим)`)
+            galleryUrls.push(...pendingPhotosAuto)
+            console.log(`   ✅ Добавлено ${pendingPhotosAuto.length} фото из pendingGallery в gallery`)
+            
+            // Очищаем pendingGallery
+            await prisma.draftEvent.update({
+              where: { id: draftWithPendingGalleryAuto.id },
+              data: {
+                pendingGallery: null,
+              },
+            })
+          } catch (e) {
+            console.warn(`   ⚠️ Ошибка парсинга pendingGallery (AUTO):`, e)
+          }
+        }
+
         // Высокая уверенность - создаем draft и действуем автоматически
         const draft = await prisma.draftEvent.create({
           data: {
@@ -732,6 +839,54 @@ export async function handleChannelMessage(ctx: Context) {
       }
       console.log('   🤖 ⚠️ Низкая уверенность, отправляю на ручную проверку')
       // Низкая уверенность - отправляем на ручную проверку
+    }
+
+    // Проверяем pendingGallery перед созданием draft
+    console.log(`   🔍 Проверяю pendingGallery для добавления фото...`)
+    const messageTimestamp = message.date ? (typeof message.date === 'number' ? message.date : Math.floor(new Date(message.date).getTime() / 1000)) : Math.floor(Date.now() / 1000)
+    const timeWindow = 60 // 60 секунд
+    const searchStart = new Date((messageTimestamp - timeWindow) * 1000)
+    const searchEnd = new Date((messageTimestamp + timeWindow) * 1000)
+    
+    const draftWithPendingGallery = await prisma.draftEvent.findFirst({
+      where: {
+        telegramChatId: chatId,
+        createdAt: {
+          gte: searchStart,
+          lte: searchEnd,
+        },
+        pendingGallery: {
+          not: null,
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    })
+    
+    if (draftWithPendingGallery && draftWithPendingGallery.pendingGallery) {
+      try {
+        const pendingPhotos: string[] = JSON.parse(draftWithPendingGallery.pendingGallery)
+        console.log(`   ✅ Найдено ${pendingPhotos.length} фото в pendingGallery`)
+        
+        // Добавляем фото из pendingGallery в galleryUrls
+        galleryUrls.push(...pendingPhotos)
+        console.log(`   ✅ Добавлено ${pendingPhotos.length} фото из pendingGallery в gallery`)
+        console.log(`   📊 Всего фото в gallery: ${galleryUrls.length}`)
+        
+        // Очищаем pendingGallery после использования
+        await prisma.draftEvent.update({
+          where: { id: draftWithPendingGallery.id },
+          data: {
+            pendingGallery: null,
+          },
+        })
+        console.log(`   ✅ pendingGallery очищен для draft ${draftWithPendingGallery.id}`)
+      } catch (e) {
+        console.warn(`   ⚠️ Ошибка парсинга pendingGallery:`, e)
+      }
+    } else {
+      console.log(`   ℹ️ pendingGallery не найден для этого времени`)
     }
 
     // Ручной режим или низкая уверенность - создаем draft со статусом PENDING и отправляем карточку
