@@ -2,6 +2,7 @@ import { toISOString } from '@/lib/utils/date'
 
 export type AfishaDraftRequest = {
   title: string
+  slug?: string // Slug мероприятия (английскими буквами)
   startDate: string // ISO 8601
   endDate?: string // ISO 8601
   venue?: string
@@ -11,6 +12,9 @@ export type AfishaDraftRequest = {
   gallery?: string[]
   sourceLinks?: string[]
   adminNotes?: string // Текстовая строка с заметками для админа
+  partnerLink?: string
+  isFree?: boolean
+  tickets?: Array<{name: string; price: number}>
 }
 
 export type AfishaDraftResponse = {

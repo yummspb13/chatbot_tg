@@ -99,6 +99,57 @@ User ID == Expected (нестрого): ${userIdStr == expectedIdStr}`
 }
 
 /**
+ * Обработчик команды /worker
+ * /worker on - включить Worker для мониторинга каналов
+ * /worker off - отключить Worker (работа только через прямую отправку боту)
+ */
+export async function handleWorker(ctx: Context) {
+  if (!isAdmin(ctx)) {
+    return ctx.reply('Доступ запрещен.', getKeyboardIfPrivate(ctx))
+  }
+
+  const args = ctx.message && 'text' in ctx.message ? ctx.message.text.split(' ') : []
+  const action = args[1]?.toLowerCase()
+
+  if (action === 'on') {
+    await updateBotSettings({ workerEnabled: true })
+    return ctx.reply(
+      '✅ Worker включен.\n\n' +
+      'Бот будет использовать Worker для автоматического мониторинга каналов.\n' +
+      'Убедитесь, что Worker запущен на Render.com.',
+      getKeyboardIfPrivate(ctx)
+    )
+  } else if (action === 'off') {
+    await updateBotSettings({ workerEnabled: false })
+    return ctx.reply(
+      '⏸ Worker отключен.\n\n' +
+      'Бот будет работать только с сообщениями, отправленными напрямую боту или из каналов, где бот является администратором.\n\n' +
+      'Для включения обратно используйте: /worker on',
+      getKeyboardIfPrivate(ctx)
+    )
+  } else {
+    const settings = await getBotSettings()
+    const status = settings.workerEnabled ? '✅ Включен' : '⏸ Отключен'
+    
+    return ctx.reply(
+      `🔧 Управление Worker:\n\n` +
+      `Статус: ${status}\n\n` +
+      `Команды:\n` +
+      `/worker on - включить Worker\n` +
+      `/worker off - отключить Worker\n\n` +
+      `💡 Когда Worker отключен:\n` +
+      `- Бот работает только с сообщениями, отправленными напрямую\n` +
+      `- Каналы, где бот является администратором, обрабатываются автоматически\n` +
+      `- Каналы конкурентов не мониторятся\n\n` +
+      `💡 Когда Worker включен:\n` +
+      `- Автоматический мониторинг всех каналов через Client API\n` +
+      `- Работает даже для каналов, где бот не является администратором`,
+      getKeyboardIfPrivate(ctx)
+    )
+  }
+}
+
+/**
  * Обработчик команды /stop
  */
 export async function handleStop(ctx: Context) {
@@ -124,11 +175,13 @@ export async function handleStatus(ctx: Context) {
 
   const modeText = settings.mode === 'AUTO' ? '🤖 Автоматический' : '👤 Ручной'
   const runningText = settings.isRunning ? '✅ Работает' : '⏹ Остановлен'
+  const workerText = settings.workerEnabled ? '✅ Включен' : '⏸ Отключен'
 
   return ctx.reply(
     `📊 Статус бота:\n\n` +
     `${runningText}\n` +
     `Режим: ${modeText}\n` +
+    `Worker: ${workerText}\n` +
     `Порог уверенности: ${settings.confidenceThreshold}\n` +
     `Активных каналов: ${channels}\n\n` +
     `📈 Статистика обучения:\n` +

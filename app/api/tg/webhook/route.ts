@@ -52,12 +52,20 @@ export async function POST(req: NextRequest) {
                              (update.message && update.message.forward_from_chat)
     
     if (isChannelMessage) {
-      // Если это сообщение из канала, но Worker мог уснуть,
-      // пробуждаем его асинхронно (не блокируем обработку)
-      const { wakeWorkerIfNeeded } = await import('@/lib/worker/wake-worker')
-      wakeWorkerIfNeeded().catch((error) => {
-        console.warn(`${logPrefix} ⚠️ Не удалось пробудить Worker:`, error.message)
-      })
+      // Проверяем, включен ли Worker в настройках
+      const { prisma } = await import('@/lib/db/prisma')
+      const settings = await prisma.botSettings.findFirst()
+      
+      if (settings?.workerEnabled) {
+        // Если это сообщение из канала, но Worker мог уснуть,
+        // пробуждаем его асинхронно (не блокируем обработку)
+        const { wakeWorkerIfNeeded } = await import('@/lib/worker/wake-worker')
+        wakeWorkerIfNeeded().catch((error) => {
+          console.warn(`${logPrefix} ⚠️ Не удалось пробудить Worker:`, error.message)
+        })
+      } else {
+        console.log(`${logPrefix} ⏸ Worker отключен в настройках, пропускаю пробуждение`)
+      }
     }
     
     // Создаем новый request с body для дальнейшей обработки

@@ -86,6 +86,7 @@ export async function getBotSettings() {
         mode: 'MANUAL',
         confidenceThreshold: 0.8,
         isRunning: false,
+        workerEnabled: true, // По умолчанию Worker включен
       },
     })
   }
@@ -100,6 +101,7 @@ export async function updateBotSettings(data: {
   mode?: 'MANUAL' | 'AUTO'
   confidenceThreshold?: number
   isRunning?: boolean
+  workerEnabled?: boolean
 }) {
   const settings = await getBotSettings()
   return prisma.botSettings.update({

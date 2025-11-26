@@ -4,7 +4,7 @@
  */
 
 import { getBot } from './bot'
-import { handleStart, handleStop, handleStatus, handleAuto, handleManual, handleSetThreshold, handleAddCity, handleAddChannel, handleListChannels, handleRemoveChannel } from './commands'
+import { handleStart, handleStop, handleStatus, handleAuto, handleManual, handleSetThreshold, handleAddCity, handleAddChannel, handleListChannels, handleRemoveChannel, handleWorker } from './commands'
 import { handleChannelMessage } from './messageHandler'
 import { handleCallback } from './callbackHandler'
 import { memoryLogger } from '@/lib/logging/memory-logger'
@@ -120,12 +120,67 @@ export function registerWebhookHandlers() {
       }
     }
     
-    // Для личных сообщений, если это не команда и не кнопка, показываем подсказку
+    // Обработка личных сообщений от админа
     const text = 'text' in ctx.message ? ctx.message.text : ''
     if (ctx.chat?.type === 'private' && text && !text.startsWith('/')) {
-      // Проверяем, не обработано ли уже через bot.hears
-      // Если дошли сюда, значит это не кнопка - показываем подсказку
-      await ctx.reply('Используйте команды для управления ботом. Список команд: /start')
+      // Проверяем, что это сообщение от админа
+      const adminId = process.env.TELEGRAM_ADMIN_CHAT_ID
+      const userId = ctx.from?.id?.toString()
+      
+      if (adminId && userId === adminId) {
+        console.log(`${logPrefix} 📨 [HANDLER] Получено сообщение от админа, обрабатываю как событие`)
+        console.log(`${logPrefix}    Текст: ${text.substring(0, 100)}...`)
+        
+        // Проверяем, не является ли это ответом на вопрос бота (для интерактивного режима)
+        const { isAnswerToQuestion } = await import('./question-handler')
+        const isAnswer = await isAnswerToQuestion(
+          ctx.chat.id.toString(),
+          ctx.message.message_id.toString()
+        )
+        
+        if (isAnswer) {
+          // Обрабатываем как ответ на вопрос
+          console.log(`${logPrefix} 📨 [HANDLER] Это ответ на вопрос бота`)
+          // TODO: Обработка ответа на вопрос (будет реализовано в следующем шаге)
+          await ctx.reply('Ответ получен, обрабатываю...')
+          return
+        }
+        
+        // Используем первый активный канал из базы как источник
+        const { prisma } = await import('@/lib/db/prisma')
+        const firstChannel = await prisma.channel.findFirst({
+          where: { isActive: true },
+          include: { city: true },
+        })
+        
+        if (firstChannel) {
+          console.log(`   Использую канал "${firstChannel.title}" как источник`)
+          const messageAny = ctx.message as any
+          const channelCtx = {
+            ...ctx,
+            chat: {
+              id: parseInt(firstChannel.chatId),
+              type: 'channel',
+              title: firstChannel.title,
+            },
+            message: {
+              ...messageAny,
+              text: text,
+              caption: text,
+              message_id: messageAny.message_id,
+            },
+          } as any
+          
+          await handleChannelMessage(channelCtx)
+          return
+        } else {
+          console.log('   ⚠️ Нет активных каналов в базе')
+          await ctx.reply('⚠️ Нет активных каналов в базе. Добавьте канал через /addchannel')
+        }
+      } else {
+        // Для не-админов показываем подсказку
+        await ctx.reply('Используйте команды для управления ботом. Список команд: /start')
+      }
     }
   })
 

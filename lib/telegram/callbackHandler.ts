@@ -61,6 +61,10 @@ export async function handleCallback(ctx: Context) {
       const draftId = parseInt(data.split(':')[1], 10)
       memoryLogger.info(`Обработка reject для draftId: ${draftId}`, { userId, draftId }, 'callbackHandler')
       await handleRejectCallback(ctx, draftId)
+    } else if (data.startsWith('redo:')) {
+      const draftId = parseInt(data.split(':')[1], 10)
+      memoryLogger.info(`Обработка redo для draftId: ${draftId}`, { userId, draftId }, 'callbackHandler')
+      await handleRedoCallback(ctx, draftId)
     }
   } catch (error: any) {
     console.error(`${logPrefix} Error handling callback:`, error)
@@ -319,5 +323,51 @@ async function handleRejectCallback(ctx: Context, draftId: number) {
       console.error('Error deleting message:', error)
     }
   }
+}
+
+/**
+ * Обработка кнопки "Переделать"
+ * Создает диалог для получения обратной связи от пользователя
+ */
+async function handleRedoCallback(ctx: Context, draftId: number) {
+  console.log(`[handleRedoCallback] Начало обработки для draftId: ${draftId}`)
+  
+  const draft = await prisma.draftEvent.findUnique({
+    where: { id: draftId },
+  })
+
+  if (!draft) {
+    console.log(`[handleRedoCallback] Черновик ${draftId} не найден`)
+    return ctx.answerCbQuery('Черновик не найден.')
+  }
+
+  // Создаем или получаем диалог для этого черновика
+  const { getOrCreateConversation, addMessageToConversation } = await import('./conversation')
+  const conversationId = await getOrCreateConversation({
+    telegramChatId: draft.telegramChatId,
+    telegramMessageId: draft.telegramMessageId,
+    draftEventId: draftId,
+  })
+
+  // Сохраняем запрос на переделку в диалог
+  await addMessageToConversation(conversationId, 'bot', 'Что нужно исправить в мероприятии?')
+
+  // Обновляем черновик, связывая его с диалогом
+  await prisma.draftEvent.update({
+    where: { id: draftId },
+    data: { conversationId },
+  })
+
+  // Отправляем сообщение пользователю с просьбой указать, что исправить
+  const bot = getBot()
+  await bot.telegram.sendMessage(
+    ctx.callbackQuery!.message!.chat.id,
+    'Что нужно исправить в мероприятии? Напишите, что не так, и я переделаю.',
+    {
+      reply_to_message_id: ctx.callbackQuery!.message!.message_id,
+    }
+  )
+
+  await ctx.answerCbQuery('Напишите, что нужно исправить')
 }
 

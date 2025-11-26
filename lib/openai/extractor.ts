@@ -45,6 +45,50 @@ export async function extractEvent(
   const currentDate = messageDate ? toISOString(messageDate) : new Date().toISOString()
   console.log('      [AI] Дата сообщения:', currentDate)
 
+  // Получаем примеры из LearningDecision для улучшения промпта
+  let examplesText = ''
+  try {
+    const { prisma } = await import('@/lib/db/prisma')
+    const recentDecisions = await prisma.learningDecision.findMany({
+      where: {
+        userDecision: 'APPROVED',
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 3, // Берем последние 3 одобренных примера
+    })
+    
+    if (recentDecisions.length > 0) {
+      examplesText = '\n\nПримеры правильного извлечения:\n'
+      for (const decision of recentDecisions) {
+        try {
+          const extracted = JSON.parse(decision.extractedFields)
+          examplesText += `\nПример:\n`
+          examplesText += `Текст: ${decision.originalText.substring(0, 200)}...\n`
+          examplesText += `Извлечено: ${JSON.stringify(extracted, null, 2)}\n`
+        } catch (e) {
+          // Игнорируем ошибки парсинга
+        }
+      }
+    }
+  } catch (e) {
+    // Игнорируем ошибки получения примеров
+  }
+
+  // Получаем частые ошибки из обратной связи
+  let mistakesText = ''
+  try {
+    const { getCommonMistakes } = await import('@/lib/learning/feedbackService')
+    const mistakes = await getCommonMistakes(3)
+    if (mistakes.length > 0) {
+      mistakesText = '\n\nЧастые ошибки, которых нужно избегать:\n'
+      mistakes.forEach(m => {
+        mistakesText += `- ${m.mistake} (встречается ${m.count} раз)\n`
+      })
+    }
+  } catch (e) {
+    // Игнорируем ошибки
+  }
+
   const prompt = `Ты извлекаешь информацию о мероприятии из текста сообщения Telegram.
 
 Задача: извлечь структурированные данные о мероприятии.
@@ -76,7 +120,7 @@ export async function extractEvent(
 }
 
 Текст сообщения:
-${text}
+${text}${examplesText}${mistakesText}
 
 Верни только валидный JSON, без дополнительного текста.`
 

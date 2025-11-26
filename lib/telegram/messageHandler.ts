@@ -296,12 +296,15 @@ export async function handleChannelMessage(ctx: Context) {
       return // Пропускаем рекламу
     }
 
-    // 2. Извлечение полей
+    // 2. Извлечение полей (используем улучшенный экстрактор)
     console.log(`${getLogPrefix()} 📝 STEP2: EXTRACTION`)
     const messageDate = new Date(message.date * 1000)
     console.log(`${getLogPrefix()} 📅 Message date: ${messageDate.toISOString()}`)
-    const extracted = await extractEvent(text, messageDate)
-    console.log(`${getLogPrefix()} 📝 EXTRACTED: title=${extracted.title ? 'YES' : 'NO'} startDate=${extracted.startDateIso ? 'YES' : 'NO'}`)
+    
+    // Используем enhanced-extractor для улучшенного извлечения с парсингом ссылок и поиском
+    const { extractEventEnhanced } = await import('@/lib/ai/enhanced-extractor')
+    const extracted = await extractEventEnhanced(text, messageDate)
+    console.log(`${getLogPrefix()} 📝 EXTRACTED: title=${extracted.title ? 'YES' : 'NO'} startDate=${extracted.startDateIso ? 'YES' : 'NO'} isFree=${extracted.isFree} minPrice=${extracted.minPrice || 'N/A'}`)
 
     if (!extracted.title || !extracted.startDateIso) {
       console.log(`${getLogPrefix()} ❌ SKIP: Missing required fields`)
@@ -414,8 +417,8 @@ export async function handleChannelMessage(ctx: Context) {
       console.log('   🖼 Найдено изображений:', images.length)
       console.log('   🖼 ⚠️ Нет base64 буферов от Worker, пытаюсь получить URL через Bot API...')
       
-      // Первое изображение - coverImage
-      console.log('   🖼 Получаю URL для первого изображения (file_id:', images[0], ')...')
+      // Первое изображение - coverImage (обложка)
+      console.log('   🖼 Получаю URL для первого изображения (обложка, file_id:', images[0], ')...')
       const firstImageUrl = await getTelegramFileUrl(images[0])
       if (firstImageUrl) {
         coverImageUrl = firstImageUrl
@@ -891,26 +894,65 @@ export async function handleChannelMessage(ctx: Context) {
 
     // Ручной режим или низкая уверенность - создаем draft со статусом PENDING и отправляем карточку
     console.log(`${getLogPrefix()} 💾 STEP5: CREATING_DRAFT (PENDING STATUS)`)
-    const draft = await prisma.draftEvent.create({
-      data: {
-        cityId: channel.cityId,
-        channelId: channel.id,
-        telegramMessageId: messageId,
-        telegramChatId: chatId,
-        sourceLink: formatTelegramLink(chatId, messageId),
-        title: extracted.title,
-        startDate: parseISOString(extracted.startDateIso),
-        endDate: extracted.endDateIso ? parseISOString(extracted.endDateIso) : null,
-        venue: extracted.venue || null,
-        description: description,
-        cityName: extracted.cityName || channel.city?.name || null,
-        coverImage: coverImageUrl,
-        gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
-        adminNotes: adminNotes,
-        status: 'PENDING', // Статус PENDING - ждем одобрения
-      },
-    })
-    console.log(`${getLogPrefix()} 💾 ✅ DRAFT_CREATED (PENDING): id=${draft.id} title=${draft.title.substring(0, 50)}`)
+    
+    // Парсим билеты из enhanced-extracted
+    let ticketsJson: string | null = null
+    if (!extracted.isFree && extracted.minPrice) {
+      // Если платное и есть минимальная цена, создаем билет "1" с этой ценой
+      const tickets = [{ name: '1', price: extracted.minPrice }]
+      ticketsJson = JSON.stringify(tickets)
+    }
+    
+    // Подготовка данных для создания draft
+    const draftData = {
+      cityId: channel.cityId,
+      channelId: channel.id,
+      telegramMessageId: messageId,
+      telegramChatId: chatId,
+      sourceLink: formatTelegramLink(chatId, messageId),
+      title: extracted.title,
+      startDate: parseISOString(extracted.startDateIso),
+      endDate: extracted.endDateIso ? parseISOString(extracted.endDateIso) : null,
+      venue: extracted.venue || null,
+      description: description,
+      cityName: extracted.cityName || channel.city?.name || null,
+      coverImage: coverImageUrl,
+      gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
+      adminNotes: adminNotes,
+      partnerLink: extracted.partnerLink || null,
+      isFree: extracted.isFree || false,
+      tickets: ticketsJson,
+      status: 'PENDING' as const, // Статус PENDING - ждем одобрения
+    }
+    
+    console.log(`${getLogPrefix()} 💾 Данные для создания draft:`, JSON.stringify({
+      ...draftData,
+      description: draftData.description?.substring(0, 100) + '...',
+      adminNotes: draftData.adminNotes?.substring(0, 100) + '...',
+    }, null, 2))
+    
+    let draft
+    try {
+      draft = await prisma.draftEvent.create({
+        data: draftData,
+      })
+      console.log(`${getLogPrefix()} 💾 ✅ DRAFT_CREATED (PENDING): id=${draft.id} title=${draft.title.substring(0, 50)}`)
+      memoryLogger.success(
+        `Draft создан успешно`,
+        { draftId: draft.id, title: draft.title, messageId, chatId },
+        'messageHandler'
+      )
+    } catch (error: any) {
+      console.error(`${getLogPrefix()} ❌ ОШИБКА создания draft:`, error.message)
+      console.error(`${getLogPrefix()}    Stack:`, error.stack)
+      console.error(`${getLogPrefix()}    Данные:`, JSON.stringify(draftData, null, 2))
+      memoryLogger.error(
+        `Ошибка создания draft: ${error.message}`,
+        { error: error.message, stack: error.stack, draftData },
+        'messageHandler'
+      )
+      throw error // Пробрасываем ошибку дальше
+    }
 
     // Сохраняем предсказание агента для последующего использования
     const { saveDecision } = await import('@/lib/learning/decisionService')
@@ -932,8 +974,8 @@ export async function handleChannelMessage(ctx: Context) {
     const keyboard = {
       inline_keyboard: [
         [
-          { text: '✅ Принять', callback_data: `approve:${draft.id}` },
-          { text: '❌ Отказать', callback_data: `reject:${draft.id}` },
+          { text: '✅ Отправить', callback_data: `approve:${draft.id}` },
+          { text: '🔄 Переделать', callback_data: `redo:${draft.id}` },
         ],
       ],
     }
@@ -946,9 +988,14 @@ export async function handleChannelMessage(ctx: Context) {
     )
     
     try {
+      // Отправляем как ответ на исходное сообщение (если это сообщение от админа)
+      // Или просто в группу одобрения
+      const replyToMessageId = ctx.message?.message_id
+      
       await bot.telegram.sendMessage(approvalChatId, messageText, {
         parse_mode: 'HTML',
         reply_markup: keyboard,
+        reply_to_message_id: replyToMessageId || undefined,
       })
       console.log(`${getLogPrefix()} 📤 ✅ SENT: approval card sent to group`)
       console.log(`${getLogPrefix()} ✅ SUCCESS: approval card sent, waiting for user decision`)
@@ -958,32 +1005,50 @@ export async function handleChannelMessage(ctx: Context) {
         'messageHandler'
       )
     } catch (error: any) {
-      console.error(`${getLogPrefix()} ❌ ERROR sending approval card:`, error.message)
-      console.error(`${getLogPrefix()}    Chat ID: ${approvalChatId}`)
-      console.error(`${getLogPrefix()}    Error code: ${error.response?.error_code || 'unknown'}`)
-      console.error(`${getLogPrefix()}    Error description: ${error.response?.description || error.message}`)
-      console.error(`${getLogPrefix()}    💡 Проверьте:`)
-      console.error(`${getLogPrefix()}       1. Бот добавлен в группу как администратор?`)
-      console.error(`${getLogPrefix()}       2. Правильный ли ID группы? (используйте: npm run group:get-id)`)
-      console.error(`${getLogPrefix()}       3. Группа существует и доступна?`)
-      
-      memoryLogger.error(
-        `Ошибка отправки карточки одобрения: ${error.message}`,
-        {
-          approvalChatId,
-          draftId: draft.id,
-          errorCode: error.response?.error_code,
-          errorDescription: error.response?.description || error.message,
-        },
-        'messageHandler'
-      )
-      // Не бросаем ошибку дальше, чтобы не прерывать обработку
-    }
+        console.error(`${getLogPrefix()} ❌ ERROR sending approval card:`, error.message)
+        console.error(`${getLogPrefix()}    Chat ID: ${approvalChatId}`)
+        console.error(`${getLogPrefix()}    Error code: ${error.response?.error_code || 'unknown'}`)
+        console.error(`${getLogPrefix()}    Error description: ${error.response?.description || error.message}`)
+        console.error(`${getLogPrefix()}    💡 Проверьте:`)
+        console.error(`${getLogPrefix()}       1. Бот добавлен в группу как администратор?`)
+        console.error(`${getLogPrefix()}       2. Правильный ли ID группы? (используйте: npm run group:get-id)`)
+        console.error(`${getLogPrefix()}       3. Группа существует и доступна?`)
+        
+        memoryLogger.error(
+          `Ошибка отправки карточки одобрения: ${error.message}`,
+          {
+            approvalChatId,
+            draftId: draft.id,
+            errorCode: error.response?.error_code,
+            errorDescription: error.response?.description || error.message,
+          },
+          'messageHandler'
+        )
+        // Не бросаем ошибку дальше, чтобы не прерывать обработку
+        // Но логируем, что draft создан, даже если карточка не отправлена
+        console.log(`${getLogPrefix()} ⚠️ Draft создан (id=${draft.id}), но карточка не отправлена`)
+      }
       } catch (error) {
         console.error('   ❌ ОШИБКА при обработке сообщения из канала:', error)
         console.error('   ❌ Stack trace:', error instanceof Error ? error.stack : 'нет stack trace')
         console.error('   ❌ Message ID:', messageId)
         console.error('   ❌ Chat ID:', chatId)
+        console.error('   ❌ Error details:', error instanceof Error ? {
+          message: error.message,
+          name: error.name,
+          cause: error.cause,
+        } : error)
+        
+        memoryLogger.error(
+          `Критическая ошибка обработки сообщения: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          {
+            messageId,
+            chatId,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+          },
+          'messageHandler'
+        )
       }
 }
 
@@ -1271,8 +1336,23 @@ export async function handleApprove(draftId: number) {
     }
   }
 
+  // Создаем slug из названия мероприятия
+  const { createSlug } = await import('@/lib/utils/slug')
+  const eventSlug = createSlug(draft.title)
+
+  // Парсим билеты из JSON
+  let tickets: Array<{name: string; price: number}> | undefined = undefined
+  if (draft.tickets) {
+    try {
+      tickets = JSON.parse(draft.tickets)
+    } catch (e) {
+      console.warn('[handleApprove] Не удалось распарсить tickets:', e)
+    }
+  }
+
   const response = await sendDraft({
     title: draft.title,
+    slug: eventSlug,
     startDate: dateToISO(draft.startDate),
     endDate: draft.endDate ? dateToISO(draft.endDate) : undefined,
     venue: draft.venue || undefined,
@@ -1282,6 +1362,9 @@ export async function handleApprove(draftId: number) {
     gallery: cloudinaryGallery.length > 0 ? cloudinaryGallery : undefined,
     sourceLinks: draft.sourceLink ? [draft.sourceLink] : undefined,
     adminNotes: adminNotesText,
+    partnerLink: draft.partnerLink || undefined,
+    isFree: draft.isFree || false,
+    tickets: tickets,
   })
 
   if (response.isDuplicate) {

@@ -67,6 +67,11 @@ model DraftEvent {
   gallery        String? // JSON массив URL изображений (TEXT в SQLite)
   pendingGallery String? // JSON массив base64 строк для временного хранения фото из сообщений без текста
   adminNotes     String? // JSON строка с админ-заметками: ссылки на пост, билеты, координаты
+  partnerLink    String? // ссылка на партнера
+  isFree         Boolean @default(false) // бесплатное мероприятие
+  tickets        String? // JSON массив билетов [{name: "1", price: 300}]
+  conversationId Int? @unique // связь с диалогом (один-к-одному)
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
 
   status    String   @default("NEW") // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
   createdAt DateTime @default(now())
@@ -75,7 +80,26 @@ model DraftEvent {
   @@index([telegramMessageId, telegramChatId])
   @@index([title, startDate])
   @@index([status])
+  @@index([conversationId])
   @@map("afisha_bot_DraftEvent")
+}
+
+// Модель для хранения диалогов с пользователем
+model Conversation {
+  id                Int         @id @default(autoincrement())
+  draftEventId      Int?
+  draftEvent        DraftEvent? @relation
+  telegramChatId    String
+  telegramMessageId String // ID исходного сообщения
+  messages          String      // JSON массив сообщений [{role: "bot"|"user", content: string}]
+  status            String      @default("active") // "active" | "completed" | "cancelled"
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([draftEventId])
+  @@index([telegramChatId, telegramMessageId])
+  @@index([status])
+  @@map("afisha_bot_Conversation")
 }
 
 // SQLite не поддерживает enums, используем String
@@ -107,6 +131,7 @@ model BotSettings {
   mode                String   @default("MANUAL") // BotMode: MANUAL | AUTO
   confidenceThreshold Float    @default(0.8) // 0-1
   isRunning           Boolean  @default(false)
+  workerEnabled       Boolean  @default(true) // включен ли Worker для мониторинга каналов
   updatedAt           DateTime @updatedAt
 
   @@unique([id])

@@ -11,6 +11,15 @@ const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || process.env.WORKER_URL 
  */
 export async function wakeWorkerIfNeeded(): Promise<boolean> {
   try {
+    // Проверяем, включен ли Worker в настройках
+    const { prisma } = await import('@/lib/db/prisma')
+    const settings = await prisma.botSettings.findFirst()
+    
+    if (settings && !settings.workerEnabled) {
+      console.log(`[wakeWorker] ⏸ Worker отключен в настройках, пропускаю пробуждение`)
+      return false
+    }
+    
     console.log(`[wakeWorker] Проверяю статус Worker: ${WORKER_URL}`)
     
     // Сначала проверяем статус
