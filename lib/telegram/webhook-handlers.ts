@@ -27,6 +27,7 @@ export function registerWebhookHandlers() {
   bot.command('addchannel', handleAddChannel)
   bot.command('listchannels', handleListChannels)
   bot.command('removechannel', handleRemoveChannel)
+  bot.command('worker', handleWorker)
 
   // Обработка callback (кнопки в сообщениях)
   bot.on('callback_query', handleCallback)
