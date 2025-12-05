@@ -193,10 +193,8 @@ export async function handleChannelMessage(ctx: Context) {
   // Проверяем, является ли это пересланным сообщением от админа
   // Это сообщение с forward_from_chat, где сохранен originalChat или adminChatId
   const adminChatId = (ctx as any).adminChatId || ((ctx as any).originalChat?.id?.toString())
-  const isForwardedFromAdmin = ctx.message && 
-                                adminChatId && 
-                                'forward_from_chat' in ctx.message && 
-                                ctx.message.forward_from_chat
+  const hasForwardFromChat = ctx.message && 'forward_from_chat' in ctx.message && !!ctx.message.forward_from_chat
+  const isForwardedFromAdmin = !!(adminChatId && hasForwardFromChat)
   
   const messageId = message.message_id.toString()
   
@@ -263,64 +261,81 @@ export async function handleChannelMessage(ctx: Context) {
 
   if (!channel) {
     console.log(`   ❌ Канал ${chatId} не найден в базе или неактивен`)
-    console.log('   💡 Проверьте:')
-    console.log('      1. Канал добавлен через /addchannel?')
-    console.log('      2. Канал активен (isActive = true)?')
-    console.log('      3. Chat ID правильный?')
-    console.log('      4. Бот добавлен в канал как администратор?')
     
-    // Показываем все каналы для отладки
-    try {
-      const allChannels = await prisma.channel.findMany({
-        select: { chatId: true, title: true, isActive: true }
-      })
-      console.log('   📋 Все каналы в базе:')
-      allChannels.forEach(ch => {
-        console.log(`      - ${ch.title} (${ch.chatId}) - ${ch.isActive ? 'активен' : 'неактивен'}`)
-      })
-    } catch (e) {
-      console.error('   ❌ Ошибка получения списка каналов:', e)
-    }
-    
-    // Если это сообщение от админа и канал не найден, отправляем ответ
+    // Если это пересланное сообщение от админа, продолжаем обработку без канала
     if (isForwardedFromAdmin && adminChatId) {
+      console.log('   ⚠️ Канал не найден, но это пересланное сообщение от админа - продолжаю обработку без привязки к каналу')
+      memoryLogger.warn(`Канал не найден, но продолжаю обработку для админа`, { chatId, adminChatId }, 'messageHandler')
+      
+      // Создаем виртуальный канал для обработки
+      channel = {
+        id: null,
+        cityId: null,
+        city: null,
+        title: (ctx.message as any).forward_from_chat?.title || `Канал ${chatId}`,
+        chatId: chatId,
+        isActive: true,
+      } as any
+    } else {
+      console.log('   💡 Проверьте:')
+      console.log('      1. Канал добавлен через /addchannel?')
+      console.log('      2. Канал активен (isActive = true)?')
+      console.log('      3. Chat ID правильный?')
+      console.log('      4. Бот добавлен в канал как администратор?')
+      
+      // Показываем все каналы для отладки
       try {
-        const bot = getBot()
-        await bot.telegram.sendMessage(adminChatId, `❌ Канал не найден в базе данных. Добавьте канал через /addchannel или проверьте настройки.`)
-        finishProcessing(adminChatId)
-      } catch (sendError) {
-        console.error('   ❌ Ошибка отправки сообщения:', sendError)
+        const allChannels = await prisma.channel.findMany({
+          select: { chatId: true, title: true, isActive: true }
+        })
+        console.log('   📋 Все каналы в базе:')
+        allChannels.forEach(ch => {
+          console.log(`      - ${ch.title} (${ch.chatId}) - ${ch.isActive ? 'активен' : 'неактивен'}`)
+        })
+      } catch (e) {
+        console.error('   ❌ Ошибка получения списка каналов:', e)
       }
+      
+      console.log('═══════════════════════════════════════════════════════════')
+      console.log('')
+      return // Канал не отслеживается
     }
-    
-    console.log('═══════════════════════════════════════════════════════════')
-    console.log('')
-    return // Канал не отслеживается
   }
-  console.log(`   ✅ Канал найден: "${channel.title}" (ID: ${channel.id})`)
-  memoryLogger.info(`Канал найден в базе`, { channelId: channel.id, channelTitle: channel.title, chatId }, 'messageHandler')
+  if (channel.id) {
+    console.log(`   ✅ Канал найден: "${channel.title}" (ID: ${channel.id})`)
+    memoryLogger.info(`Канал найден в базе`, { channelId: channel.id, channelTitle: channel.title, chatId }, 'messageHandler')
+  } else {
+    console.log(`   ⚠️ Используется виртуальный канал: "${channel.title}" (канал не в базе)`)
+    memoryLogger.info(`Используется виртуальный канал`, { channelTitle: channel.title, chatId }, 'messageHandler')
+  }
 
-  // Проверяем, что бот запущен
-  console.log('   🔍 Проверяю статус бота...')
-  memoryLogger.info(`Проверка статуса бота`, {}, 'messageHandler')
-  const settings = await getBotSettings()
-  console.log('   📊 Настройки бота:', {
-    isRunning: settings.isRunning,
-    mode: settings.mode,
-    confidenceThreshold: settings.confidenceThreshold
-  })
-  memoryLogger.info(`Настройки бота получены`, { isRunning: settings.isRunning, mode: settings.mode }, 'messageHandler')
-  
-  if (!settings.isRunning) {
-    console.log(`   ❌ Бот не запущен (isRunning = false), пропускаю сообщение из канала ${channel.title}`)
-    console.log('   💡 Запустите бота командой /start')
-    memoryLogger.warn(`Бот не запущен, сообщение пропущено`, { chatId, channelTitle: channel.title }, 'messageHandler')
-    console.log('═══════════════════════════════════════════════════════════')
-    console.log('')
-    return
+  // Для пересланных сообщений от админа пропускаем проверку статуса бота
+  // (бот должен обрабатывать сообщения от админа всегда)
+  if (!isForwardedFromAdmin) {
+    // Проверяем, что бот запущен
+    console.log('   🔍 Проверяю статус бота...')
+    memoryLogger.info(`Проверка статуса бота`, {}, 'messageHandler')
+    const settings = await getBotSettings()
+    console.log('   📊 Настройки бота:', {
+      isRunning: settings.isRunning,
+      mode: settings.mode,
+      confidenceThreshold: settings.confidenceThreshold
+    })
+    memoryLogger.info(`Настройки бота получены`, { isRunning: settings.isRunning, mode: settings.mode }, 'messageHandler')
+    
+    if (!settings.isRunning) {
+      console.log(`   ❌ Бот не запущен (isRunning = false), пропускаю сообщение из канала ${channel.title}`)
+      console.log('   💡 Запустите бота командой /start')
+      memoryLogger.warn(`Бот не запущен, сообщение пропущено`, { chatId, channelTitle: channel.title }, 'messageHandler')
+      console.log('═══════════════════════════════════════════════════════════')
+      console.log('')
+      return
+    }
+    console.log('   ✅ Бот запущен')
+    memoryLogger.info(`Бот запущен, продолжаю обработку`, {}, 'messageHandler')
+  } else {
+    console.log('   ✅ Пропускаю проверку статуса бота (сообщение от админа)')
   }
-  console.log('   ✅ Бот запущен')
-  memoryLogger.info(`Бот запущен, продолжаю обработку`, {}, 'messageHandler')
   
   console.log(`   📨 Получено сообщение из канала: ${channel.title} (${chatId})`)
 
@@ -894,8 +909,8 @@ export async function handleChannelMessage(ctx: Context) {
         // Высокая уверенность - создаем draft и действуем автоматически
         const draft = await prisma.draftEvent.create({
           data: {
-            cityId: channel.cityId,
-            channelId: channel.id,
+            cityId: channel.cityId || null,
+            channelId: channel.id || null, // null если канал не в базе
             telegramMessageId: messageId,
             telegramChatId: chatId,
             sourceLink: formatTelegramLink(chatId, messageId),
@@ -908,6 +923,9 @@ export async function handleChannelMessage(ctx: Context) {
             coverImage: coverImageUrl,
             gallery: galleryUrls.length > 0 ? JSON.stringify(galleryUrls) : null,
             adminNotes: adminNotes,
+            partnerLink: extracted.partnerLink || null,
+            isFree: extracted.isFree || false,
+            tickets: ticketsJson,
             status: 'NEW',
           },
         })
@@ -1028,8 +1046,8 @@ export async function handleChannelMessage(ctx: Context) {
     
     // Подготовка данных для создания draft
     const draftData = {
-      cityId: channel.cityId,
-      channelId: channel.id,
+      cityId: channel.cityId || null,
+      channelId: channel.id || null, // null если канал не в базе (пересланное сообщение от админа)
       telegramMessageId: messageId,
       telegramChatId: chatId,
       sourceLink: formatTelegramLink(chatId, messageId),
