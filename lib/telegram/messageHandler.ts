@@ -1149,9 +1149,10 @@ export async function handleChannelMessage(ctx: Context) {
     )
     
     try {
-      // Отправляем как ответ на исходное сообщение (если это сообщение от админа)
-      // Или просто в группу одобрения
-      const replyToMessageId = ctx.message?.message_id
+      // Отправляем карточку в группу одобрения
+      // Не используем reply_to_message_id для пересланных сообщений от админа
+      // (исходное сообщение находится в личном чате админа, а не в группе)
+      const replyToMessageId = isForwardedFromAdmin ? undefined : ctx.message?.message_id
       
       await bot.telegram.sendMessage(approvalChatId, messageText, {
         parse_mode: 'HTML',
