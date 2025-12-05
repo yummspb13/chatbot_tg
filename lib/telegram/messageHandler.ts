@@ -393,19 +393,58 @@ export async function handleChannelMessage(ctx: Context) {
     // Используем enhanced-extractor для улучшенного извлечения с парсингом ссылок и поиском
     const { extractEventEnhanced } = await import('@/lib/ai/enhanced-extractor')
     const extracted = await extractEventEnhanced(text, messageDate)
-    console.log(`${getLogPrefix()} 📝 EXTRACTED: title=${extracted.title ? 'YES' : 'NO'} startDate=${extracted.startDateIso ? 'YES' : 'NO'} isFree=${extracted.isFree} minPrice=${extracted.minPrice || 'N/A'}`)
+    
+    // Детальное логирование извлеченных данных
+    console.log(`${getLogPrefix()} 📝 EXTRACTED DATA:`)
+    console.log(`   Title: ${extracted.title || 'MISSING'}`)
+    console.log(`   StartDate: ${extracted.startDateIso || 'MISSING'}`)
+    console.log(`   EndDate: ${extracted.endDateIso || 'MISSING'}`)
+    console.log(`   Venue: ${extracted.venue || 'MISSING'}`)
+    console.log(`   IsFree: ${extracted.isFree}`)
+    console.log(`   MinPrice: ${extracted.minPrice || 'N/A'}`)
+    console.log(`   PartnerLink: ${extracted.partnerLink || 'MISSING'}`)
+    memoryLogger.info(`Данные извлечены`, { 
+      hasTitle: !!extracted.title, 
+      hasStartDate: !!extracted.startDateIso,
+      title: extracted.title?.substring(0, 50),
+      startDateIso: extracted.startDateIso,
+      isFree: extracted.isFree,
+      minPrice: extracted.minPrice
+    }, 'messageHandler')
 
-    if (!extracted.title || !extracted.startDateIso) {
-      console.log(`${getLogPrefix()} ❌ SKIP: Missing required fields`)
-      console.log(`${getLogPrefix()} ❌ Title: ${extracted.title || 'MISSING'}, StartDate: ${extracted.startDateIso || 'MISSING'}`)
+    // Проверка обязательных полей с fallback значениями для админских сообщений
+    let finalTitle = extracted.title
+    let finalStartDate = extracted.startDateIso
+    
+    // Если нет названия, пытаемся использовать текст из поста (первые 100 символов)
+    if (!finalTitle && isForwardedFromAdmin) {
+      const fallbackTitle = text.substring(0, 100).trim()
+      if (fallbackTitle.length > 10) {
+        finalTitle = fallbackTitle
+        console.log(`${getLogPrefix()} ⚠️ Использую fallback название из текста: ${finalTitle.substring(0, 50)}...`)
+        memoryLogger.warn(`Использовано fallback название`, { title: finalTitle.substring(0, 50) }, 'messageHandler')
+      }
+    }
+    
+    // Если нет даты, используем дефолтную дату (1990-01-01)
+    if (!finalStartDate && isForwardedFromAdmin) {
+      const { getDefaultDate, toISOString } = await import('@/lib/utils/date')
+      finalStartDate = toISOString(getDefaultDate())
+      console.log(`${getLogPrefix()} ⚠️ Использую дефолтную дату: ${finalStartDate}`)
+      memoryLogger.warn(`Использована дефолтная дата`, { startDateIso: finalStartDate }, 'messageHandler')
+    }
+
+    if (!finalTitle || !finalStartDate) {
+      console.log(`${getLogPrefix()} ❌ SKIP: Missing required fields after fallback`)
+      console.log(`${getLogPrefix()} ❌ Title: ${finalTitle || 'MISSING'}, StartDate: ${finalStartDate || 'MISSING'}`)
       
       // Если это сообщение от админа, отправляем ошибку и удаляем сообщение
       if (isForwardedFromAdmin && adminChatId) {
         try {
           const bot = getBot()
           const missingFields = []
-          if (!extracted.title) missingFields.push('название')
-          if (!extracted.startDateIso) missingFields.push('дата')
+          if (!finalTitle) missingFields.push('название')
+          if (!finalStartDate) missingFields.push('дата')
           await bot.telegram.sendMessage(adminChatId, `❌ Ошибка: не удалось извлечь обязательные поля: ${missingFields.join(', ')}`)
           
           // Удаляем исходное сообщение
@@ -423,7 +462,12 @@ export async function handleChannelMessage(ctx: Context) {
       
       return // Пропускаем, если нет обязательных полей
     }
-    console.log(`${getLogPrefix()} ✅ REQUIRED FIELDS: OK`)
+    
+    // Обновляем extracted с финальными значениями
+    extracted.title = finalTitle
+    extracted.startDateIso = finalStartDate
+    
+    console.log(`${getLogPrefix()} ✅ REQUIRED FIELDS: OK (title: ${finalTitle.substring(0, 30)}..., date: ${finalStartDate})`)
 
     // 3. Проверка дубликатов
     console.log('   🔍 Шаг 3: Проверка дубликатов...')

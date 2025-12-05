@@ -140,10 +140,17 @@ async function extractEventEnhancedFromCombinedText(
   const aiClient = getAIClient()
   const { client: openai, getModel, provider } = aiClient
   
-  // Если mock провайдер - возвращаем базовое извлечение
+  // Если mock провайдер - возвращаем базовое извлечение с дефолтной датой
   if (provider === 'mock') {
+    let mockStartDate = baseExtracted.startDateIso
+    if (!mockStartDate || mockStartDate.trim() === '') {
+      const defaultDate = getDefaultDate()
+      mockStartDate = toISOString(defaultDate)
+      console.log('[enhanced-extractor] Mock: установлена дефолтная дата')
+    }
     return {
       ...baseExtracted,
+      startDateIso: mockStartDate,
       partnerLink: links.tickets[0] || null,
       isFree: false,
       minPrice: null,
@@ -218,8 +225,16 @@ ${combinedText.substring(0, 8000)}
     const content = response.choices[0]?.message?.content
     if (!content) {
       console.error('[enhanced-extractor] ❌ Пустой ответ от AI')
+      // Убеждаемся, что есть дефолтная дата
+      let fallbackStartDate = baseExtracted.startDateIso
+      if (!fallbackStartDate || fallbackStartDate.trim() === '') {
+        const defaultDate = getDefaultDate()
+        fallbackStartDate = toISOString(defaultDate)
+        console.log('[enhanced-extractor] Пустой ответ: установлена дефолтная дата')
+      }
       return {
         ...baseExtracted,
+        startDateIso: fallbackStartDate,
         partnerLink: links.tickets[0] || null,
         isFree: false,
         minPrice: null,
@@ -251,11 +266,11 @@ ${combinedText.substring(0, 8000)}
     // Обработка дат по умолчанию
     const { parseISOString, toISOString, getDefaultDate, setDefaultTime, fromMoscowTime, toMoscowTime } = await import('@/lib/utils/date')
     
-    // Если дата не найдена, устанавливаем 1990-01-01T00:00:00+03:00 (московское время)
-    if (!validated.startDateIso) {
+    // Если дата не найдена или пустая строка, устанавливаем 1990-01-01T00:00:00+03:00 (московское время)
+    if (!validated.startDateIso || validated.startDateIso.trim() === '') {
       const defaultDate = getDefaultDate()
       validated.startDateIso = toISOString(defaultDate)
-      console.log('[enhanced-extractor] Дата не найдена, установлена по умолчанию: 1990-01-01T00:00:00+03:00')
+      console.log('[enhanced-extractor] Дата не найдена или пустая, установлена по умолчанию: 1990-01-01T00:00:00+03:00')
     } else {
       // Проверяем, есть ли время в дате
       try {
@@ -282,9 +297,20 @@ ${combinedText.substring(0, 8000)}
     return validated
   } catch (error: any) {
     console.error('[enhanced-extractor] ❌ Ошибка извлечения:', error.message)
-    // Возвращаем базовое извлечение с добавлением ссылок
+    // Возвращаем базовое извлечение с добавлением ссылок и дефолтными значениями
+    const { toISOString, getDefaultDate } = await import('@/lib/utils/date')
+    
+    // Убеждаемся, что есть хотя бы дефолтная дата
+    let startDateIso = baseExtracted.startDateIso
+    if (!startDateIso || startDateIso.trim() === '') {
+      const defaultDate = getDefaultDate()
+      startDateIso = toISOString(defaultDate)
+      console.log('[enhanced-extractor] В catch: установлена дефолтная дата')
+    }
+    
     return {
       ...baseExtracted,
+      startDateIso,
       partnerLink: links.tickets[0] || null,
       isFree: false,
       minPrice: null,
