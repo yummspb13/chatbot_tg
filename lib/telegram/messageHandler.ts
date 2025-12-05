@@ -1109,27 +1109,56 @@ export async function handleChannelMessage(ctx: Context) {
     })
       console.log('   💾 ✅ Предсказание агента сохранено')
 
-    // Если это сообщение от админа, отправляем успешный ответ и удаляем сообщение
+    // Если это сообщение от админа, автоматически отправляем в Афишу со статусом "Черновик"
     if (isForwardedFromAdmin && adminChatId) {
+      console.log(`${getLogPrefix()} 🤖 Автоматическая отправка в Афишу для админа...`)
       try {
-        const bot = getBot()
-        await bot.telegram.sendMessage(adminChatId, '✅ Успешно загружено! Мероприятие создано и отправлено на модерацию.')
+        // Автоматически одобряем и отправляем в Афишу
+        const approveResult = await handleApprove(draft.id)
         
-        // Удаляем исходное сообщение
-        try {
-          await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
-          console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
-        } catch (deleteError: any) {
-          console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
-          // Не критично, продолжаем
+        if (approveResult.success) {
+          console.log(`${getLogPrefix()} ✅ Успешно отправлено в Афишу, eventId: ${approveResult.eventId}`)
+          
+          // Отправляем успешный ответ админу
+          try {
+            const bot = getBot()
+            await bot.telegram.sendMessage(adminChatId, '✅ Успешно загружено! Мероприятие создано на сайте со статусом "Черновик".')
+            
+            // Удаляем исходное сообщение
+            try {
+              await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
+              console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
+            } catch (deleteError: any) {
+              console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
+            }
+          } catch (sendError: any) {
+            console.error('   ❌ Ошибка отправки успешного ответа:', sendError.message)
+          }
+        } else if (approveResult.isDuplicate) {
+          console.log(`${getLogPrefix()} ⚠️ Дубликат в Афише`)
+          try {
+            const bot = getBot()
+            await bot.telegram.sendMessage(adminChatId, '⚠️ Мероприятие уже существует на сайте (дубликат).')
+            await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
+          } catch (sendError: any) {
+            console.error('   ❌ Ошибка отправки ответа о дубликате:', sendError.message)
+          }
+        } else {
+          throw new Error('Неизвестная ошибка при отправке в Афишу')
         }
-      } catch (sendError: any) {
-        console.error('   ❌ Ошибка отправки успешного ответа:', sendError.message)
-        // Не критично, продолжаем
+      } catch (approveError: any) {
+        console.error(`${getLogPrefix()} ❌ Ошибка автоматической отправки в Афишу:`, approveError.message)
+        try {
+          const bot = getBot()
+          await bot.telegram.sendMessage(adminChatId, `❌ Ошибка отправки на сайт: ${approveError.message}`)
+        } catch (sendError: any) {
+          console.error('   ❌ Ошибка отправки сообщения об ошибке:', sendError.message)
+        }
       }
+      return // Не отправляем карточку одобрения для пересланных сообщений от админа
     }
 
-    // Формируем и отправляем карточку с кнопками
+    // Для обычных сообщений формируем и отправляем карточку с кнопками
     console.log('   📤 Формирую сообщение для одобрения...')
     const messageText = formatDraftMessage(draft, channel, agentPrediction)
     const keyboard = {
