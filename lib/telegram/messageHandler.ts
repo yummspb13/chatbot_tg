@@ -191,32 +191,34 @@ export async function handleChannelMessage(ctx: Context) {
   console.log('   ✅ Chat ID получен:', chatId)
 
   // Проверяем, является ли это пересланным сообщением от админа
-  // Это личное сообщение (не канал) с пересланным контентом
+  // Это сообщение с forward_from_chat, где сохранен originalChat или adminChatId
+  const adminChatId = (ctx as any).adminChatId || ((ctx as any).originalChat?.id?.toString())
   const isForwardedFromAdmin = ctx.message && 
-                                (ctx.chat?.type === 'private' || (ctx as any).originalChat?.type === 'private') && 
+                                adminChatId && 
                                 'forward_from_chat' in ctx.message && 
                                 ctx.message.forward_from_chat
   
   const messageId = message.message_id.toString()
   
   // Если это сообщение от админа, проверяем очередь
-  if (isForwardedFromAdmin) {
-    if (isProcessing(chatId)) {
+  if (isForwardedFromAdmin && adminChatId) {
+    // Используем chatId админа для очереди, а не chatId канала
+    if (isProcessing(adminChatId)) {
       console.log(`   ⏳ Сообщение ${messageId} добавлено в очередь (обрабатывается другое сообщение)`)
-      addToQueue(chatId, messageId)
+      addToQueue(adminChatId, messageId)
       
-      // Отправляем ответ админу
+      // Отправляем ответ админу (используем adminChatId, а не chatId канала)
       try {
         const bot = getBot()
-        await bot.telegram.sendMessage(chatId, '⏳ Ваше сообщение добавлено в очередь. Обрабатывается предыдущее сообщение...')
+        await bot.telegram.sendMessage(adminChatId, '⏳ Ваше сообщение добавлено в очередь. Обрабатывается предыдущее сообщение...')
       } catch (error) {
         console.error('   ❌ Ошибка отправки ответа о очереди:', error)
       }
       return
     }
     
-    // Начинаем обработку
-    startProcessing(chatId, messageId)
+    // Начинаем обработку (используем adminChatId для очереди)
+    startProcessing(adminChatId, messageId)
   }
 
   // Проверяем, что это канал из нашей базы
@@ -341,17 +343,17 @@ export async function handleChannelMessage(ctx: Context) {
       console.log(`${getLogPrefix()} ❌ Title: ${extracted.title || 'MISSING'}, StartDate: ${extracted.startDateIso || 'MISSING'}`)
       
       // Если это сообщение от админа, отправляем ошибку и удаляем сообщение
-      if (isForwardedFromAdmin) {
+      if (isForwardedFromAdmin && adminChatId) {
         try {
           const bot = getBot()
           const missingFields = []
           if (!extracted.title) missingFields.push('название')
           if (!extracted.startDateIso) missingFields.push('дата')
-          await bot.telegram.sendMessage(chatId, `❌ Ошибка: не удалось извлечь обязательные поля: ${missingFields.join(', ')}`)
+          await bot.telegram.sendMessage(adminChatId, `❌ Ошибка: не удалось извлечь обязательные поля: ${missingFields.join(', ')}`)
           
           // Удаляем исходное сообщение
           try {
-            await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+            await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
             console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
           } catch (deleteError: any) {
             console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
@@ -359,7 +361,7 @@ export async function handleChannelMessage(ctx: Context) {
         } catch (sendError: any) {
           console.error('   ❌ Ошибка отправки сообщения об ошибке:', sendError.message)
         }
-        finishProcessing(chatId)
+        finishProcessing(adminChatId)
       }
       
       return // Пропускаем, если нет обязательных полей
@@ -874,14 +876,14 @@ export async function handleChannelMessage(ctx: Context) {
           await handleAutoApprove(draft.id, agentPrediction)
           
           // Если это сообщение от админа, отправляем успешный ответ и удаляем сообщение
-          if (isForwardedFromAdmin) {
+          if (isForwardedFromAdmin && adminChatId) {
             try {
               const bot = getBot()
-              await bot.telegram.sendMessage(chatId, '✅ Успешно загружено! Мероприятие автоматически одобрено и отправлено на сайт.')
+              await bot.telegram.sendMessage(adminChatId, '✅ Успешно загружено! Мероприятие автоматически одобрено и отправлено на сайт.')
               
               // Удаляем исходное сообщение
               try {
-                await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+                await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
                 console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
               } catch (deleteError: any) {
                 console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
@@ -896,14 +898,14 @@ export async function handleChannelMessage(ctx: Context) {
           await handleAutoReject(draft.id, agentPrediction)
           
           // Если это сообщение от админа, отправляем ответ об отклонении
-          if (isForwardedFromAdmin) {
+          if (isForwardedFromAdmin && adminChatId) {
             try {
               const bot = getBot()
-              await bot.telegram.sendMessage(chatId, '❌ Мероприятие автоматически отклонено ботом.')
+              await bot.telegram.sendMessage(adminChatId, '❌ Мероприятие автоматически отклонено ботом.')
               
               // Удаляем исходное сообщение
               try {
-                await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+                await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
                 console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
               } catch (deleteError: any) {
                 console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
@@ -1048,14 +1050,14 @@ export async function handleChannelMessage(ctx: Context) {
       console.log('   💾 ✅ Предсказание агента сохранено')
 
     // Если это сообщение от админа, отправляем успешный ответ и удаляем сообщение
-    if (isForwardedFromAdmin) {
+    if (isForwardedFromAdmin && adminChatId) {
       try {
         const bot = getBot()
-        await bot.telegram.sendMessage(chatId, '✅ Успешно загружено! Мероприятие создано и отправлено на модерацию.')
+        await bot.telegram.sendMessage(adminChatId, '✅ Успешно загружено! Мероприятие создано и отправлено на модерацию.')
         
         // Удаляем исходное сообщение
         try {
-          await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+          await bot.telegram.deleteMessage(adminChatId, parseInt(messageId))
           console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
         } catch (deleteError: any) {
           console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
@@ -1150,20 +1152,20 @@ export async function handleChannelMessage(ctx: Context) {
         )
         
         // Если это сообщение от админа, отправляем ошибку и завершаем обработку
-        if (isForwardedFromAdmin) {
+        if (isForwardedFromAdmin && adminChatId) {
           try {
             const bot = getBot()
             const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
-            await bot.telegram.sendMessage(chatId, `❌ Ошибка обработки:\n\n${errorMessage}`)
+            await bot.telegram.sendMessage(adminChatId, `❌ Ошибка обработки:\n\n${errorMessage}`)
           } catch (sendError) {
             console.error('   ❌ Ошибка отправки сообщения об ошибке:', sendError)
           }
-          finishProcessing(chatId)
+          finishProcessing(adminChatId)
         }
       } finally {
         // Завершаем обработку в очереди для сообщений от админа
-        if (isForwardedFromAdmin) {
-          finishProcessing(chatId)
+        if (isForwardedFromAdmin && adminChatId) {
+          finishProcessing(adminChatId)
         }
       }
 }

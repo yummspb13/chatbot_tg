@@ -101,13 +101,17 @@ export function registerWebhookHandlers() {
         console.log('📨 [HANDLER] Получено пересланное сообщение из канала!')
         const chatTitle = (forwardedChat as any).title || (forwardedChat as any).id
         console.log('   Исходный канал:', chatTitle)
-        console.log('   Chat ID:', (forwardedChat as any).id)
+        console.log('   Chat ID канала:', (forwardedChat as any).id)
+        console.log('   Chat ID админа (откуда переслано):', ctx.chat?.id)
         
         // Создаем контекст, имитирующий сообщение из канала
         const messageAny = ctx.message as any
         const channelCtx = {
           ...ctx,
           chat: forwardedChat,
+          // Сохраняем оригинальный chat админа для очереди и ответов
+          originalChat: ctx.chat,
+          adminChatId: ctx.chat?.id?.toString(),
           message: {
             ...messageAny,
             // Используем текст пересланного сообщения
