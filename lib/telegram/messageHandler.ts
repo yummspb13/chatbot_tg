@@ -309,20 +309,20 @@ export async function handleChannelMessage(ctx: Context) {
     memoryLogger.info(`Используется виртуальный канал`, { channelTitle: channel.title, chatId }, 'messageHandler')
   }
 
+  // Получаем настройки бота (нужны для определения режима AUTO/MANUAL)
+  console.log('   🔍 Получаю настройки бота...')
+  memoryLogger.info(`Получение настроек бота`, {}, 'messageHandler')
+  const settings = await getBotSettings()
+  console.log('   📊 Настройки бота:', {
+    isRunning: settings.isRunning,
+    mode: settings.mode,
+    confidenceThreshold: settings.confidenceThreshold
+  })
+  memoryLogger.info(`Настройки бота получены`, { isRunning: settings.isRunning, mode: settings.mode }, 'messageHandler')
+  
   // Для пересланных сообщений от админа пропускаем проверку статуса бота
   // (бот должен обрабатывать сообщения от админа всегда)
   if (!isForwardedFromAdmin) {
-    // Проверяем, что бот запущен
-    console.log('   🔍 Проверяю статус бота...')
-    memoryLogger.info(`Проверка статуса бота`, {}, 'messageHandler')
-    const settings = await getBotSettings()
-    console.log('   📊 Настройки бота:', {
-      isRunning: settings.isRunning,
-      mode: settings.mode,
-      confidenceThreshold: settings.confidenceThreshold
-    })
-    memoryLogger.info(`Настройки бота получены`, { isRunning: settings.isRunning, mode: settings.mode }, 'messageHandler')
-    
     if (!settings.isRunning) {
       console.log(`   ❌ Бот не запущен (isRunning = false), пропускаю сообщение из канала ${channel.title}`)
       console.log('   💡 Запустите бота командой /start')
