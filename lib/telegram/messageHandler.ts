@@ -284,7 +284,7 @@ export async function handleChannelMessage(ctx: Context) {
   
   console.log(`   📨 Получено сообщение из канала: ${channel.title} (${chatId})`)
 
-  const messageId = message.message_id.toString()
+  // messageId уже определен выше (строка 200)
   console.log('   📝 Message ID:', messageId)
   memoryLogger.info(`Проверка дубликатов`, { messageId, chatId }, 'messageHandler')
   // text уже извлечен выше из message.text или message.caption
