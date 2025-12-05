@@ -60,20 +60,42 @@ export async function extractEventEnhanced(
   }
   
   // 4. Объединяем текст из сообщения и распарсенных ссылок
+  // Приоритет: информация со страницы билетов важнее, чем из поста
   let combinedText = text
   if (parsedLinks.length > 0) {
-    const linksText = parsedLinks.map(link => {
-      let linkInfo = `\n\n--- Информация со страницы ${link.url} ---\n`
-      if (link.meta.title || link.meta.ogTitle) {
-        linkInfo += `Заголовок: ${link.meta.title || link.meta.ogTitle}\n`
+    // Разделяем ссылки на билеты и организаторов
+    const ticketLinks = parsedLinks.filter(link => links.tickets.includes(link.url))
+    const organizerLinks = parsedLinks.filter(link => links.organizers.includes(link.url))
+    
+    // Сначала добавляем информацию со страницы билетов (приоритет)
+    if (ticketLinks.length > 0) {
+      const ticketLink = ticketLinks[0] // Берем первую ссылку на билеты
+      let linkInfo = `\n\n--- ИНФОРМАЦИЯ СО СТРАНИЦЫ БИЛЕТОВ (ПРИОРИТЕТ) ${ticketLink.url} ---\n`
+      if (ticketLink.meta.title || ticketLink.meta.ogTitle) {
+        linkInfo += `Заголовок с сайта: ${ticketLink.meta.title || ticketLink.meta.ogTitle}\n`
       }
-      if (link.meta.description || link.meta.ogDescription) {
-        linkInfo += `Описание: ${link.meta.description || link.meta.ogDescription}\n`
+      if (ticketLink.meta.description || ticketLink.meta.ogDescription) {
+        linkInfo += `Описание с сайта: ${ticketLink.meta.description || ticketLink.meta.ogDescription}\n`
       }
-      linkInfo += `Текст: ${link.text.substring(0, 2000)}\n`
-      return linkInfo
-    }).join('\n')
-    combinedText += linksText
+      linkInfo += `Полный текст со страницы: ${ticketLink.text.substring(0, 3000)}\n`
+      combinedText = linkInfo + '\n\n--- ИНФОРМАЦИЯ ИЗ ПОСТА ---\n' + combinedText
+    }
+    
+    // Затем добавляем информацию от организаторов
+    if (organizerLinks.length > 0) {
+      const linksText = organizerLinks.map(link => {
+        let linkInfo = `\n\n--- Информация со страницы ${link.url} ---\n`
+        if (link.meta.title || link.meta.ogTitle) {
+          linkInfo += `Заголовок: ${link.meta.title || link.meta.ogTitle}\n`
+        }
+        if (link.meta.description || link.meta.ogDescription) {
+          linkInfo += `Описание: ${link.meta.description || link.meta.ogDescription}\n`
+        }
+        linkInfo += `Текст: ${link.text.substring(0, 2000)}\n`
+        return linkInfo
+      }).join('\n')
+      combinedText += linksText
+    }
   }
   
   // 5. Поиск информации в интернете через ChatGPT
@@ -137,13 +159,13 @@ async function extractEventEnhancedFromCombinedText(
 Задача: извлечь структурированные данные о мероприятии.
 
 Поля:
-- title: название мероприятия (обязательно, если есть)
+- title: название мероприятия (обязательно, если есть). ПРИОРИТЕТ: если есть название на сайте билетов, используй его, но убери фразы типа "со скидкой 20%", "акция" и т.д. Если на сайте название лучше/полнее, используй его вместо названия из поста.
 - startDateIso: дата и время начала в формате ISO 8601 UTC (обязательно, если есть)
 - endDateIso: дата и время окончания в формате ISO 8601 UTC (опционально)
   * ВАЖНО: Если указана только дата начала без времени окончания (например, "15 декабря в 17:00"), добавь 2 часа к времени начала
-- venue: место проведения с адресом (опционально)
+- venue: место проведения с ПОЛНЫМ адресом (опционально). ВАЖНО: если на сайте указан полный адрес (например, "пр. Юрия Гагарина, 42"), используй его вместо просто "театр" или названия места. Всегда указывай полный адрес если он есть на сайте.
 - cityName: название города (опционально)
-- description: развернутое, красивое и детальное описание мероприятия. Переписывай информацию из поста и со страницы сайта своими словами, создавая увлекательный и информативный текст. Включи все важные детали: что это за мероприятие, чем оно интересно, для кого предназначено, что будет происходить. Используй живой язык, делай описание привлекательным и информативным. Простой текст с переносами строк (не HTML, не Markdown). Структурируй описание логично: вступление, основная часть с деталями, важная информация (возрастные ограничения, особенности посещения и т.д.)
+- description: развернутое, красивое и детальное описание мероприятия. Переписывай информацию из поста и со страницы сайта своими словами, создавая увлекательный и информативный текст. Включи все важные детали: что это за мероприятие, чем оно интересно, для кого предназначено, что будет происходить. ОБЯЗАТЕЛЬНО включи возрастную категорию (например, "0+", "6+", "для детей от 3 лет" и т.д.) если она указана на сайте или в посте. Используй живой язык, делай описание привлекательным и информативным. Простой текст с переносами строк (не HTML, не Markdown). Структурируй описание логично: вступление, основная часть с деталями, важная информация (возрастные ограничения, особенности посещения и т.д.)
 - partnerLink: ссылка на партнера (ссылка на покупку билетов, приоритет - ссылки из раздела "билеты")
 - isFree: бесплатное мероприятие (true) или платное (false)
 - minPrice: минимальная цена билета в рублях (только если isFree = false). Извлекай только число, например из "от 400 руб" извлеки 400

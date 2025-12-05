@@ -1544,9 +1544,11 @@ export async function handleApprove(draftId: number) {
     }
   }
 
-  // Создаем slug из названия мероприятия
+  // Создаем slug из названия мероприятия с timestamp для уникальности
   const { createSlug } = await import('@/lib/utils/slug')
-  const eventSlug = createSlug(draft.title)
+  const baseSlug = createSlug(draft.title)
+  // Добавляем timestamp для уникальности (как на сайте: морозко-1764973805703)
+  const eventSlug = `${baseSlug}-${Date.now()}`
 
   // Парсим билеты из JSON
   let tickets: Array<{name: string; price: number}> | undefined = undefined
