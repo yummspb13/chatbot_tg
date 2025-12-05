@@ -223,20 +223,43 @@ export async function handleChannelMessage(ctx: Context) {
 
   // Проверяем, что это канал из нашей базы
   console.log('   🔍 Проверяю канал в базе данных...')
+  console.log(`   🔍 ChatId для поиска: ${chatId} (тип: ${typeof chatId})`)
+  console.log(`   🔍 isForwardedFromAdmin: ${isForwardedFromAdmin}, adminChatId: ${adminChatId}`)
   memoryLogger.info(
     `STEP1: FIND_CHANNEL_IN_DB - Ищу канал с chatId: ${chatId}`,
-    { chatId },
+    { chatId, isForwardedFromAdmin, adminChatId },
     'messageHandler'
   )
-  const channel = await prisma.channel.findFirst({
-    where: {
-      chatId,
-      isActive: true,
-    },
-    include: {
-      city: true,
-    },
-  })
+  
+  let channel
+  try {
+    console.log('   🔍 Выполняю запрос к базе данных...')
+    channel = await prisma.channel.findFirst({
+      where: {
+        chatId,
+        isActive: true,
+      },
+      include: {
+        city: true,
+      },
+    })
+    console.log('   🔍 Запрос к базе выполнен, результат:', channel ? `найден канал ${channel.title}` : 'канал не найден')
+  } catch (dbError: any) {
+    console.error('   ❌ Ошибка запроса к базе данных:', dbError.message)
+    memoryLogger.error(`Ошибка запроса к базе данных`, { error: dbError.message, chatId }, 'messageHandler')
+    
+    // Если это сообщение от админа, отправляем ошибку
+    if (isForwardedFromAdmin && adminChatId) {
+      try {
+        const bot = getBot()
+        await bot.telegram.sendMessage(adminChatId, `❌ Ошибка базы данных: ${dbError.message}`)
+      } catch (sendError) {
+        console.error('   ❌ Ошибка отправки сообщения об ошибке:', sendError)
+      }
+      finishProcessing(adminChatId)
+    }
+    return
+  }
 
   if (!channel) {
     console.log(`   ❌ Канал ${chatId} не найден в базе или неактивен`)
@@ -247,13 +270,28 @@ export async function handleChannelMessage(ctx: Context) {
     console.log('      4. Бот добавлен в канал как администратор?')
     
     // Показываем все каналы для отладки
-    const allChannels = await prisma.channel.findMany({
-      select: { chatId: true, title: true, isActive: true }
-    })
-    console.log('   📋 Все каналы в базе:')
-    allChannels.forEach(ch => {
-      console.log(`      - ${ch.title} (${ch.chatId}) - ${ch.isActive ? 'активен' : 'неактивен'}`)
-    })
+    try {
+      const allChannels = await prisma.channel.findMany({
+        select: { chatId: true, title: true, isActive: true }
+      })
+      console.log('   📋 Все каналы в базе:')
+      allChannels.forEach(ch => {
+        console.log(`      - ${ch.title} (${ch.chatId}) - ${ch.isActive ? 'активен' : 'неактивен'}`)
+      })
+    } catch (e) {
+      console.error('   ❌ Ошибка получения списка каналов:', e)
+    }
+    
+    // Если это сообщение от админа и канал не найден, отправляем ответ
+    if (isForwardedFromAdmin && adminChatId) {
+      try {
+        const bot = getBot()
+        await bot.telegram.sendMessage(adminChatId, `❌ Канал не найден в базе данных. Добавьте канал через /addchannel или проверьте настройки.`)
+        finishProcessing(adminChatId)
+      } catch (sendError) {
+        console.error('   ❌ Ошибка отправки сообщения:', sendError)
+      }
+    }
     
     console.log('═══════════════════════════════════════════════════════════')
     console.log('')
@@ -313,11 +351,15 @@ export async function handleChannelMessage(ctx: Context) {
   // Сохраняем оригинальный текст для обучения (во временное хранилище или прямо в DraftEvent)
   // Для MVP сохраним в description если его нет, или создадим отдельное поле позже
 
+  console.log('   🔄 Начинаю обработку сообщения...')
+  console.log(`   🔄 isForwardedFromAdmin: ${isForwardedFromAdmin}, adminChatId: ${adminChatId}`)
+  memoryLogger.info(`Начинаю обработку сообщения`, { isForwardedFromAdmin, adminChatId, chatId, messageId }, 'messageHandler')
+
   try {
     // Объявляем logPrefix один раз для всего блока try
     const getLogPrefix = () => `[${new Date().toISOString()}]`
     
-    console.log('   🔄 Начинаю обработку сообщения...')
+    console.log('   🔄 Внутри try блока, начинаю извлечение данных...')
     
     // 1. Классификация
     console.log(`${getLogPrefix()} 📊 STEP1: CLASSIFICATION`)
