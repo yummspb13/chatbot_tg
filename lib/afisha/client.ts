@@ -15,6 +15,8 @@ export type AfishaDraftRequest = {
   partnerLink?: string
   isFree?: boolean
   tickets?: Array<{name: string; price: number}>
+  lat?: number // Широта координат места
+  lng?: number // Долгота координат места
 }
 
 export type AfishaDraftResponse = {

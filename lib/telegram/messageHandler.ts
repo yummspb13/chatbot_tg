@@ -9,6 +9,7 @@ import { parseISOString, formatMoscowDate } from '@/lib/utils/date'
 import { getBot } from './bot'
 import { extractLinks } from '@/lib/utils/link-extractor'
 import { geocodeVenue } from '@/lib/utils/geocoding'
+import { isProcessing, startProcessing, finishProcessing, addToQueue } from './queue'
 
 // Включаем логирование всех запросов к Prisma
 if (process.env.DEBUG_PRISMA === 'true') {
@@ -189,6 +190,35 @@ export async function handleChannelMessage(ctx: Context) {
   }
   console.log('   ✅ Chat ID получен:', chatId)
 
+  // Проверяем, является ли это пересланным сообщением от админа
+  // Это личное сообщение (не канал) с пересланным контентом
+  const isForwardedFromAdmin = ctx.message && 
+                                (ctx.chat?.type === 'private' || (ctx as any).originalChat?.type === 'private') && 
+                                'forward_from_chat' in ctx.message && 
+                                ctx.message.forward_from_chat
+  
+  const messageId = message.message_id.toString()
+  
+  // Если это сообщение от админа, проверяем очередь
+  if (isForwardedFromAdmin) {
+    if (isProcessing(chatId)) {
+      console.log(`   ⏳ Сообщение ${messageId} добавлено в очередь (обрабатывается другое сообщение)`)
+      addToQueue(chatId, messageId)
+      
+      // Отправляем ответ админу
+      try {
+        const bot = getBot()
+        await bot.telegram.sendMessage(chatId, '⏳ Ваше сообщение добавлено в очередь. Обрабатывается предыдущее сообщение...')
+      } catch (error) {
+        console.error('   ❌ Ошибка отправки ответа о очереди:', error)
+      }
+      return
+    }
+    
+    // Начинаем обработку
+    startProcessing(chatId, messageId)
+  }
+
   // Проверяем, что это канал из нашей базы
   console.log('   🔍 Проверяю канал в базе данных...')
   memoryLogger.info(
@@ -309,6 +339,29 @@ export async function handleChannelMessage(ctx: Context) {
     if (!extracted.title || !extracted.startDateIso) {
       console.log(`${getLogPrefix()} ❌ SKIP: Missing required fields`)
       console.log(`${getLogPrefix()} ❌ Title: ${extracted.title || 'MISSING'}, StartDate: ${extracted.startDateIso || 'MISSING'}`)
+      
+      // Если это сообщение от админа, отправляем ошибку и удаляем сообщение
+      if (isForwardedFromAdmin) {
+        try {
+          const bot = getBot()
+          const missingFields = []
+          if (!extracted.title) missingFields.push('название')
+          if (!extracted.startDateIso) missingFields.push('дата')
+          await bot.telegram.sendMessage(chatId, `❌ Ошибка: не удалось извлечь обязательные поля: ${missingFields.join(', ')}`)
+          
+          // Удаляем исходное сообщение
+          try {
+            await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+            console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
+          } catch (deleteError: any) {
+            console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
+          }
+        } catch (sendError: any) {
+          console.error('   ❌ Ошибка отправки сообщения об ошибке:', sendError.message)
+        }
+        finishProcessing(chatId)
+      }
+      
       return // Пропускаем, если нет обязательных полей
     }
     console.log(`${getLogPrefix()} ✅ REQUIRED FIELDS: OK`)
@@ -672,7 +725,7 @@ export async function handleChannelMessage(ctx: Context) {
       console.log(`   📝 ⚠️ Ссылки организаторов не найдены в тексте`)
     }
     
-    let coordinates: { lat: number; lng: number } | null = null
+    let coordinates: { lat: number; lng: number } = { lat: 0, lng: 0 }
     
     // Получаем координаты места, если есть venue и cityName
     console.log(`   📍 Проверка условий для геокодинга:`)
@@ -684,48 +737,34 @@ export async function handleChannelMessage(ctx: Context) {
     if (extracted.venue && (extracted.cityName || channel.city?.name)) {
       const cityName = extracted.cityName || channel.city?.name || ''
       console.log(`   📍 Пытаюсь получить координаты для: "${extracted.venue}", ${cityName}`)
-      coordinates = await geocodeVenue(extracted.venue, cityName)
-      if (coordinates) {
+      const geocoded = await geocodeVenue(extracted.venue, cityName)
+      if (geocoded) {
+        coordinates = geocoded
         console.log(`   📍 ✅ Координаты получены: ${coordinates.lat}, ${coordinates.lng}`)
       } else {
-        console.log(`   📍 ⚠️ Координаты не найдены (возможно, нет YANDEX_MAPS_API_KEY или место не найдено)`)
+        console.log(`   📍 ⚠️ Координаты не найдены, устанавливаю 0, 0`)
+        coordinates = { lat: 0, lng: 0 }
       }
     } else {
-      console.log(`   📍 ⚠️ Нет venue или cityName для геокодинга: venue=${extracted.venue || 'null'}, cityName=${extracted.cityName || channel.city?.name || 'null'}`)
+      console.log(`   📍 ⚠️ Нет venue или cityName для геокодинга, устанавливаю 0, 0`)
+      coordinates = { lat: 0, lng: 0 }
     }
     
-    // Формируем adminNotes как читаемый текст (не JSON)
+    // Формируем adminNotes в новом формате
     const adminNotesParts: string[] = []
     
+    // Добавляем заголовок
+    adminNotesParts.push(`Источники и заметки (от бота)`)
+    adminNotesParts.push('')
+    
     // Добавляем ссылку на пост в Telegram
-    adminNotesParts.push(`Источники:`)
-    adminNotesParts.push(`1. ${telegramLink}`)
+    adminNotesParts.push(`1) Ссылка на пост: ${telegramLink}`)
     
-    // Добавляем ссылки на билеты
+    // Добавляем ссылку на сайт (первая ссылка на билеты)
     if (links.tickets.length > 0) {
-      links.tickets.forEach((link, index) => {
-        adminNotesParts.push(`${index + 2}. ${link}`)
-      })
-    }
-    
-    // Добавляем ссылки организаторов
-    if (links.organizers.length > 0) {
-      if (adminNotesParts.length > 0) {
-        adminNotesParts.push('') // Пустая строка для разделения
-      }
-      adminNotesParts.push(`Ссылки организаторов:`)
-      links.organizers.forEach((link, index) => {
-        adminNotesParts.push(`${index + 1}. ${link}`)
-      })
-    }
-    
-    // Добавляем координаты места
-    if (coordinates) {
-      if (adminNotesParts.length > 0) {
-        adminNotesParts.push('') // Пустая строка для разделения
-      }
-      adminNotesParts.push(`Координаты места:`)
-      adminNotesParts.push(`lat: ${coordinates.lat}, lng: ${coordinates.lng}`)
+      adminNotesParts.push(`2) Ссылка на сайт: ${links.tickets[0]}`)
+    } else if (links.organizers.length > 0) {
+      adminNotesParts.push(`2) Ссылка на сайт: ${links.organizers[0]}`)
     }
     
     const adminNotes = adminNotesParts.join('\n')
@@ -735,7 +774,7 @@ export async function handleChannelMessage(ctx: Context) {
       telegramLink, 
       ticketLinksCount: links.tickets.length,
       organizerLinksCount: links.organizers.length,
-      hasCoordinates: !!coordinates,
+      coordinates: coordinates,
       adminNotesLength: adminNotes.length
     }, 'messageHandler')
 
@@ -833,10 +872,46 @@ export async function handleChannelMessage(ctx: Context) {
           console.log('   🤖 ✅ Автоматическое одобрение...')
           // Автоматически отправляем в Афишу
           await handleAutoApprove(draft.id, agentPrediction)
+          
+          // Если это сообщение от админа, отправляем успешный ответ и удаляем сообщение
+          if (isForwardedFromAdmin) {
+            try {
+              const bot = getBot()
+              await bot.telegram.sendMessage(chatId, '✅ Успешно загружено! Мероприятие автоматически одобрено и отправлено на сайт.')
+              
+              // Удаляем исходное сообщение
+              try {
+                await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+                console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
+              } catch (deleteError: any) {
+                console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
+              }
+            } catch (sendError: any) {
+              console.error('   ❌ Ошибка отправки успешного ответа:', sendError.message)
+            }
+          }
         } else {
           console.log('   🤖 ❌ Автоматическое отклонение...')
           // Автоматически отклоняем
           await handleAutoReject(draft.id, agentPrediction)
+          
+          // Если это сообщение от админа, отправляем ответ об отклонении
+          if (isForwardedFromAdmin) {
+            try {
+              const bot = getBot()
+              await bot.telegram.sendMessage(chatId, '❌ Мероприятие автоматически отклонено ботом.')
+              
+              // Удаляем исходное сообщение
+              try {
+                await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+                console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
+              } catch (deleteError: any) {
+                console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
+              }
+            } catch (sendError: any) {
+              console.error('   ❌ Ошибка отправки ответа об отклонении:', sendError.message)
+            }
+          }
         }
         return
       }
@@ -897,10 +972,14 @@ export async function handleChannelMessage(ctx: Context) {
     
     // Парсим билеты из enhanced-extracted
     let ticketsJson: string | null = null
-    if (!extracted.isFree && extracted.minPrice) {
+    if (!extracted.isFree && extracted.minPrice !== null && extracted.minPrice !== undefined) {
       // Если платное и есть минимальная цена, создаем билет "1" с этой ценой
+      // minPrice уже должен быть числом (извлечен из "от 400 руб" → 400)
       const tickets = [{ name: '1', price: extracted.minPrice }]
       ticketsJson = JSON.stringify(tickets)
+      console.log(`   💰 Билет создан: название="1", цена=${extracted.minPrice}`)
+    } else {
+      console.log(`   💰 Билет не создан: isFree=${extracted.isFree}, minPrice=${extracted.minPrice}`)
     }
     
     // Подготовка данных для создания draft
@@ -966,7 +1045,27 @@ export async function handleChannelMessage(ctx: Context) {
       agentConfidence: agentPrediction.confidence,
       agentReasoning: agentPrediction.reasoning,
     })
-    console.log('   💾 ✅ Предсказание агента сохранено')
+      console.log('   💾 ✅ Предсказание агента сохранено')
+
+    // Если это сообщение от админа, отправляем успешный ответ и удаляем сообщение
+    if (isForwardedFromAdmin) {
+      try {
+        const bot = getBot()
+        await bot.telegram.sendMessage(chatId, '✅ Успешно загружено! Мероприятие создано и отправлено на модерацию.')
+        
+        // Удаляем исходное сообщение
+        try {
+          await bot.telegram.deleteMessage(chatId, parseInt(messageId))
+          console.log(`   🗑️ Исходное сообщение ${messageId} удалено`)
+        } catch (deleteError: any) {
+          console.warn(`   ⚠️ Не удалось удалить сообщение ${messageId}:`, deleteError.message)
+          // Не критично, продолжаем
+        }
+      } catch (sendError: any) {
+        console.error('   ❌ Ошибка отправки успешного ответа:', sendError.message)
+        // Не критично, продолжаем
+      }
+    }
 
     // Формируем и отправляем карточку с кнопками
     console.log('   📤 Формирую сообщение для одобрения...')
@@ -1049,6 +1148,23 @@ export async function handleChannelMessage(ctx: Context) {
           },
           'messageHandler'
         )
+        
+        // Если это сообщение от админа, отправляем ошибку и завершаем обработку
+        if (isForwardedFromAdmin) {
+          try {
+            const bot = getBot()
+            const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка'
+            await bot.telegram.sendMessage(chatId, `❌ Ошибка обработки:\n\n${errorMessage}`)
+          } catch (sendError) {
+            console.error('   ❌ Ошибка отправки сообщения об ошибке:', sendError)
+          }
+          finishProcessing(chatId)
+        }
+      } finally {
+        // Завершаем обработку в очереди для сообщений от админа
+        if (isForwardedFromAdmin) {
+          finishProcessing(chatId)
+        }
       }
 }
 
@@ -1350,6 +1466,45 @@ export async function handleApprove(draftId: number) {
     }
   }
 
+  // Извлекаем координаты из adminNotes
+  let lat: number | undefined = undefined
+  let lng: number | undefined = undefined
+  
+  if (adminNotesText) {
+    // Пытаемся найти координаты в формате "lat: X, lng: Y" или "lat: X, lng: Y"
+    const latMatch = adminNotesText.match(/lat:\s*([+-]?\d+\.?\d*)/i)
+    const lngMatch = adminNotesText.match(/lng:\s*([+-]?\d+\.?\d*)/i)
+    
+    if (latMatch && lngMatch) {
+      lat = parseFloat(latMatch[1])
+      lng = parseFloat(lngMatch[1])
+      console.log(`[handleApprove] Координаты извлечены из adminNotes: lat=${lat}, lng=${lng}`)
+    } else {
+      // Если координаты не найдены в тексте, но есть в старом формате JSON
+      try {
+        const parsed = JSON.parse(adminNotesText)
+        if (parsed.coordinates) {
+          lat = parsed.coordinates.lat || 0
+          lng = parsed.coordinates.lng || 0
+          console.log(`[handleApprove] Координаты извлечены из JSON adminNotes: lat=${lat}, lng=${lng}`)
+        } else {
+          lat = 0
+          lng = 0
+        }
+      } catch (e) {
+        // Не JSON, устанавливаем 0, 0
+        lat = 0
+        lng = 0
+        console.log(`[handleApprove] Координаты не найдены в adminNotes, устанавливаю 0, 0`)
+      }
+    }
+  } else {
+    // Если adminNotes нет, устанавливаем 0, 0
+    lat = 0
+    lng = 0
+    console.log(`[handleApprove] adminNotes отсутствует, устанавливаю координаты 0, 0`)
+  }
+
   const response = await sendDraft({
     title: draft.title,
     slug: eventSlug,
@@ -1365,6 +1520,8 @@ export async function handleApprove(draftId: number) {
     partnerLink: draft.partnerLink || undefined,
     isFree: draft.isFree || false,
     tickets: tickets,
+    lat: lat,
+    lng: lng,
   })
 
   if (response.isDuplicate) {

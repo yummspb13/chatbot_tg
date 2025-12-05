@@ -129,7 +129,7 @@ async function extractEventEnhancedFromCombinedText(
   }
   
   const model = getModel('gpt-4o-mini')
-  const { toISOString } = await import('@/lib/utils/date')
+  const { toISOString, getDefaultDate, setDefaultTime, parseISOString, fromMoscowTime, toMoscowTime } = await import('@/lib/utils/date')
   const currentDate = messageDate ? toISOString(messageDate) : new Date().toISOString()
   
   const prompt = `Ты извлекаешь информацию о мероприятии из текста сообщения и дополнительных источников.
@@ -143,10 +143,10 @@ async function extractEventEnhancedFromCombinedText(
   * ВАЖНО: Если указана только дата начала без времени окончания (например, "15 декабря в 17:00"), добавь 2 часа к времени начала
 - venue: место проведения с адресом (опционально)
 - cityName: название города (опционально)
-- description: развернутое описание мероприятия, переписанное уникально, сохраняя всю важную информацию
+- description: развернутое, красивое и детальное описание мероприятия. Переписывай информацию из поста и со страницы сайта своими словами, создавая увлекательный и информативный текст. Включи все важные детали: что это за мероприятие, чем оно интересно, для кого предназначено, что будет происходить. Используй живой язык, делай описание привлекательным и информативным. Простой текст с переносами строк (не HTML, не Markdown). Структурируй описание логично: вступление, основная часть с деталями, важная информация (возрастные ограничения, особенности посещения и т.д.)
 - partnerLink: ссылка на партнера (ссылка на покупку билетов, приоритет - ссылки из раздела "билеты")
 - isFree: бесплатное мероприятие (true) или платное (false)
-- minPrice: минимальная цена билета в рублях (только если isFree = false)
+- minPrice: минимальная цена билета в рублях (только если isFree = false). Извлекай только число, например из "от 400 руб" извлеки 400
 
 ВАЖНО:
 - Не выдумывай данные! Если информации нет, верни null
@@ -160,15 +160,15 @@ async function extractEventEnhancedFromCombinedText(
 
 Пример ответа:
 {
-  "title": "Детский спектакль 'Золушка'",
+  "title": "Семейная программа 'Где зимует попугай?'",
   "startDateIso": "2025-11-15T15:00:00Z",
   "endDateIso": "2025-11-15T17:00:00Z",
-  "venue": "Театр кукол им. С.В. Образцова, ул. Садовая-Самотечная, 3",
-  "cityName": "Москва",
-  "description": "Волшебная сказка о доброй Золушке...",
+  "venue": "Великокняжеский домик, Александрия, д. 5Д",
+  "cityName": "Санкт-Петербург",
+  "description": "Самая необычная, яркая и шумная коллекция музея-заповедника «Петергоф» – это птицы. Настоящие птицы – экзотические и лесные. Летом они живут в Вольерах Нижнего парка, а зимой перебираются в «теплые квартиры» Великокняжеского домика в Александрии. Именно здесь, в Великокняжеском домике, где расположен петергофский Птичник, пройдут семейные программы «Где зимует попугай?». Узнаем, как в Петергофе появились попугаи и кто из них самый крупный, самый маленький и самый умный. Познакомимся с длиннохвостым снегирем, полюбуемся важным дубоносом и научимся отличать чечетку от овсянки. Будет весело и громко!\n\nПрограмма подготовлена совместно сотрудниками отдела фауна и детского центра «Новая ферма».\n\nПросьба к посетителям Птичника: не надевать одежду ярких цветов и избегать резких ароматов.\n\nПосещение программы ребенком только в сопровождении взрослого.",
   "partnerLink": "https://afisha.ru/event/123",
   "isFree": false,
-  "minPrice": 300
+  "minPrice": 450
 }
 
 Объединенный текст из всех источников:
@@ -207,16 +207,53 @@ ${combinedText.substring(0, 8000)}
     const parsed = JSON.parse(content)
     const validated = EnhancedExtractedEventSchema.parse(parsed)
     
-    // Если endDateIso не указан, но есть startDateIso, добавляем 2 часа
-    if (validated.startDateIso && !validated.endDateIso) {
-      const { parseISOString, toISOString } = await import('@/lib/utils/date')
+    // Обработка цены билета - извлекаем только число
+    if (validated.minPrice !== null && validated.minPrice !== undefined) {
+      // Если minPrice это число, оставляем как есть
+      // Если это строка, пытаемся извлечь число
+      if (typeof validated.minPrice === 'string') {
+        const priceMatch = validated.minPrice.match(/(\d+)/)
+        if (priceMatch) {
+          validated.minPrice = parseFloat(priceMatch[1])
+          console.log('[enhanced-extractor] Цена извлечена из строки:', validated.minPrice)
+        } else {
+          validated.minPrice = null
+          console.log('[enhanced-extractor] Не удалось извлечь число из цены, устанавливаю null')
+        }
+      } else if (typeof validated.minPrice === 'number') {
+        // Уже число, оставляем как есть
+        console.log('[enhanced-extractor] Цена уже число:', validated.minPrice)
+      }
+    }
+    
+    // Обработка дат по умолчанию
+    const { parseISOString, toISOString, getDefaultDate, setDefaultTime, fromMoscowTime, toMoscowTime } = await import('@/lib/utils/date')
+    
+    // Если дата не найдена, устанавливаем 1990-01-01T00:00:00+03:00 (московское время)
+    if (!validated.startDateIso) {
+      const defaultDate = getDefaultDate()
+      validated.startDateIso = toISOString(defaultDate)
+      console.log('[enhanced-extractor] Дата не найдена, установлена по умолчанию: 1990-01-01T00:00:00+03:00')
+    } else {
+      // Проверяем, есть ли время в дате
       try {
         const startDate = parseISOString(validated.startDateIso)
-        const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000) // +2 часа
-        validated.endDateIso = toISOString(endDate)
-        console.log('[enhanced-extractor] Добавлено время окончания: +2 часа к началу')
+        const moscowDate = toMoscowTime(startDate)
+        
+        // Если время 00:00:00 и это не дефолтная дата, возможно время не было указано
+        // Но мы не можем точно определить, было ли время указано, поэтому оставляем как есть
+        // Если нужно установить время по умолчанию, это будет сделано в messageHandler
+        
+        // Если endDateIso не указан, но есть startDateIso, добавляем 2 часа
+        if (!validated.endDateIso) {
+          const endDate = new Date(startDate.getTime() + 2 * 60 * 60 * 1000) // +2 часа
+          validated.endDateIso = toISOString(endDate)
+          console.log('[enhanced-extractor] Добавлено время окончания: +2 часа к началу')
+        }
       } catch (e) {
-        console.warn('[enhanced-extractor] Не удалось добавить время окончания')
+        console.warn('[enhanced-extractor] Ошибка обработки даты, устанавливаю дефолтную')
+        const defaultDate = getDefaultDate()
+        validated.startDateIso = toISOString(defaultDate)
       }
     }
     
