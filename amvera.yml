@@ -1,0 +1,13 @@
+# Конфиг деплоя на Amvera (cloud.amvera.ru): окружение Docker, сборка из Dockerfile.
+# Переменные окружения задаются в веб-интерфейсе проекта (раздел «Переменные»):
+# DATABASE_URL (с ?schema=fxagent!), TELEGRAM_BOT_TOKEN, TELEGRAM_ADMIN_CHAT_ID,
+# ADMIN_PASSWORD, BROKER=metaapi, METAAPI_TOKEN, METAAPI_ACCOUNT_ID, MT5_SYMBOL=EURUSDm,
+# AGENT_MODE=sim, SYMBOL=EUR_USD, REPORT_WINDOW_MIN=60
+meta:
+  environment: docker
+  toolchain:
+    name: docker
+build:
+  dockerfile: Dockerfile
+run:
+  containerPort: 3000
