@@ -6,6 +6,7 @@ import { errMsg, log } from '../logger';
 import { AgentParams, clampParams, CRYPTO_PRESETS } from './params';
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
+import { MakerLeg } from './makerleg';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -64,6 +65,7 @@ export class AgentEngine {
   private loopPromise: Promise<void> | null = null;
   private watchdog: ReturnType<typeof setInterval> | null = null;
   private cryptoLeg: CryptoLeg | null = null;
+  private makerLeg: MakerLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -163,6 +165,23 @@ export class AgentEngine {
       }
     }
 
+    if (config.makerTestnet) {
+      if (config.binanceTestnetKey && config.binanceTestnetSecret) {
+        try {
+          this.makerLeg = new MakerLeg({ store: this.deps.store, notify: this.deps.notify });
+          await this.makerLeg.start();
+          const ms = this.makerLeg.status();
+          cryptoNote += `\n⚗️ Мейкер-тестнет: Binance Futures testnet, ${ms.symbol}, post-only страддл, qty ${ms.qtyBtc} BTC — деньги фейковые, дневной лимит ${ms.maxDailyLossUsd}$.`;
+        } catch (e) {
+          this.makerLeg = null;
+          cryptoNote += `\n⚠️ Мейкер-тестнет не запустился: ${errMsg(e)}`;
+          log.error(`мейкер-нога не запустилась: ${errMsg(e)}`, undefined, 'maker');
+        }
+      } else {
+        cryptoNote += '\nℹ️ MAKER_TESTNET=1 задан, но нет BINANCE_TESTNET_KEY/BINANCE_TESTNET_SECRET.';
+      }
+    }
+
     if (isFxWeekend(new Date())) {
       return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.${cryptoNote}`;
     }
@@ -172,7 +191,7 @@ export class AgentEngine {
   async stop(): Promise<string> {
     if (!this.running) return 'Агент уже остановлен';
     const s = this.settings;
-    await this.stopCryptoLeg();
+    await this.stopLegs();
     await this.cancelAllPending();
     // в sim позиции живут только в памяти адаптера — закрываем по рынку перед стопом
     let closedNote = '';
@@ -193,10 +212,16 @@ export class AgentEngine {
     return `⏸ Агент остановлен.${closedNote}${tail}`;
   }
 
-  private async stopCryptoLeg(): Promise<void> {
-    if (!this.cryptoLeg) return;
-    await this.cryptoLeg.stop().catch(e => log.warn(`остановка крипто-ноги: ${errMsg(e)}`, undefined, 'crypto'));
-    this.cryptoLeg = null;
+  /** Остановить экспериментальные ноги (крипто-уикенд, мейкер-тестнет). */
+  private async stopLegs(): Promise<void> {
+    if (this.cryptoLeg) {
+      await this.cryptoLeg.stop().catch(e => log.warn(`остановка крипто-ноги: ${errMsg(e)}`, undefined, 'crypto'));
+      this.cryptoLeg = null;
+    }
+    if (this.makerLeg) {
+      await this.makerLeg.stop().catch(e => log.warn(`остановка мейкер-ноги: ${errMsg(e)}`, undefined, 'maker'));
+      this.makerLeg = null;
+    }
   }
 
   private async stopInternal(): Promise<void> {
@@ -217,7 +242,7 @@ export class AgentEngine {
    *  чтобы после рестарта/деплоя агент возобновился сам. */
   async suspend(): Promise<void> {
     if (!this.running) return;
-    await this.stopCryptoLeg();
+    await this.stopLegs();
     await this.stopInternal();
     log.info('агент приостановлен (shutdown процесса); возобновится на старте', undefined, 'engine');
   }
@@ -228,7 +253,7 @@ export class AgentEngine {
     this.killing = true;
     try {
       log.error(`KILL-SWITCH: ${reason}`, undefined, 'engine');
-      await this.stopCryptoLeg(); // отменит и лимитки ноги; её позиции закроет closeAll ниже
+      await this.stopLegs(); // отменит и лимитки ног; позиции крипто-ноги закроет closeAll ниже
       await this.cancelAllPending();
       const settings = this.settings ?? await this.deps.store.getSettings();
       const adapter = this.adapter ?? this.buildAdapter(settings.mode);
@@ -631,6 +656,9 @@ export class AgentEngine {
       crypto: this.cryptoLeg
         ? this.cryptoLeg.status()
         : { enabled: config.cryptoWeekend, running: false },
+      maker: this.makerLeg
+        ? this.makerLeg.status()
+        : { enabled: config.makerTestnet, running: false },
     };
   }
 }

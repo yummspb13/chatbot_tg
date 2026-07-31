@@ -70,6 +70,10 @@ async function refreshStatus() {
     if (cr && cr.running) {
       notes.push(`🧪 крипто ${cr.symbol}: ${cr.entriesActive ? 'входы активны' : cr.haltedToday ? 'пауза (лимит дня)' : 'наблюдает'} · день ${fmtUsd(cr.realizedToday)} (${cr.tradesToday} сд)`);
     }
+    const mk = engine.maker;
+    if (mk && mk.running) {
+      notes.push(`⚗️ мейкер-тестнет: ${mk.haltedToday ? 'пауза (лимит дня)' : mk.quiet ? 'котирует' : 'ждёт тишины'} · день ${fmtUsd(mk.realizedToday)} (${mk.tradesToday} кругов)`);
+    }
     if (engine.killSwitchAt) notes.push(`kill-switch: ${engine.killSwitchAt}`);
     if (engine.lastError) notes.push(`ошибка: ${engine.lastError}`);
     if (news.degraded) notes.push('календарь новостей недоступен');

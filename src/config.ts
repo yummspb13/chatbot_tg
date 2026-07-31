@@ -37,6 +37,13 @@ export const config = {
   cryptoPreset: (process.env.CRYPTO_PRESET === 'eth' ? 'eth' : 'btc') as 'btc' | 'eth',
   mt5SymbolCrypto: process.env.MT5_SYMBOL_CRYPTO || null, // дефолт берётся из пресета
 
+  // Мейкер-эксперимент на Binance Futures TESTNET (фейковые деньги, реальный стакан):
+  // post-only страддл — там, где пассивной стороне не нужен спред, а комиссия известна
+  makerTestnet: process.env.MAKER_TESTNET === '1',
+  binanceTestnetKey: process.env.BINANCE_TESTNET_KEY || null,
+  binanceTestnetSecret: process.env.BINANCE_TESTNET_SECRET || null,
+  binanceSymbol: process.env.BINANCE_SYMBOL || 'BTCUSDT',
+
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
   simStartBalance: num(process.env.SIM_START_BALANCE, 50),
