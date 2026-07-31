@@ -1,8 +1,13 @@
 // Параметры стратегии и риска. Хранятся в AgentSettings.params (JSON),
 // правятся из Telegram (/agent_params set ...) и PWA — но только в пределах HARD_LIMITS.
 
-export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo';
-export type EntryMode = 'market' | 'limit';
+export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather';
+// ladder — лимитная «лестница»: сигнал разбивается на 3 ступени (цена, −шаг, −2·шаг)
+// с ОБЩИМИ TP/SL от якорной цены; суммарный объём = units, риск не превышает
+// одиночного входа (это НЕ мартингейл: объём зафиксирован до входа).
+// Шаг лестницы задаётся entryOffsetPips. Живой движок пока исполняет ladder как
+// одиночную лимитку (честное подмножество); полная лестница — в бэктесте.
+export type EntryMode = 'market' | 'limit' | 'ladder';
 
 export interface AgentParams {
   // momentum — следование за движением; meanrev — возврат к среднему;
@@ -10,6 +15,13 @@ export interface AgentParams {
   //           длинными ногами, против стороны коротких вымученных ног);
   // echo    — «эхо часа» (авторская: возврат к медианному внутридневному
   //           расписанию пары за последние 20 дней; для сигналов нужно ≥5 дней прогрева)
+  // straddle — «микро-маркетмейкер» (авторская): БЕЗ прогноза, обе лимитки сразу
+  //           (buy ниже, sell выше) в тихом рынке; порог = МАКСИМУМ диапазона окна,
+  //           при котором ещё можно ставить (тренд убивает страддл)
+  // spreadweather — «погода ликвидности» (авторская): сигнал не из цены, а из
+  //           ПОВЕДЕНИЯ СПРЕДА — расширение спреда = страх маркетмейкеров; когда
+  //           спред сжимается обратно, а цена осталась далеко от уровня до испуга,
+  //           ставим на возврат. Требует реального спреда (loadM1WithSpread / live)
   strategyType: StrategyType;
   windowSec: number;       // окно стратегии, сек (momentum: окно движения; meanrev: окно среднего)
   thresholdPips: number;   // momentum: порог движения; meanrev: порог отклонения от среднего
@@ -71,12 +83,13 @@ function hourList(v: unknown, maxLen: number): number[] {
     : [];
 }
 
+const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather'];
+
 export function clampParams(input: unknown): AgentParams {
   const p = (input && typeof input === 'object' ? input : {}) as Partial<AgentParams>;
-  const strategyType: StrategyType =
-    p.strategyType === 'meanrev' || p.strategyType === 'impulse' || p.strategyType === 'echo'
-      ? p.strategyType
-      : 'momentum';
+  const strategyType: StrategyType = STRATEGY_TYPES.includes(p.strategyType as StrategyType)
+    ? (p.strategyType as StrategyType)
+    : 'momentum';
   return {
     strategyType,
     windowSec: Math.round(clampNum(p.windowSec, 10, 14400, DEFAULT_PARAMS.windowSec)),
@@ -90,9 +103,9 @@ export function clampParams(input: unknown): AgentParams {
     maxDailyLossUsd: clampNum(p.maxDailyLossUsd, 0.5, HARD_LIMITS.maxDailyLossUsd, DEFAULT_PARAMS.maxDailyLossUsd),
     spreadGuardPips: clampNum(p.spreadGuardPips, 0.2, 10, DEFAULT_PARAMS.spreadGuardPips),
     newsBufferMin: Math.round(clampNum(p.newsBufferMin, 0, 120, DEFAULT_PARAMS.newsBufferMin)),
-    entryMode: p.entryMode === 'limit' ? 'limit' : 'market',
+    entryMode: p.entryMode === 'limit' || p.entryMode === 'ladder' ? p.entryMode : 'market',
     entryTtlSec: Math.round(clampNum(p.entryTtlSec, 10, 3600, DEFAULT_PARAMS.entryTtlSec)),
-    entryOffsetPips: clampNum(p.entryOffsetPips, -2, 5, DEFAULT_PARAMS.entryOffsetPips),
+    entryOffsetPips: clampNum(p.entryOffsetPips, -2, 50, DEFAULT_PARAMS.entryOffsetPips), // ladder: это шаг ступени (крипте нужно ×4)
     tradeHoursUtc: hourList(p.tradeHoursUtc, 24),
     autoBlackoutHours: hourList(p.autoBlackoutHours, 8),
   };
@@ -107,8 +120,8 @@ export const EDITABLE_KEYS: (keyof AgentParams)[] = [
 
 // Строковые ключи с перечислимыми значениями
 export const ENUM_KEYS: Record<string, string[]> = {
-  strategyType: ['momentum', 'meanrev', 'impulse', 'echo'],
-  entryMode: ['market', 'limit'],
+  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather'],
+  entryMode: ['market', 'limit', 'ladder'],
 };
 
 // Ключи-списки часов UTC (задаются как "0,1,2,3" или "-" для пусто)

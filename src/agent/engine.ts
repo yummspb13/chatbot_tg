@@ -352,8 +352,17 @@ export class AgentEngine {
       log.info(`сигнал (${sig.reason}) отклонён: ${verdict.reason}`, undefined, 'engine');
       return;
     }
-    if (settings.params.entryMode === 'limit' && this.adapter?.limitOrder) {
-      await this.placeLimitEntry(sig, q, spreadPips);
+    if (settings.params.entryMode !== 'market' && this.adapter?.limitOrder) {
+      // ladder вживую пока исполняется одиночной лимиткой (полная лестница — в бэктесте)
+      if (sig.both) {
+        // страддл: обе стороны сразу
+        await this.placeLimitEntry({ ...sig, side: 'BUY' }, q, spreadPips);
+        await this.placeLimitEntry({ ...sig, side: 'SELL' }, q, spreadPips);
+      } else {
+        await this.placeLimitEntry(sig, q, spreadPips);
+      }
+    } else if (sig.both) {
+      log.info('страддл требует лимитных ордеров — market-режим пропущен', undefined, 'engine');
     } else {
       await this.openPosition(sig, q, spreadPips);
     }

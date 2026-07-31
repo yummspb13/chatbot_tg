@@ -12,17 +12,26 @@ export interface Candle {
   h: number;
   l: number;
   c: number;
+  /** реальный спред на закрытии минуты, в ЦЕНЕ (askClose − bidClose); есть только у loadM1WithSpread */
+  sp?: number;
 }
 
-export async function loadM1(instrument: string, from: Date, to: Date): Promise<Candle[]> {
-  log.info(`загрузка M1 ${instrument}: ${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}`, undefined, 'backtest');
+export async function loadM1(
+  instrument: string,
+  from: Date,
+  to: Date,
+  priceType: 'bid' | 'ask' = 'bid',
+): Promise<Candle[]> {
+  log.info(`загрузка M1 ${instrument} (${priceType}): ${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}`, undefined, 'backtest');
   const rows = await getHistoricalRates({
     instrument: instrument as 'eurusd',
     dates: { from, to },
     timeframe: 'm1',
+    priceType,
     format: 'json',
     useCache: true,
-    cacheFolderPath: path.join(process.cwd(), 'data', 'dukascopy-cache'),
+    // отдельный кэш на priceType — чтобы bid- и ask-серии не перепутались
+    cacheFolderPath: path.join(process.cwd(), 'data', priceType === 'bid' ? 'dukascopy-cache' : 'dukascopy-cache-ask'),
     batchSize: 20,
     pauseBetweenBatchesMs: 500,
     retryCount: 5,
@@ -35,6 +44,34 @@ export async function loadM1(instrument: string, from: Date, to: Date): Promise<
     .map(r => ({ t: r.timestamp, o: r.open, h: r.high, l: r.low, c: r.close }));
   log.info(`получено ${candles.length} минуток`, undefined, 'backtest');
   return candles;
+}
+
+/**
+ * M1 с РЕАЛЬНЫМ историческим спредом: скачиваем bid- и ask-серии, склеиваем по
+ * минуте. OHLC — середина (mid), sp — спред на закрытии минуты. Нужно стратегии
+ * spreadweather (спред как сигнал) и делает модель издержек честнее для всех.
+ */
+export async function loadM1WithSpread(instrument: string, from: Date, to: Date): Promise<Candle[]> {
+  const [bid, ask] = [await loadM1(instrument, from, to, 'bid'), await loadM1(instrument, from, to, 'ask')];
+  const askByT = new Map<number, Candle>();
+  for (const a of ask) askByT.set(a.t, a);
+  const out: Candle[] = [];
+  for (const b of bid) {
+    const a = askByT.get(b.t);
+    if (!a) continue;
+    const sp = a.c - b.c;
+    if (!Number.isFinite(sp) || sp < 0) continue;
+    out.push({
+      t: b.t,
+      o: (b.o + a.o) / 2,
+      h: (b.h + a.h) / 2,
+      l: (b.l + a.l) / 2,
+      c: (b.c + a.c) / 2,
+      sp,
+    });
+  }
+  log.info(`склеено ${out.length} минуток с реальным спредом (${instrument})`, undefined, 'backtest');
+  return out;
 }
 
 function parseArg(name: string): string | undefined {

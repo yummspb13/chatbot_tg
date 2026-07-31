@@ -14,7 +14,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { PIP } from '../broker/types';
-import { AgentParams, clampParams, DEFAULT_PARAMS } from '../agent/params';
+import { AgentParams, clampParams, DEFAULT_PARAMS, EntryMode } from '../agent/params';
 import { buildStrategy } from '../agent/strategy';
 import { RiskManager } from '../agent/risk';
 import { Candle, loadM1 } from './data';
@@ -60,7 +60,10 @@ export const MARKETS: Record<string, MarketSpec> = {
 export function prepCandles(candles: Candle[], market: MarketSpec): Candle[] {
   const s = market.priceScale ?? 1;
   if (s === 1) return candles;
-  return candles.map(c => ({ t: c.t, o: c.o / s, h: c.h / s, l: c.l / s, c: c.c / s }));
+  return candles.map(c => ({
+    t: c.t, o: c.o / s, h: c.h / s, l: c.l / s, c: c.c / s,
+    ...(c.sp !== undefined ? { sp: c.sp / s } : {}),
+  }));
 }
 
 export interface BtTrade {
@@ -123,6 +126,9 @@ interface PendingBt {
   tpPips: number;
   slPips: number;
   placedAt: number;
+  units?: number;    // лестница: объём ступени (иначе params.units)
+  tpPrice?: number;  // лестница: ОБЩИЙ TP от якоря (абсолютная цена)
+  slPrice?: number;  // лестница: ОБЩИЙ SL от якоря
 }
 
 export function runBacktest(
@@ -156,7 +162,8 @@ export function runBacktest(
 
   for (const c of candles) {
     const time = new Date(c.t);
-    const spreadPips = spreadPipsAt(time, market);
+    // реальный исторический спред минуты (loadM1WithSpread) — или модельный
+    const spreadPips = c.sp !== undefined ? c.sp / PIP : spreadPipsAt(time, market);
     const half = (spreadPips * PIP) / 2;
 
     const key = time.toISOString().slice(0, 10);
@@ -180,9 +187,9 @@ export function runBacktest(
           open.push({
             side: p.side,
             entry: p.price,
-            tp: p.side === 'BUY' ? p.price + p.tpPips * PIP : p.price - p.tpPips * PIP,
-            sl: p.side === 'BUY' ? p.price - p.slPips * PIP : p.price + p.slPips * PIP,
-            units: params.units,
+            tp: p.tpPrice ?? (p.side === 'BUY' ? p.price + p.tpPips * PIP : p.price - p.tpPips * PIP),
+            sl: p.slPrice ?? (p.side === 'BUY' ? p.price - p.slPips * PIP : p.price + p.slPips * PIP),
+            units: p.units ?? params.units,
             openedAt: c.t,
             spreadCost: 0,
           });
@@ -244,7 +251,29 @@ export function runBacktest(
     });
     if (!verdict.ok) continue;
 
-    if (params.entryMode === 'limit') {
+    if (sig.both) {
+      // страддл: обе лимитки сразу (в market-режиме смысла нет — пропуск)
+      if (params.entryMode === 'market') continue;
+      pending.push(
+        { side: 'BUY', price: bid, tpPips: sig.tpPips, slPips: sig.slPips, placedAt: c.t },
+        { side: 'SELL', price: ask, tpPips: sig.tpPips, slPips: sig.slPips, placedAt: c.t },
+      );
+    } else if (params.entryMode === 'ladder') {
+      // лестница: 3 ступени вглубь от пассивной стороны, ОБЩИЕ TP/SL от якоря;
+      // суммарный объём = units (это не мартингейл — риск зафиксирован до входа)
+      const stepPips = Math.max(1, params.entryOffsetPips || 3);
+      const anchor = sig.side === 'BUY' ? bid : ask;
+      const rungUnits = Math.max(1, Math.round(params.units / 3));
+      const tpPrice = sig.side === 'BUY' ? anchor + sig.tpPips * PIP : anchor - sig.tpPips * PIP;
+      const slPrice = sig.side === 'BUY' ? anchor - sig.slPips * PIP : anchor + sig.slPips * PIP;
+      for (let i = 0; i < 3; i++) {
+        const price = sig.side === 'BUY' ? anchor - i * stepPips * PIP : anchor + i * stepPips * PIP;
+        pending.push({
+          side: sig.side, price, tpPips: sig.tpPips, slPips: sig.slPips,
+          placedAt: c.t, units: rungUnits, tpPrice, slPrice,
+        });
+      }
+    } else if (params.entryMode === 'limit') {
       const price = sig.side === 'BUY' ? bid - params.entryOffsetPips * PIP : ask + params.entryOffsetPips * PIP;
       pending.push({ side: sig.side, price, tpPips: sig.tpPips, slPips: sig.slPips, placedAt: c.t });
     } else {
@@ -335,7 +364,7 @@ export interface OptimizeResult {
 
 export function gridFor(
   strategyType: AgentParams['strategyType'],
-  entryMode: 'market' | 'limit',
+  entryMode: EntryMode,
   units: number,
   pipsMult = 1, // растяжка пип-порогов под волатильность рынка (крипта: BTC ×4, ETH ×1.5)
   base: Partial<AgentParams> = {},
@@ -367,6 +396,26 @@ export function gridFor(
         }
       }
     }
+  } else if (strategyType === 'straddle') {
+    // авторский «микро-маркетмейкер»: порог = МАКСИМУМ диапазона окна (тихий рынок);
+    // обе лимитки занимают 2 слота → maxConcurrent 2; в market-режиме не существует
+    if (entryMode === 'market') return [];
+    for (const windowSec of [600, 1200]) {
+      for (const thresholdPips of [6, 12]) {
+        for (const tpPips of [3, 6]) {
+          grid.push({ ...base, strategyType, entryMode, windowSec, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(20), cooldownSec: 120, units, maxConcurrent: 2 });
+        }
+      }
+    }
+  } else if (strategyType === 'spreadweather') {
+    // авторская «погода ликвидности»: порог = мин. сдвиг цены от якоря до-испуга
+    for (const windowSec of [7200, 14400]) {
+      for (const thresholdPips of [6, 12]) {
+        for (const tpPips of [10, 16]) {
+          grid.push({ ...base, strategyType, entryMode, windowSec, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(24), cooldownSec: 900, units });
+        }
+      }
+    }
   } else {
     // авторская «эхо часа»: порог = отклонение от внутридневного расписания (pips)
     for (const thresholdPips of [10, 15, 20]) {
@@ -374,6 +423,11 @@ export function gridFor(
         grid.push({ ...base, strategyType, entryMode, windowSec: 3600, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(20), cooldownSec: 1800, units });
       }
     }
+  }
+  if (entryMode === 'ladder') {
+    // лестница поверх сигнальной стратегии: шаг ступени (pips) через entryOffsetPips,
+    // 3 ступени занимают 3 слота → maxConcurrent 3 (жёсткий потолок как раз 3)
+    return grid.flatMap(g => [3, 5].map(step => ({ ...g, entryOffsetPips: m(step), maxConcurrent: 3 })));
   }
   return grid;
 }

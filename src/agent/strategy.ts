@@ -13,6 +13,8 @@ export interface Signal {
   tpPips: number;
   slPips: number;
   reason: string;
+  /** straddle: ставить ОБЕ стороны (side тогда номинален) */
+  both?: boolean;
 }
 
 export interface TradingStrategy {
@@ -324,11 +326,142 @@ export class HourEchoStrategy implements TradingStrategy {
   }
 }
 
+/**
+ * АВТОРСКАЯ стратегия «Страддл» (микро-маркетмейкер без прогноза).
+ *
+ * Идея: не угадывать направление вообще. В ТИХОМ рынке (диапазон окна ≤ порога)
+ * выставляются обе лимитки сразу — buy у bid и sell у ask; дрожание цены
+ * исполняет то одну, то другую, каждая закрывается маленьким TP. Заработок —
+ * сбор рыночного шума, как это делают маркетмейкеры. Главный враг — тренд
+ * (исполняет одну сторону и уводит цену дальше), поэтому thresholdPips здесь —
+ * ВЕРХНЯЯ граница диапазона окна: рынок бежит → не ставим ничего.
+ */
+export class StraddleStrategy extends WindowStrategy {
+  onQuote(q: Quote): Signal | null {
+    const { t } = this.push(q);
+    if (!this.windowReady(t)) return null;
+
+    const rangePips = this.windowRangePips();
+    if (rangePips > this.params.thresholdPips) return null; // рынок бежит — молчим
+
+    this.cooldownUntil = t + this.params.cooldownSec * 1000;
+    return {
+      side: 'BUY', // номинально; both=true ставит обе стороны
+      both: true,
+      tpPips: this.params.tpPips,
+      slPips: this.params.slPips,
+      reason: `straddle: тихо (диапазон ${rangePips.toFixed(1)}p ≤ ${this.params.thresholdPips}p за ${Math.round(this.params.windowSec / 60)}м)`,
+    };
+  }
+}
+
+/**
+ * АВТОРСКАЯ стратегия «Погода ликвидности» (спред как сигнал).
+ *
+ * Идея: торговать не по цене, а по ПОВЕДЕНИЮ СПРЕДА. Маркетмейкеры расширяют
+ * спред, когда боятся — перед новостями, на рывках, при тонкой книге. Схема:
+ * 1) базовая линия — медиана спреда за windowSec;
+ * 2) «испуг»: спред ≥ 1.8× базы → запоминаем цену ДО испуга (якорь);
+ * 3) «отбой»: спред вернулся ≤ 1.15× базы. Если цена к этому моменту осталась
+ *    дальше thresholdPips от якоря — страх ушёл, а цена не вернулась → ставим
+ *    на возврат к якорю (fade сдвига, случившегося на страхе).
+ * Требует реального спреда: в бэктесте — loadM1WithSpread, вживую — bid/ask тика.
+ */
+export class SpreadWeatherStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private minutes: { t: number; mid: number; spreadPips: number }[] = [];
+  private lastMinuteSpread = 0;
+  private spikeAnchor: number | null = null; // mid до испуга
+  private spikeStartT = 0;
+  private cooldownUntil = 0;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.minutes = [];
+    this.spikeAnchor = null;
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.minutes.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.minutes) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  private baseline(): number {
+    if (this.minutes.length < 30) return NaN;
+    const s = this.minutes.map(m => m.spreadPips).sort((a, b) => a - b);
+    return s[Math.floor(s.length / 2)];
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const spreadPips = (q.ask - q.bid) / PIP;
+    // внутри минуты копим максимум спреда — испуг часто короче минуты
+    this.lastMinuteSpread = Math.max(this.lastMinuteSpread, spreadPips);
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+    const minuteSpread = this.lastMinuteSpread;
+    this.lastMinuteSpread = spreadPips;
+
+    const prev = this.minutes[this.minutes.length - 1] ?? null;
+    this.minutes.push({ t: m.t, mid: m.mid, spreadPips: minuteSpread });
+    const cutoff = m.t - this.params.windowSec * 1000;
+    while (this.minutes.length && this.minutes[0].t < cutoff) this.minutes.shift();
+
+    const base = this.baseline();
+    if (!Number.isFinite(base) || base <= 0) return null;
+
+    // начало испуга: запоминаем якорь (цену ПРЕДЫДУЩЕЙ, спокойной минуты)
+    if (this.spikeAnchor === null && minuteSpread >= base * 1.8 && prev) {
+      this.spikeAnchor = prev.mid;
+      this.spikeStartT = m.t;
+      return null;
+    }
+    if (this.spikeAnchor === null) return null;
+
+    // испуг затянулся (>2ч) — якорь протух
+    if (m.t - this.spikeStartT > 7200_000) {
+      this.spikeAnchor = null;
+      return null;
+    }
+
+    // отбой: спред вернулся к норме
+    if (minuteSpread > base * 1.15) return null;
+    const anchor = this.spikeAnchor;
+    this.spikeAnchor = null;
+
+    if (m.t < this.cooldownUntil) return null;
+    const devPips = (m.mid - anchor) / PIP;
+    if (Math.abs(devPips) < this.params.thresholdPips) return null;
+
+    this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+    // цена выше якоря → ставим на возврат вниз (SELL), и наоборот
+    return {
+      side: devPips > 0 ? 'SELL' : 'BUY',
+      tpPips: this.params.tpPips,
+      slPips: this.params.slPips,
+      reason: `spreadweather: спред ${minuteSpread.toFixed(1)}p→норма (база ${base.toFixed(1)}p), цена ушла ${devPips.toFixed(1)}p от якоря`,
+    };
+  }
+}
+
 export function buildStrategy(params: AgentParams): TradingStrategy {
   switch (params.strategyType) {
     case 'meanrev': return new MeanReversionStrategy(params);
     case 'impulse': return new ImpulseAsymmetryStrategy(params);
     case 'echo': return new HourEchoStrategy(params);
+    case 'straddle': return new StraddleStrategy(params);
+    case 'spreadweather': return new SpreadWeatherStrategy(params);
     default: return new MomentumStrategy(params);
   }
 }
