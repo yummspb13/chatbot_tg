@@ -40,6 +40,21 @@ npx prisma db push        # создаёт ТОЛЬКО таблицы agent_* (
 npm run dev               # http://localhost:3000 — PWA; в Telegram: /agent_start
 ```
 
+### База данных: схема `fxagent` в Supabase (решение 31.07.2026)
+
+Таблицы агента живут в **отдельной Postgres-схеме `fxagent`** внутри Supabase-проекта
+Kiddeo ($0 вместо $10/мес за отдельный проект; полная изоляция имён от прода —
+схема `public` не затрагивается, наружу через API она не выставлена, RLS не нужен).
+Схема и таблицы уже созданы миграцией `fx_agent_init`.
+
+`DATABASE_URL` для агента: в Supabase (проект Kiddeo → Connect) взять строку
+**Session pooler** (прямое подключение IPv6-only — Render его не умеет) и добавить
+`?schema=fxagent`:
+
+```
+postgresql://postgres.<ref>:<PASSWORD>@aws-0-eu-north-1.pooler.supabase.com:5432/postgres?schema=fxagent
+```
+
 Без `DATABASE_URL` сервис тоже стартует (MemoryStore, всё в памяти) — удобно для смоука.
 
 ### Бэктест (перед любыми деньгами)
