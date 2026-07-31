@@ -113,3 +113,82 @@ export const ENUM_KEYS: Record<string, string[]> = {
 
 // Ключи-списки часов UTC (задаются как "0,1,2,3" или "-" для пусто)
 export const HOURLIST_KEYS = ['tradeHoursUtc'] as const;
+
+// ------------------------------------------------------------------
+// Крипто-эксперимент выходных (CRYPTO_WEEKEND=1): пока FX закрыт
+// (пт 20:45 → вс 21:15 UTC), торгуется крипто-CFD на том же MT5-счёте.
+//
+// ЧЕСТНАЯ РАМКА (docs/CRYPTO-SWEEP-2026-07-31.md): подтверждённого
+// walk-forward-преимущества у крипто-ячеек НЕТ (у BTC echo train
+// отрицательный, у ETH momentum ожидание на грани шума). Это не торговая
+// система, а сбор форвард-данных на демо минимальным объёмом.
+// Параметры пресетов зафиксированы = лучшие ячейки sweep; на лету не меняются.
+
+export interface CryptoPreset {
+  key: 'btc' | 'eth';
+  symbol: string;      // внутреннее имя в БД/отчётах
+  mt5Symbol: string;   // имя символа у Exness Standard
+  dukascopy: string;   // инструмент истории для прогрева echo
+  priceScale: number;  // делитель цены: пип 0.0001 = $10 (BTC) / $1 (ETH)
+  digits: number;      // знаков после запятой в реальной цене MT5
+  params: AgentParams;
+}
+
+export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
+  // echo/limit — лучшая выходная ячейка sweep (test +176$ в сб/вс, НО train-выходные −115$)
+  btc: {
+    key: 'btc',
+    symbol: 'BTC_USD',
+    mt5Symbol: 'BTCUSDm',
+    dukascopy: 'btcusd',
+    priceScale: 100_000, // 1000 юнитов = 0.01 лота (минимальный у Exness)
+    digits: 2,
+    params: {
+      strategyType: 'echo',
+      windowSec: 3600,
+      thresholdPips: 40,
+      tpPips: 48,
+      slPips: 80,
+      cooldownSec: 1800,
+      units: 1000,
+      maxConcurrent: 1,
+      maxTradesPerDay: 20,
+      maxDailyLossUsd: 20,
+      spreadGuardPips: 5,
+      newsBufferMin: 0, // FX-календарь к крипте не применяем (в выходные релизов нет)
+      entryMode: 'limit',
+      entryTtlSec: 180,
+      entryOffsetPips: 0,
+      tradeHoursUtc: [],
+      autoBlackoutHours: [],
+    },
+  },
+  // momentum/limit — единственная крипто-ячейка, зелёная и на train, и на test
+  eth: {
+    key: 'eth',
+    symbol: 'ETH_USD',
+    mt5Symbol: 'ETHUSDm',
+    dukascopy: 'ethusd',
+    priceScale: 10_000, // 1000 юнитов = 0.1 лота (0.1 ETH)
+    digits: 2,
+    params: {
+      strategyType: 'momentum',
+      windowSec: 300,
+      thresholdPips: 12,
+      tpPips: 30,
+      slPips: 30,
+      cooldownSec: 300,
+      units: 1000,
+      maxConcurrent: 1,
+      maxTradesPerDay: 20,
+      maxDailyLossUsd: 10,
+      spreadGuardPips: 6,
+      newsBufferMin: 0,
+      entryMode: 'limit',
+      entryTtlSec: 180,
+      entryOffsetPips: 0,
+      tradeHoursUtc: [],
+      autoBlackoutHours: [],
+    },
+  },
+};

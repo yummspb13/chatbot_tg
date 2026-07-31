@@ -3,8 +3,9 @@
 
 import { config } from '../config';
 import { errMsg, log } from '../logger';
-import { AgentParams, clampParams } from './params';
+import { AgentParams, clampParams, CRYPTO_PRESETS } from './params';
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
+import { CryptoLeg } from './cryptoleg';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -62,6 +63,7 @@ export class AgentEngine {
   private lastSnapshotAt = 0;
   private loopPromise: Promise<void> | null = null;
   private watchdog: ReturnType<typeof setInterval> | null = null;
+  private cryptoLeg: CryptoLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -115,8 +117,8 @@ export class AgentEngine {
     this.risk = new RiskManager(settings.params);
     this.pendingEntries = [];
     this.dayKey = new Date().toISOString().slice(0, 10);
-    this.tradesToday = await this.deps.store.countTradesToday(settings.mode);
-    this.realizedToday = await this.deps.store.realizedPnlToday(settings.mode);
+    this.tradesToday = await this.deps.store.countTradesToday(settings.mode, settings.symbol);
+    this.realizedToday = await this.deps.store.realizedPnlToday(settings.mode, settings.symbol);
     this.lastError = null;
     this.lastQuote = null;
     this.lastQuoteAt = 0;
@@ -139,15 +141,38 @@ export class AgentEngine {
       `агент запущен: ${label}, ${settings.symbol}, стратегия ${settings.params.strategyType}, вход ${settings.params.entryMode}`,
       undefined, 'engine',
     );
-    if (isFxWeekend(new Date())) {
-      return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.`;
+
+    let cryptoNote = '';
+    if (config.cryptoWeekend) {
+      if (settings.mode === 'live' && config.broker === 'metaapi') {
+        try {
+          this.cryptoLeg = new CryptoLeg(
+            { store: this.deps.store, notify: this.deps.notify },
+            CRYPTO_PRESETS[config.cryptoPreset],
+          );
+          await this.cryptoLeg.start();
+          const st = this.cryptoLeg.status();
+          cryptoNote = `\n🧪 Крипто-эксперимент: ${st.symbol} (${st.mt5Symbol}), ${st.strategy} — входы только пока FX закрыт, дневной лимит ${st.maxDailyLossUsd}$. Преимущество бэктестом НЕ подтверждено — сбор форвард-данных на демо.`;
+        } catch (e) {
+          this.cryptoLeg = null;
+          cryptoNote = `\n⚠️ Крипто-эксперимент не запустился: ${errMsg(e)}`;
+          log.error(`крипто-нога не запустилась: ${errMsg(e)}`, undefined, 'crypto');
+        }
+      } else {
+        cryptoNote = '\nℹ️ CRYPTO_WEEKEND=1 задан, но крипто-нога работает только в live-режиме с BROKER=metaapi.';
+      }
     }
-    return `▶️ Агент запущен: ${label}, символ ${settings.symbol}`;
+
+    if (isFxWeekend(new Date())) {
+      return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.${cryptoNote}`;
+    }
+    return `▶️ Агент запущен: ${label}, символ ${settings.symbol}${cryptoNote}`;
   }
 
   async stop(): Promise<string> {
     if (!this.running) return 'Агент уже остановлен';
     const s = this.settings;
+    await this.stopCryptoLeg();
     await this.cancelAllPending();
     // в sim позиции живут только в памяти адаптера — закрываем по рынку перед стопом
     let closedNote = '';
@@ -161,11 +186,17 @@ export class AgentEngine {
     await this.deps.store.saveSettings({ isRunning: false });
     let tail = '';
     if (s && s.mode === 'live') {
-      const open = (await this.deps.store.listOpenTrades(s.mode)).length;
+      const open = (await this.deps.store.listOpenTrades(s.mode)).length; // все символы, включая крипто-ногу
       if (open > 0) tail = ` Открытых позиций у брокера: ${open} — SL/TP стоят на его стороне; закрыть всё: /agent_kill.`;
     }
     log.info('агент остановлен', undefined, 'engine');
     return `⏸ Агент остановлен.${closedNote}${tail}`;
+  }
+
+  private async stopCryptoLeg(): Promise<void> {
+    if (!this.cryptoLeg) return;
+    await this.cryptoLeg.stop().catch(e => log.warn(`остановка крипто-ноги: ${errMsg(e)}`, undefined, 'crypto'));
+    this.cryptoLeg = null;
   }
 
   private async stopInternal(): Promise<void> {
@@ -186,6 +217,7 @@ export class AgentEngine {
    *  чтобы после рестарта/деплоя агент возобновился сам. */
   async suspend(): Promise<void> {
     if (!this.running) return;
+    await this.stopCryptoLeg();
     await this.stopInternal();
     log.info('агент приостановлен (shutdown процесса); возобновится на старте', undefined, 'engine');
   }
@@ -196,6 +228,7 @@ export class AgentEngine {
     this.killing = true;
     try {
       log.error(`KILL-SWITCH: ${reason}`, undefined, 'engine');
+      await this.stopCryptoLeg(); // отменит и лимитки ноги; её позиции закроет closeAll ниже
       await this.cancelAllPending();
       const settings = this.settings ?? await this.deps.store.getSettings();
       const adapter = this.adapter ?? this.buildAdapter(settings.mode);
@@ -275,8 +308,8 @@ export class AgentEngine {
     this.dayKey = key;
     const settings = this.settings;
     if (!settings) return;
-    this.tradesToday = await this.deps.store.countTradesToday(settings.mode);
-    this.realizedToday = await this.deps.store.realizedPnlToday(settings.mode);
+    this.tradesToday = await this.deps.store.countTradesToday(settings.mode, settings.symbol);
+    this.realizedToday = await this.deps.store.realizedPnlToday(settings.mode, settings.symbol);
     log.info(`новый торговый день ${key} (UTC)`, undefined, 'engine');
   }
 
@@ -305,7 +338,7 @@ export class AgentEngine {
     if (!sig) return;
 
     const spreadPips = (q.ask - q.bid) / PIP;
-    const open = await this.deps.store.listOpenTrades(settings.mode);
+    const open = await this.deps.store.listOpenTrades(settings.mode, settings.symbol);
     const unrealized = this.account ? this.account.equity - this.account.balance : 0;
     const verdict = risk.check({
       now: q.time,
@@ -493,7 +526,7 @@ export class AgentEngine {
     try {
       const [positions, openRows] = await Promise.all([
         adapter.listPositions(),
-        this.deps.store.listOpenTrades(settings.mode),
+        this.deps.store.listOpenTrades(settings.mode, settings.symbol), // крипто-ногу реконсилирует она сама
       ]);
       const live = new Set(positions.map(p => p.brokerTradeId));
       for (const row of openRows) {
@@ -586,6 +619,9 @@ export class AgentEngine {
       fxWeekend: isFxWeekend(new Date()),
       params: this.settings?.params ?? null,
       killSwitchAt: this.settings?.killSwitchAt ?? null,
+      crypto: this.cryptoLeg
+        ? this.cryptoLeg.status()
+        : { enabled: config.cryptoWeekend, running: false },
     };
   }
 }

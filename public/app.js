@@ -66,6 +66,10 @@ async function refreshStatus() {
     const notes = [];
     if (!persistentStore) notes.push('⚠️ БД не подключена — MemoryStore');
     if (engine.fxWeekend) notes.push('выходные FX — входы заблокированы');
+    const cr = engine.crypto;
+    if (cr && cr.running) {
+      notes.push(`🧪 крипто ${cr.symbol}: ${cr.entriesActive ? 'входы активны' : cr.haltedToday ? 'пауза (лимит дня)' : 'наблюдает'} · день ${fmtUsd(cr.realizedToday)} (${cr.tradesToday} сд)`);
+    }
     if (engine.killSwitchAt) notes.push(`kill-switch: ${engine.killSwitchAt}`);
     if (engine.lastError) notes.push(`ошибка: ${engine.lastError}`);
     if (news.degraded) notes.push('календарь новостей недоступен');

@@ -85,6 +85,8 @@ export interface ExecutionAdapter {
   limitOrder?(req: LimitOrderRequest): Promise<{ orderId: string }>;
   checkOrder?(orderId: string): Promise<OrderCheck>;
   cancelOrder?(orderId: string): Promise<void>;
+  /** Закрыть соединение/ресурсы адаптера (metaapi держит стриминг-сокет). */
+  shutdown?(): Promise<void>;
 }
 
 export function round5(p: number): number {

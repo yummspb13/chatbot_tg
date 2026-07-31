@@ -102,9 +102,10 @@ export interface TradeStore {
   openTrade(t: OpenTradeInput): Promise<TradeRecord>;
   closeTradeById(id: number, c: CloseTradeInput): Promise<void>;
   findOpenByBrokerId(mode: string, brokerTradeId: string): Promise<TradeRecord | null>;
-  listOpenTrades(mode: string): Promise<TradeRecord[]>;
-  countTradesToday(mode: string): Promise<number>;
-  realizedPnlToday(mode: string): Promise<number>;
+  /** symbol задан → только сделки этого символа (FX-контур и крипто-нога не мешают друг другу) */
+  listOpenTrades(mode: string, symbol?: string): Promise<TradeRecord[]>;
+  countTradesToday(mode: string, symbol?: string): Promise<number>;
+  realizedPnlToday(mode: string, symbol?: string): Promise<number>;
   windowReport(mode: string, windowMin: number): Promise<WindowReport>;
   listTrades(mode: string, limit: number): Promise<TradeRecord[]>;
   closedTradesSince(mode: string, since: Date): Promise<TradeRecord[]>;
@@ -197,19 +198,24 @@ class PrismaStore implements TradeStore {
     return row ? this.mapTrade(row) : null;
   }
 
-  async listOpenTrades(mode: string): Promise<TradeRecord[]> {
-    const rows = await this.p.trade.findMany({ where: { mode, closedAt: null }, orderBy: { openedAt: 'asc' } });
+  async listOpenTrades(mode: string, symbol?: string): Promise<TradeRecord[]> {
+    const rows = await this.p.trade.findMany({
+      where: { mode, closedAt: null, ...(symbol ? { symbol } : {}) },
+      orderBy: { openedAt: 'asc' },
+    });
     return rows.map(r => this.mapTrade(r));
   }
 
-  async countTradesToday(mode: string): Promise<number> {
-    return this.p.trade.count({ where: { mode, openedAt: { gte: utcDayStart() } } });
+  async countTradesToday(mode: string, symbol?: string): Promise<number> {
+    return this.p.trade.count({
+      where: { mode, openedAt: { gte: utcDayStart() }, ...(symbol ? { symbol } : {}) },
+    });
   }
 
-  async realizedPnlToday(mode: string): Promise<number> {
+  async realizedPnlToday(mode: string, symbol?: string): Promise<number> {
     const agg = await this.p.trade.aggregate({
       _sum: { pnl: true },
-      where: { mode, closedAt: { gte: utcDayStart() } },
+      where: { mode, closedAt: { gte: utcDayStart() }, ...(symbol ? { symbol } : {}) },
     });
     return agg._sum.pnl ?? 0;
   }
@@ -355,19 +361,19 @@ class MemoryStore implements TradeStore {
     return this.trades.find(t => t.mode === mode && t.brokerTradeId === brokerTradeId && !t.closedAt) ?? null;
   }
 
-  async listOpenTrades(mode: string): Promise<TradeRecord[]> {
-    return this.trades.filter(t => t.mode === mode && !t.closedAt);
+  async listOpenTrades(mode: string, symbol?: string): Promise<TradeRecord[]> {
+    return this.trades.filter(t => t.mode === mode && !t.closedAt && (!symbol || t.symbol === symbol));
   }
 
-  async countTradesToday(mode: string): Promise<number> {
+  async countTradesToday(mode: string, symbol?: string): Promise<number> {
     const start = utcDayStart();
-    return this.trades.filter(t => t.mode === mode && t.openedAt >= start).length;
+    return this.trades.filter(t => t.mode === mode && t.openedAt >= start && (!symbol || t.symbol === symbol)).length;
   }
 
-  async realizedPnlToday(mode: string): Promise<number> {
+  async realizedPnlToday(mode: string, symbol?: string): Promise<number> {
     const start = utcDayStart();
     return this.trades
-      .filter(t => t.mode === mode && t.closedAt && t.closedAt >= start)
+      .filter(t => t.mode === mode && t.closedAt && t.closedAt >= start && (!symbol || t.symbol === symbol))
       .reduce((s, t) => s + (t.pnl ?? 0), 0);
   }
 

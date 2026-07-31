@@ -132,6 +132,15 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
     lines.push(`Сегодня: ${fmtUsd(s.realizedToday)}, сделок ${s.tradesToday}`);
     if (s.fxWeekend) lines.push('⚠️ Выходные FX — входы заблокированы');
     if (s.lastError) lines.push(`Последняя ошибка: ${s.lastError}`);
+    const c = s.crypto;
+    if (c && 'running' in c && c.running && 'symbol' in c) {
+      lines.push(
+        `🧪 Крипто-нога: ${c.symbol} (${c.strategy}) — ${c.entriesActive ? 'входы АКТИВНЫ (FX закрыт)' : c.haltedToday ? 'пауза до завтра (дневной лимит)' : 'наблюдает (входы только в FX-выходные)'}`,
+      );
+      lines.push(`   за день ${fmtUsd(c.realizedToday)}, сделок ${c.tradesToday}, лимит −${c.maxDailyLossUsd}$${c.lastQuoteAgoSec !== null ? ` · котировка ${c.lastQuoteAgoSec}с назад` : ''}`);
+    } else if (c && c.enabled && !c.running) {
+      lines.push('🧪 Крипто-нога: включена, но не запущена (нужен live + metaapi)');
+    }
     lines.push(`Новости: ${news.degraded ? '⚠️ фид недоступен' : `${news.events} high-impact на неделе`}`);
     for (const n of next3) lines.push(`  · ${n.date.toISOString().slice(5, 16).replace('T', ' ')} UTC ${n.country}: ${n.title}`);
     await ctx.reply(lines.join('\n'));

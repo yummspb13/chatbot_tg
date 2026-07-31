@@ -264,4 +264,17 @@ export class MetaApiAdapter implements ExecutionAdapter {
       openPositionCount: (conn.terminalState.positions ?? []).length,
     };
   }
+
+  async shutdown(): Promise<void> {
+    const conn = this.conn;
+    this.conn = null;
+    this.connecting = null;
+    if (conn) {
+      try {
+        await conn.close();
+      } catch {
+        // сокет уже закрыт
+      }
+    }
+  }
 }

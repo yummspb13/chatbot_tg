@@ -31,6 +31,12 @@ export const config = {
   metaapiAccountId: process.env.METAAPI_ACCOUNT_ID || null,
   mt5Symbol: process.env.MT5_SYMBOL || 'EURUSD', // у Exness Standard — EURUSDm
 
+  // Крипто-эксперимент выходных: пока FX закрыт, торгуем крипто-CFD на том же
+  // MT5-счёте (только live+metaapi). Честная рамка — см. CRYPTO_PRESETS в params.ts.
+  cryptoWeekend: process.env.CRYPTO_WEEKEND === '1',
+  cryptoPreset: (process.env.CRYPTO_PRESET === 'eth' ? 'eth' : 'btc') as 'btc' | 'eth',
+  mt5SymbolCrypto: process.env.MT5_SYMBOL_CRYPTO || null, // дефолт берётся из пресета
+
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
   simStartBalance: num(process.env.SIM_START_BALANCE, 50),
