@@ -108,6 +108,14 @@ export function buildApiRouter(deps: ApiDeps): Router {
     res.json({ logs: log.getLogs(limit) });
   });
 
+  r.get('/ensemble', async (_req, res) => {
+    try {
+      res.json({ ensemble: await deps.engine.ensembleStats() });
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
+  });
+
   r.post('/agent/start', async (_req, res) => {
     try {
       res.json({ message: await deps.engine.start() });

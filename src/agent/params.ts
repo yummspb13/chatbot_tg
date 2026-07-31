@@ -137,6 +137,39 @@ export const HOURLIST_KEYS = ['tradeHoursUtc'] as const;
 // система, а сбор форвард-данных на демо минимальным объёмом.
 // Параметры пресетов зафиксированы = лучшие ячейки sweep; на лету не меняются.
 
+// ------------------------------------------------------------------
+// Ансамбль (ENSEMBLE, включён по умолчанию): все стратегии крутятся
+// ПАРАЛЛЕЛЬНО на живых котировках EUR/USD как ВИРТУАЛЬНЫЕ трейдеры —
+// сделки пишутся в БД (mode=virtual, symbol=EUR_USD~<key>), денег не касаются.
+// «Лицензия» пока справочная: 14 дней, ≥10 сделок, net > 0.
+// Участник meanrev дублирует параметры живого контура — разница его
+// виртуальных и реальных результатов = чистый замер качества исполнения.
+
+export interface EnsembleMember {
+  key: string;
+  params: AgentParams;
+}
+
+export const ENSEMBLE_MEMBERS: EnsembleMember[] = [
+  { key: 'meanrev', params: { ...DEFAULT_PARAMS } },
+  {
+    key: 'spreadw', // лучшая ячейка длинного прогона (docs/IDEAS-2026-07-31.md)
+    params: { ...DEFAULT_PARAMS, strategyType: 'spreadweather', windowSec: 7200, thresholdPips: 4, tpPips: 10, slPips: 24, cooldownSec: 900 },
+  },
+  {
+    key: 'momentum',
+    params: { ...DEFAULT_PARAMS, strategyType: 'momentum', windowSec: 300, thresholdPips: 8, tpPips: 20, slPips: 20, cooldownSec: 300 },
+  },
+  {
+    key: 'echo',
+    params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 15, tpPips: 12, slPips: 20, cooldownSec: 1800 },
+  },
+  {
+    key: 'impulse',
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 2, tpPips: 10, slPips: 20, cooldownSec: 900 },
+  },
+];
+
 export interface CryptoPreset {
   key: 'btc' | 'eth';
   symbol: string;      // внутреннее имя в БД/отчётах

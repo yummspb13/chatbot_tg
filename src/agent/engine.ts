@@ -6,6 +6,7 @@ import { errMsg, log } from '../logger';
 import { AgentParams, clampParams, CRYPTO_PRESETS } from './params';
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
+import { EnsembleLeg } from './ensemble';
 import { MakerLeg } from './makerleg';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
@@ -66,6 +67,7 @@ export class AgentEngine {
   private watchdog: ReturnType<typeof setInterval> | null = null;
   private cryptoLeg: CryptoLeg | null = null;
   private makerLeg: MakerLeg | null = null;
+  private ensembleLeg: EnsembleLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -165,6 +167,18 @@ export class AgentEngine {
       }
     }
 
+    if (config.ensemble && settings.mode === 'live') {
+      try {
+        this.ensembleLeg = new EnsembleLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
+        await this.ensembleLeg.start();
+        cryptoNote += '\n🎼 Ансамбль: 5 виртуальных стратегий на живых котировках (деньги не задействованы; /agent_ensemble).';
+      } catch (e) {
+        this.ensembleLeg = null;
+        cryptoNote += `\n⚠️ Ансамбль не запустился: ${errMsg(e)}`;
+        log.error(`ансамбль не запустился: ${errMsg(e)}`, undefined, 'ensemble');
+      }
+    }
+
     if (config.makerTestnet) {
       if (config.binanceTestnetKey && config.binanceTestnetSecret) {
         try {
@@ -212,7 +226,7 @@ export class AgentEngine {
     return `⏸ Агент остановлен.${closedNote}${tail}`;
   }
 
-  /** Остановить экспериментальные ноги (крипто-уикенд, мейкер-тестнет). */
+  /** Остановить экспериментальные ноги (крипто-уикенд, мейкер-тестнет, ансамбль). */
   private async stopLegs(): Promise<void> {
     if (this.cryptoLeg) {
       await this.cryptoLeg.stop().catch(e => log.warn(`остановка крипто-ноги: ${errMsg(e)}`, undefined, 'crypto'));
@@ -221,6 +235,10 @@ export class AgentEngine {
     if (this.makerLeg) {
       await this.makerLeg.stop().catch(e => log.warn(`остановка мейкер-ноги: ${errMsg(e)}`, undefined, 'maker'));
       this.makerLeg = null;
+    }
+    if (this.ensembleLeg) {
+      this.ensembleLeg.stop();
+      this.ensembleLeg = null;
     }
   }
 
@@ -339,6 +357,10 @@ export class AgentEngine {
   }
 
   private async onQuote(q: Quote): Promise<void> {
+    // виртуальный ансамбль ест каждый живой тик (ошибки не роняют основной цикл)
+    if (this.ensembleLeg) {
+      await this.ensembleLeg.onQuote(q).catch(e => log.warn(`ансамбль onQuote: ${errMsg(e)}`, undefined, 'ensemble'));
+    }
     await this.rollDay(q.time);
     const t = Date.now();
     if (t - this.lastReconcileAt > 5_000) {
@@ -659,6 +681,12 @@ export class AgentEngine {
       maker: this.makerLeg
         ? this.makerLeg.status()
         : { enabled: config.makerTestnet, running: false },
+      ensemble: { enabled: config.ensemble, running: this.ensembleLeg?.isRunning() ?? false },
     };
+  }
+
+  /** Сводка ансамбля (null — если выключен/не запущен). */
+  async ensembleStats() {
+    return this.ensembleLeg ? this.ensembleLeg.stats() : null;
   }
 }

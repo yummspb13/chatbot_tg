@@ -88,13 +88,14 @@ async function refreshStatus() {
 
 async function refreshData() {
   try {
-    const [{ points }, { trades }, { report, text }, { proposals }, { buckets }, { logs }] = await Promise.all([
+    const [{ points }, { trades }, { report, text }, { proposals }, { buckets }, { logs }, { ensemble }] = await Promise.all([
       api('/equity?hours=48'),
       api('/trades?limit=60'),
       api('/report'),
       api('/proposals'),
       api('/hour-stats'),
       api('/logs?limit=60'),
+      api('/ensemble'),
     ]);
     drawEquity(points);
     drawTrades(trades);
@@ -102,6 +103,7 @@ async function refreshData() {
     $('reportText').textContent = text;
     drawProposals(proposals);
     drawHourStats(buckets);
+    drawEnsemble(ensemble);
     $('logs').textContent = logs
       .map((l) => `${l.ts.slice(11, 19)} ${l.level.toUpperCase().padEnd(7)} ${l.source ? '[' + l.source + '] ' : ''}${l.message}`)
       .reverse()
@@ -109,6 +111,24 @@ async function refreshData() {
   } catch (e) {
     // молча — статус-поллинг покажет проблему
   }
+}
+
+function drawEnsemble(ensemble) {
+  const tbody = document.querySelector('#ensembleTable tbody');
+  if (!tbody) return;
+  if (!ensemble || !ensemble.members) {
+    tbody.innerHTML = '<tr><td colspan="7" class="muted">не запущен (нужен live-режим)</td></tr>';
+    return;
+  }
+  tbody.innerHTML = ensemble.members
+    .map((m) => {
+      const lic = m.license === 'granted' ? '✅' : m.license === 'denied' ? '❌' : `⏳ ${m.trades14}/10`;
+      return `<tr><td>${m.key}</td><td>${lic}</td><td>${m.trades14}</td>`
+        + `<td class="${m.net14 >= 0 ? 'pos' : 'neg'}">${fmtUsd(m.net14)}</td>`
+        + `<td>${m.expectancy14 >= 0 ? '+' : ''}${m.expectancy14}$</td><td>${m.winRate14}%</td>`
+        + `<td>${fmtUsd(m.realizedToday)} / ${m.tradesToday} сд</td></tr>`;
+    })
+    .join('');
 }
 
 function drawEquity(points) {

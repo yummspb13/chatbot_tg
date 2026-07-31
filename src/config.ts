@@ -44,6 +44,10 @@ export const config = {
   binanceTestnetSecret: process.env.BINANCE_TESTNET_SECRET || null,
   binanceSymbol: process.env.BINANCE_SYMBOL || 'BTCUSDT',
 
+  // Ансамбль виртуальных стратегий на живых котировках (mode=virtual в БД).
+  // Включён по умолчанию в live-режиме; ENSEMBLE=0 — выключить.
+  ensemble: process.env.ENSEMBLE !== '0',
+
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
   simStartBalance: num(process.env.SIM_START_BALANCE, 50),

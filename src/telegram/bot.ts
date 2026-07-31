@@ -156,6 +156,25 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
     await ctx.reply(lines.join('\n'));
   });
 
+  b.command('agent_ensemble', async ctx => {
+    const st = await deps.engine.ensembleStats();
+    if (!st) {
+      await ctx.reply('🎼 Ансамбль не запущен (нужен live-режим и работающий агент; ENSEMBLE=0 его выключает).');
+      return;
+    }
+    const lines = [`🎼 Ансамбль (виртуально, 14 дней)${st.running ? '' : ' — ОСТАНОВЛЕН'}:`];
+    for (const m of st.members) {
+      const lic = m.license === 'granted' ? '✅ лицензия' : m.license === 'denied' ? '❌ без лицензии' : `⏳ набирает (${m.trades14}/10)`;
+      lines.push(
+        `${m.key.padEnd(9)} ${lic} · net ${m.net14 >= 0 ? '+' : ''}${m.net14}$ (${m.trades14} сд, wr ${m.winRate14}%)`
+        + ` · сегодня ${m.realizedToday >= 0 ? '+' : ''}${m.realizedToday}$/${m.tradesToday} сд`
+        + (m.openNow || m.pendingNow ? ` · откр ${m.openNow}, лимиток ${m.pendingNow}` : ''),
+      );
+    }
+    lines.push('Лицензии справочные: реальным объёмом ансамбль не управляет.');
+    await ctx.reply(lines.join('\n'));
+  });
+
   b.command('agent_report', async ctx => {
     const arg = (ctx.message.text.split(/\s+/)[1] ?? 'today').toLowerCase();
     const now = new Date();
