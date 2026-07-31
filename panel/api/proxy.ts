@@ -4,8 +4,10 @@
 // Настройка: Vercel → проект → Settings → Environment Variables → AGENT_URL =
 // https://<ваш-сервис>.onrender.com, затем Redeploy.
 
+const DEFAULT_AGENT_URL = 'https://chatbot-tg-1.onrender.com';
+
 export default async function handler(req: any, res: any) {
-  const base = (process.env.AGENT_URL || '').replace(/\/+$/, '');
+  const base = (process.env.AGENT_URL || DEFAULT_AGENT_URL).replace(/\/+$/, '');
   if (!base) {
     res.status(503).setHeader('content-type', 'text/html; charset=utf-8');
     res.send('<div style="font-family:sans-serif;max-width:520px;margin:20vh auto;color:#e7edf7;background:#0b1220;padding:24px;border-radius:12px"><h3>Панель FX Agent: AGENT_URL не задан</h3><p>Vercel → проект fx-agent → Settings → Environment Variables → добавьте <b>AGENT_URL</b> = URL агента на Render (например https://fx-agent.onrender.com) и сделайте Redeploy.</p></div>');
