@@ -120,9 +120,11 @@ API-токен: My Account → Manage API Access. На счёте $10 ставь
 ## Деплой на Render
 
 Этот сервис — долгоживущий процесс, **Vercel ему не подходит** (там serverless).
-Старый Vercel-проект репозитория будет пытаться собирать каждый пуш и падать —
-`vercel.json` с `git.deploymentEnabled: false` отключает эти авто-сборки;
-окончательно — удалить проект chatbot-tg в дашборде Vercel (Settings → Delete).
+Поэтому старый Vercel-проект chatbot-tg перепрофилирован в **панель**: корневой
+`vercel.json` переопределяет его сборку (без Next), а `api/proxy.ts` проксирует
+всё на агента (`AGENT_URL` в env Vercel-проекта). Пуши собираются зелёными;
+чтобы прод-домен показывал панель с этой ветки — Settings → Git →
+Production Branch = текущая ветка (или мердж в main).
 
 `render.yaml` в корне (Blueprint). План `starter` — free-тир засыпает и убивает цикл.
 После деплоя: env-переменные в дашборде, `npx prisma db push` запустить один раз локально

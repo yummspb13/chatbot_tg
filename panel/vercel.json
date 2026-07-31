@@ -1,4 +1,8 @@
 {
+  "framework": null,
+  "installCommand": "npm install",
+  "buildCommand": "mkdir -p public",
+  "outputDirectory": "public",
   "rewrites": [
     { "source": "/:path*", "destination": "/api/proxy?path=:path*" }
   ]

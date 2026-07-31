@@ -1,5 +1,9 @@
 {
-  "git": {
-    "deploymentEnabled": false
-  }
+  "framework": null,
+  "installCommand": "echo skip-install",
+  "buildCommand": "mkdir -p .vercel-static",
+  "outputDirectory": ".vercel-static",
+  "rewrites": [
+    { "source": "/:path*", "destination": "/api/proxy?path=:path*" }
+  ]
 }
