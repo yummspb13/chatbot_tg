@@ -75,6 +75,7 @@ export class MakerLeg {
   private cycle: Cycle | null = null;
   private inventorySince = 0;
   private lastRepriceAt = 0;
+  private lastExitPrice: number | null = null;
   private lastStateSyncAt = 0;
   private posAmt = 0;
   private posEntry = 0;
@@ -264,7 +265,9 @@ export class MakerLeg {
     }
   }
 
-  /** Инвентарь: держать выходную post-only котировку, стоп и тайм-стоп по рынку. */
+  /** Инвентарь: держать выходную post-only котировку, стоп и тайм-стоп по рынку.
+   *  Котировка переставляется ТОЛЬКО когда цена реально ушла (мёртвая зона),
+   *  иначе непрерывный cancel/replace спамит и биржу, и интерфейс владельца. */
   private async manageInventory(bid: number, ask: number, now: number): Promise<void> {
     const stopHit = this.posUnrealized <= -this.slUsd();
     const timeHit = this.inventorySince && now - this.inventorySince > TIME_STOP_SEC * 1000;
@@ -272,16 +275,23 @@ export class MakerLeg {
       await this.client.cancelAll(config.binanceSymbol);
       await this.client.marketClose(config.binanceSymbol, this.posAmt);
       log.warn(`мейкер: инвентарь закрыт по рынку (${stopHit ? 'стоп' : timeHit ? 'тайм-стоп' : 'пауза дня'})`, undefined, 'maker');
+      this.lastExitPrice = null;
       this.lastStateSyncAt = 0; // форсируем пересинк на следующем тике
       return;
     }
-    // переставляем выходную котировку не чаще раза в 3 секунды
-    if (now - this.lastRepriceAt < 3000) return;
-    this.lastRepriceAt = now;
     const exitSide: 'BUY' | 'SELL' = this.posAmt > 0 ? 'SELL' : 'BUY';
-    const exitPrice = this.priceStr(exitSide === 'SELL' ? ask : bid);
+    const target = this.priceStr(exitSide === 'SELL' ? ask : bid);
+    const deadband = 5 * this.rules.tickSize; // не гоняемся за каждым тиком
+    const haveOrder = this.openOrderCount > 0 && this.lastExitPrice !== null;
+    if (haveOrder && Math.abs(target - (this.lastExitPrice as number)) < deadband) return;
+    if (now - this.lastRepriceAt < 5000) return;
+    this.lastRepriceAt = now;
     await this.client.cancelAll(config.binanceSymbol);
-    await this.client.placePostOnly(config.binanceSymbol, exitSide, Math.abs(this.posAmt), exitPrice, `mx${now % 1_000_000_000}`);
+    const placed = await this.client.placePostOnly(
+      config.binanceSymbol, exitSide, Math.abs(this.posAmt), target, `mx${now % 1_000_000_000}`,
+    );
+    this.openOrderCount = placed ? 1 : 0;
+    this.lastExitPrice = placed ? target : null;
   }
 
   private async collectFills(): Promise<void> {
