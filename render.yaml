@@ -29,6 +29,14 @@ services:
         value: EUR_USD
       - key: SIM_START_BALANCE
         value: "50"
+      - key: BROKER
+        value: metaapi
+      - key: METAAPI_TOKEN
+        sync: false
+      - key: METAAPI_ACCOUNT_ID
+        sync: false
+      - key: MT5_SYMBOL
+        value: EURUSDm
       - key: OANDA_ENV
         value: practice
       - key: OANDA_API_TOKEN

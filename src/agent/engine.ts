@@ -8,6 +8,7 @@ import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
+import { MetaApiAdapter } from '../broker/metaapi';
 import {
   AccountState, ClosedPosition, ExecutionAdapter, PIP, Quote, round5, Side, sleep,
 } from '../broker/types';
@@ -70,10 +71,26 @@ export class AgentEngine {
 
   private buildAdapter(mode: 'sim' | 'live'): ExecutionAdapter {
     if (mode === 'sim') return new SimAdapter(config.simStartBalance);
+    if (config.broker === 'metaapi') {
+      if (!config.metaapiToken || !config.metaapiAccountId) {
+        throw new Error('Для live через MetaApi нужны METAAPI_TOKEN и METAAPI_ACCOUNT_ID (и MT5_SYMBOL, у Exness обычно EURUSDm)');
+      }
+      return new MetaApiAdapter({
+        token: config.metaapiToken,
+        accountId: config.metaapiAccountId,
+        symbol: config.mt5Symbol,
+      });
+    }
     if (!config.oandaToken || !config.oandaAccountId) {
       throw new Error('Для live-режима нужны OANDA_API_TOKEN и OANDA_ACCOUNT_ID (OANDA_ENV=practice — демо-счёт, live — реальные деньги)');
     }
     return new OandaAdapter({ env: config.oandaEnv, token: config.oandaToken, accountId: config.oandaAccountId });
+  }
+
+  private liveLabel(): string {
+    return config.broker === 'metaapi'
+      ? `live → MT5/MetaApi (символ ${config.mt5Symbol}; демо- или реальный счёт задан в MetaApi)`
+      : `live → OANDA ${config.oandaEnv}${config.oandaEnv === 'practice' ? ' (демо-счёт)' : ' (РЕАЛЬНЫЕ ДЕНЬГИ)'}`;
   }
 
   async start(): Promise<string> {
@@ -117,7 +134,7 @@ export class AgentEngine {
 
     const label = settings.mode === 'sim'
       ? 'sim (симулятор, без реальных денег)'
-      : `live → OANDA ${config.oandaEnv}${config.oandaEnv === 'practice' ? ' (демо-счёт)' : ' (РЕАЛЬНЫЕ ДЕНЬГИ)'}`;
+      : this.liveLabel();
     log.success(
       `агент запущен: ${label}, ${settings.symbol}, стратегия ${settings.params.strategyType}, вход ${settings.params.entryMode}`,
       undefined, 'engine',
@@ -536,7 +553,7 @@ export class AgentEngine {
     this.settings = await this.deps.store.getSettings();
     return mode === 'sim'
       ? '✅ Режим: sim (симулятор)'
-      : `✅ Режим: live → OANDA ${config.oandaEnv}${config.oandaEnv === 'practice' ? ' (демо-счёт)' : ' (⚠️ РЕАЛЬНЫЕ ДЕНЬГИ)'}`;
+      : `✅ Режим: ${this.liveLabel()}`;
   }
 
   /** Тестовый ордер с текущими TP/SL — для проверки связки с брокером. */

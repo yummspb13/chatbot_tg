@@ -20,9 +20,16 @@ export const config = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || null,
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || null,
 
+  // live-брокер: oanda (REST) или metaapi (MT5 через MetaApi.cloud — Exness и т.п.)
+  broker: (process.env.BROKER === 'metaapi' ? 'metaapi' : 'oanda') as 'oanda' | 'metaapi',
+
   oandaEnv: (process.env.OANDA_ENV === 'live' ? 'live' : 'practice') as 'practice' | 'live',
   oandaToken: process.env.OANDA_API_TOKEN || null,
   oandaAccountId: process.env.OANDA_ACCOUNT_ID || null,
+
+  metaapiToken: process.env.METAAPI_TOKEN || null,
+  metaapiAccountId: process.env.METAAPI_ACCOUNT_ID || null,
+  mt5Symbol: process.env.MT5_SYMBOL || 'EURUSD', // у Exness Standard — EURUSDm
 
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
