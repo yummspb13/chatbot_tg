@@ -4,6 +4,7 @@
   "buildCommand": "mkdir -p .vercel-static && printf 'User-agent: *\\nDisallow: /\\n' > .vercel-static/robots.txt",
   "outputDirectory": ".vercel-static",
   "rewrites": [
+    { "source": "/", "destination": "/api/proxy?path=" },
     { "source": "/:path*", "destination": "/api/proxy?path=:path*" }
   ]
 }
