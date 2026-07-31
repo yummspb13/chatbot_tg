@@ -12,11 +12,20 @@
 // - закрытия TP/SL находим по сделкам historyStorage (DEAL_ENTRY_OUT),
 //   pnl = profit + commission + swap.
 
-import MetaApi from 'metaapi.cloud-sdk';
+import { createRequire } from 'node:module';
 import {
   AccountState, ClosedPosition, ExecutionAdapter, LimitOrderRequest, OrderCheck,
   OrderRequest, OrderResult, Position, Quote, Side, sleep,
 } from './types';
+
+// ESM-сборка metaapi.cloud-sdk собрана под браузер и падает на сервере
+// («window is not defined»), поэтому грузим CJS-сборку через createRequire —
+// и лениво: в sim/oanda-режимах SDK вообще не загружается.
+function loadMetaApiSdk(): any {
+  const req = createRequire(import.meta.url);
+  const mod = req('metaapi.cloud-sdk');
+  return mod?.default ?? mod;
+}
 
 export interface MetaApiConfig {
   token: string;
@@ -31,7 +40,8 @@ export class MetaApiAdapter implements ExecutionAdapter {
   private connecting: Promise<any> | null = null;
 
   constructor(private cfg: MetaApiConfig) {
-    this.api = new (MetaApi as any)(cfg.token, { requestTimeout: 60_000 });
+    const MetaApi = loadMetaApiSdk();
+    this.api = new MetaApi(cfg.token, { requestTimeout: 60_000 });
   }
 
   private async ensure(): Promise<any> {
