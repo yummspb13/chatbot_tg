@@ -5,7 +5,7 @@ import { config } from '../config';
 import { log } from '../logger';
 import { errMsg } from '../logger';
 import { AgentEngine } from '../agent/engine';
-import { AgentParams, EDITABLE_KEYS } from '../agent/params';
+import { AgentParams, EDITABLE_KEYS, ENUM_KEYS, HOURLIST_KEYS } from '../agent/params';
 import { newsStatus, upcomingNews } from '../news/calendar';
 import { checkPassword, clearSessionCookie, isAuthed, requireAuth, setSessionCookie } from './auth';
 import { pushPublicKey, pushReady } from './push';
@@ -134,7 +134,12 @@ export function buildApiRouter(deps: ApiDeps): Router {
 
   r.get('/params', async (_req, res) => {
     const settings = await deps.store.getSettings();
-    res.json({ params: settings.params, editable: EDITABLE_KEYS });
+    res.json({
+      params: settings.params,
+      editable: EDITABLE_KEYS,
+      enums: ENUM_KEYS,
+      hourLists: HOURLIST_KEYS,
+    });
   });
 
   r.post('/params', async (req, res) => {
@@ -144,6 +149,17 @@ export function buildApiRouter(deps: ApiDeps): Router {
       for (const key of EDITABLE_KEYS) {
         const v = body[key];
         if (typeof v === 'number' && Number.isFinite(v)) (patch as Record<string, number>)[key] = v;
+      }
+      for (const key of Object.keys(ENUM_KEYS)) {
+        const v = body[key];
+        if (typeof v === 'string' && ENUM_KEYS[key].includes(v)) {
+          (patch as Record<string, string>)[key] = v;
+        }
+      }
+      if (Array.isArray(body.tradeHoursUtc)) {
+        patch.tradeHoursUtc = body.tradeHoursUtc
+          .map(Number)
+          .filter(h => Number.isInteger(h) && h >= 0 && h < 24);
       }
       const params = await deps.engine.applyParams(patch);
       res.json({ params });

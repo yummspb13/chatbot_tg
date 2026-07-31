@@ -52,6 +52,22 @@ export interface AccountState {
   openPositionCount: number;
 }
 
+export interface LimitOrderRequest {
+  symbol: string;
+  side: Side;
+  units: number;
+  price: number;    // лимитная цена входа (пассивный вход — спред не платим)
+  slPrice?: number;
+  tpPrice?: number;
+  ttlSec: number;   // срок жизни (GTD); дальше отменяется
+  tag: string;      // клиентская метка для связывания ордер → сделка
+}
+
+export type OrderCheck =
+  | { state: 'PENDING' }
+  | { state: 'FILLED'; brokerTradeId: string; fillPrice: number; filledAt: Date }
+  | { state: 'GONE' }; // отменён / истёк / не найден
+
 export interface ExecutionAdapter {
   readonly name: 'sim' | 'oanda' | 'metaapi';
   /** Поток котировок; завершается/кидает при обрыве — реконнект делает движок. */
@@ -65,6 +81,10 @@ export interface ExecutionAdapter {
   onPositionClosed?(cb: (p: ClosedPosition) => void): void;
   /** Детали уже закрытой сделки для reconcile (если брокер умеет). */
   getClosedTrade?(brokerTradeId: string): Promise<ClosedPosition | null>;
+  /** Лимитные входы (entryMode=limit). Опционально — движок проверяет наличие. */
+  limitOrder?(req: LimitOrderRequest): Promise<{ orderId: string }>;
+  checkOrder?(orderId: string): Promise<OrderCheck>;
+  cancelOrder?(orderId: string): Promise<void>;
 }
 
 export function round5(p: number): number {

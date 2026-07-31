@@ -45,13 +45,26 @@ npm run dev               # http://localhost:3000 — PWA; в Telegram: /agent_s
 ### Бэктест (перед любыми деньгами)
 
 ```bash
-npm run backtest -- --from 2024-01-01 --to 2026-07-01             # дефолтные параметры
+npm run backtest -- --from 2024-01-01 --to 2026-07-01             # дефолт: momentum/market, EUR/USD
 npm run backtest -- --from 2024-01-01 --to 2026-07-01 --optimize  # walk-forward подбор
+npm run backtest -- --pair gbpusd --params '{"strategyType":"meanrev","entryMode":"limit"}' --optimize
+npm run sweep    -- --from 2024-01-01 --to 2026-07-30             # 4 пары × 2 стратегии × 2 входа
 ```
 
 История качается бесплатно с Dukascopy (кэш в `data/`). Отчёт: сделки, win-rate,
 ожидание $/сделку **после издержек**, просадка. Отрицательное ожидание = live не включаем.
 Оговорка: новостной фильтр в бэктесте не применяется (нет бесплатного исторического календаря).
+
+### Стратегии и режимы входа
+
+| Параметр | Значения | Смысл |
+|---|---|---|
+| `strategyType` | `momentum` \| `meanrev` | следование за движением / возврат к среднему |
+| `entryMode` | `market` \| `limit` | платить спред и войти сразу / пассивная лимитка без спреда (риск неисполнения, TTL `entryTtlSec`) |
+| `tradeHoursUtc` | напр. `7,8,9` | торговать только в эти часы UTC (пусто = все) |
+
+Менять: в PWA или `/agent_params set strategyType meanrev`, `/agent_params set entryMode limit`,
+`/agent_params set tradeHoursUtc 7,8,9` (сброс: `/agent_params set tradeHoursUtc -`).
 
 ### Режимы
 

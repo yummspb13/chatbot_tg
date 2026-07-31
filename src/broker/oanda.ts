@@ -3,8 +3,8 @@
 
 import { request } from 'undici';
 import {
-  AccountState, ClosedPosition, ExecutionAdapter, OrderRequest, OrderResult,
-  Position, Quote, Side,
+  AccountState, ClosedPosition, ExecutionAdapter, LimitOrderRequest, OrderCheck,
+  OrderRequest, OrderResult, Position, Quote, Side,
 } from './types';
 
 export interface OandaConfig {
@@ -173,6 +173,65 @@ export class OandaAdapter implements ExecutionAdapter {
       };
     } catch {
       return null;
+    }
+  }
+
+  async limitOrder(req: LimitOrderRequest): Promise<{ orderId: string }> {
+    const units = req.side === 'BUY' ? req.units : -req.units;
+    const gtdTime = new Date(Date.now() + req.ttlSec * 1000).toISOString();
+    const order: Record<string, unknown> = {
+      type: 'LIMIT',
+      instrument: req.symbol,
+      units: String(units),
+      price: req.price.toFixed(5),
+      timeInForce: 'GTD',
+      gtdTime,
+      positionFill: 'DEFAULT',
+      tradeClientExtensions: { id: req.tag.slice(0, 90) },
+    };
+    if (req.slPrice !== undefined) order.stopLossOnFill = { price: req.slPrice.toFixed(5) };
+    if (req.tpPrice !== undefined) order.takeProfitOnFill = { price: req.tpPrice.toFixed(5) };
+    const data = await this.rest<any>('POST', `/v3/accounts/${this.cfg.accountId}/orders`, { order });
+    const orderId = data.orderCreateTransaction?.id ?? data.lastTransactionID;
+    if (!orderId) {
+      throw new Error(`OANDA: лимитный ордер не создан: ${JSON.stringify(data).slice(0, 300)}`);
+    }
+    return { orderId: String(orderId) };
+  }
+
+  async checkOrder(orderId: string): Promise<OrderCheck> {
+    try {
+      const data = await this.rest<any>('GET', `/v3/accounts/${this.cfg.accountId}/orders/${orderId}`);
+      const o = data.order;
+      if (!o) return { state: 'GONE' };
+      if (o.state === 'PENDING') return { state: 'PENDING' };
+      if (o.state === 'FILLED') {
+        if (o.fillingTransactionID) {
+          const tx = await this.rest<any>('GET', `/v3/accounts/${this.cfg.accountId}/transactions/${o.fillingTransactionID}`);
+          const fill = tx.transaction;
+          const tradeId = fill?.tradeOpened?.tradeID;
+          if (tradeId) {
+            return {
+              state: 'FILLED',
+              brokerTradeId: String(tradeId),
+              fillPrice: parseFloat(fill.price),
+              filledAt: new Date(fill.time),
+            };
+          }
+        }
+        return { state: 'GONE' };
+      }
+      return { state: 'GONE' }; // CANCELLED / EXPIRED
+    } catch {
+      return { state: 'GONE' };
+    }
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    try {
+      await this.rest('PUT', `/v3/accounts/${this.cfg.accountId}/orders/${orderId}/cancel`);
+    } catch {
+      // уже исполнен или отменён — не страшно
     }
   }
 

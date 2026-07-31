@@ -6,7 +6,7 @@ import { config } from '../config';
 import { errMsg, log } from '../logger';
 import { clampParams } from '../agent/params';
 import { loadM1 } from '../backtest/data';
-import { optimize, runBacktest } from '../backtest/runner';
+import { gridFor, MARKETS, optimize, runBacktest } from '../backtest/runner';
 import type { TradeStore } from '../store';
 
 export async function runWeeklyRetrain(
@@ -17,17 +17,20 @@ export async function runWeeklyRetrain(
   try {
     const to = new Date();
     const from = new Date(to.getTime() - 90 * 86400_000);
-    const candles = await loadM1(from, to);
+    const settings = await store.getSettings();
+    const instrument = settings.symbol.replace('_', '').toLowerCase();
+    const market = MARKETS[instrument] ?? MARKETS.eurusd;
+    const candles = await loadM1(market.instrument, from, to);
     if (candles.length < 20_000) {
       log.warn('ребэктест: мало данных, пропуск', undefined, 'learn');
       return;
     }
-    const settings = await store.getSettings();
-    const opt = optimize(candles, 0.7, settings.params.units);
+    const grid = gridFor(settings.params.strategyType, settings.params.entryMode, settings.params.units);
+    const opt = optimize(candles, grid, market, 0.7);
     if (!opt.best) return;
 
     const cut = Math.floor(candles.length * 0.7);
-    const currentOnTest = runBacktest(candles.slice(cut), settings.params);
+    const currentOnTest = runBacktest(candles.slice(cut), settings.params, market);
     if (opt.best.test.netUsd <= Math.max(0, currentOnTest.netUsd)) {
       log.info('ребэктест: текущие параметры не хуже — предложения нет', undefined, 'learn');
       return;

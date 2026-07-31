@@ -5,7 +5,7 @@ import { Context, Telegraf } from 'telegraf';
 import { config } from '../config';
 import { errMsg, log } from '../logger';
 import { AgentEngine, fmtUsd } from '../agent/engine';
-import { EDITABLE_KEYS, AgentParams } from '../agent/params';
+import { AgentParams, EDITABLE_KEYS, ENUM_KEYS, HOURLIST_KEYS } from '../agent/params';
 import { newsStatus, upcomingNews } from '../news/calendar';
 import type { TradeStore } from '../store';
 
@@ -58,11 +58,14 @@ export interface BotDeps {
 
 function fmtParams(p: AgentParams): string {
   return [
+    `strategyType=${p.strategyType} entryMode=${p.entryMode}`,
     `windowSec=${p.windowSec} thresholdPips=${p.thresholdPips}`,
     `tpPips=${p.tpPips} slPips=${p.slPips} cooldownSec=${p.cooldownSec}`,
     `units=${p.units} maxConcurrent=${p.maxConcurrent}`,
     `maxTradesPerDay=${p.maxTradesPerDay} maxDailyLossUsd=${p.maxDailyLossUsd}`,
     `spreadGuardPips=${p.spreadGuardPips} newsBufferMin=${p.newsBufferMin}`,
+    `entryTtlSec=${p.entryTtlSec} entryOffsetPips=${p.entryOffsetPips}`,
+    `tradeHoursUtc=[${p.tradeHoursUtc.join(',')}] (пусто = все часы)`,
     `autoBlackoutHours=[${p.autoBlackoutHours.join(',')}] (управляется обучением)`,
   ].join('\n');
 }
@@ -162,17 +165,35 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
   b.command('agent_params', async ctx => {
     const parts = ctx.message.text.trim().split(/\s+/);
     if (parts[1] === 'set' && parts.length >= 4) {
-      const key = parts[2] as keyof AgentParams;
-      if (!EDITABLE_KEYS.includes(key)) {
-        await ctx.reply(`⚠️ Ключ «${parts[2]}» нельзя менять. Доступны: ${EDITABLE_KEYS.join(', ')}`);
+      const key = parts[2];
+      const raw = parts[3];
+      let patch: Partial<AgentParams> | null = null;
+
+      if (ENUM_KEYS[key]) {
+        if (!ENUM_KEYS[key].includes(raw)) {
+          await ctx.reply(`⚠️ ${key}: ${ENUM_KEYS[key].join(' | ')}`);
+          return;
+        }
+        patch = { [key]: raw } as Partial<AgentParams>;
+      } else if ((HOURLIST_KEYS as readonly string[]).includes(key)) {
+        const hours = raw === '-' ? [] : raw.split(',').map(Number).filter(h => Number.isInteger(h) && h >= 0 && h < 24);
+        patch = { tradeHoursUtc: hours };
+      } else if (EDITABLE_KEYS.includes(key as keyof AgentParams)) {
+        const value = Number(raw);
+        if (!Number.isFinite(value)) {
+          await ctx.reply('⚠️ Значение должно быть числом');
+          return;
+        }
+        patch = { [key]: value } as Partial<AgentParams>;
+      } else {
+        await ctx.reply(
+          `⚠️ Ключ «${key}» нельзя менять. Доступны: ${EDITABLE_KEYS.join(', ')}, `
+          + `${Object.keys(ENUM_KEYS).join(', ')}, tradeHoursUtc (напр. "7,8,9" или "-")`,
+        );
         return;
       }
-      const value = Number(parts[3]);
-      if (!Number.isFinite(value)) {
-        await ctx.reply('⚠️ Значение должно быть числом');
-        return;
-      }
-      const params = await deps.engine.applyParams({ [key]: value } as Partial<AgentParams>);
+
+      const params = await deps.engine.applyParams(patch);
       await ctx.reply(`✅ Обновлено (в пределах жёстких лимитов):\n${fmtParams(params)}`);
       return;
     }

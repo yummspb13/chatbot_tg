@@ -37,6 +37,9 @@ export class RiskManager {
     if (p.autoBlackoutHours.includes(ctx.now.getUTCHours())) {
       return { ok: false, reason: `авто-блэкаут часа ${ctx.now.getUTCHours()}:00 UTC` };
     }
+    if (p.tradeHoursUtc.length && !p.tradeHoursUtc.includes(ctx.now.getUTCHours())) {
+      return { ok: false, reason: `час ${ctx.now.getUTCHours()}:00 UTC вне торговых часов [${p.tradeHoursUtc.join(',')}]` };
+    }
     if (ctx.spreadPips > p.spreadGuardPips) {
       return { ok: false, reason: `спред ${ctx.spreadPips.toFixed(1)}p > лимита ${p.spreadGuardPips}p` };
     }

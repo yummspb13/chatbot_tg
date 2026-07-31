@@ -193,19 +193,38 @@ function drawHourStats(buckets) {
 }
 
 async function loadParamsForm() {
-  const { params, editable } = await api('/params');
+  const { params, editable, enums } = await api('/params');
   const form = $('paramsForm');
-  form.innerHTML = editable.map((key) => `
-    <div>
-      <label for="p_${key}">${key}</label>
-      <input id="p_${key}" type="number" step="any" value="${params[key]}">
-    </div>`).join('');
+  const enumKeys = Object.keys(enums || {});
+  form.innerHTML = [
+    ...enumKeys.map((key) => `
+      <div>
+        <label for="p_${key}">${key}</label>
+        <select id="p_${key}">
+          ${enums[key].map((v) => `<option value="${v}" ${params[key] === v ? 'selected' : ''}>${v}</option>`).join('')}
+        </select>
+      </div>`),
+    `<div>
+      <label for="p_tradeHoursUtc">tradeHoursUtc (напр. 7,8,9; пусто = все)</label>
+      <input id="p_tradeHoursUtc" type="text" value="${(params.tradeHoursUtc || []).join(',')}">
+    </div>`,
+    ...editable.map((key) => `
+      <div>
+        <label for="p_${key}">${key}</label>
+        <input id="p_${key}" type="number" step="any" value="${params[key]}">
+      </div>`),
+  ].join('');
   $('btnSaveParams').onclick = async () => {
     const patch = {};
     for (const key of editable) {
       const v = Number($(`p_${key}`).value);
       if (Number.isFinite(v)) patch[key] = v;
     }
+    for (const key of enumKeys) patch[key] = $(`p_${key}`).value;
+    const hoursRaw = $('p_tradeHoursUtc').value.trim();
+    patch.tradeHoursUtc = hoursRaw
+      ? hoursRaw.split(',').map((s) => Number(s.trim())).filter((h) => Number.isInteger(h) && h >= 0 && h < 24)
+      : [];
     try {
       await api('/params', { method: 'POST', body: JSON.stringify(patch) });
       setMsg('✅ Параметры сохранены (с учётом жёстких лимитов)');

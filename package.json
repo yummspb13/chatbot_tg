@@ -14,6 +14,7 @@
     "db:push": "prisma db push",
     "backtest": "tsx src/backtest/runner.ts",
     "backtest:data": "tsx src/backtest/data.ts",
+    "sweep": "tsx src/backtest/sweep.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

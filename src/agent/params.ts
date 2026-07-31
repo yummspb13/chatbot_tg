@@ -1,22 +1,31 @@
 // Параметры стратегии и риска. Хранятся в AgentSettings.params (JSON),
 // правятся из Telegram (/agent_params set ...) и PWA — но только в пределах HARD_LIMITS.
 
+export type StrategyType = 'momentum' | 'meanrev';
+export type EntryMode = 'market' | 'limit';
+
 export interface AgentParams {
-  windowSec: number;       // окно momentum, сек
-  thresholdPips: number;   // порог движения для входа, pips
+  strategyType: StrategyType; // momentum — следование за движением; meanrev — возврат к среднему
+  windowSec: number;       // окно стратегии, сек (momentum: окно движения; meanrev: окно среднего)
+  thresholdPips: number;   // momentum: порог движения; meanrev: порог отклонения от среднего
   tpPips: number;          // take profit, pips
   slPips: number;          // stop loss, pips
   cooldownSec: number;     // пауза после сигнала, сек
   units: number;           // размер позиции, юниты базовой валюты (1000 = 0.01 лота)
-  maxConcurrent: number;   // одновременных позиций
+  maxConcurrent: number;   // одновременных позиций (включая отложенные входы)
   maxTradesPerDay: number; // сделок в сутки (UTC)
   maxDailyLossUsd: number; // дневной лимит убытка → kill-switch
   spreadGuardPips: number; // не входить при спреде шире
   newsBufferMin: number;   // блокировка входа ± минут вокруг важных новостей
+  entryMode: EntryMode;    // market — платим спред; limit — пассивный вход без спреда (риск неисполнения)
+  entryTtlSec: number;     // сколько живёт лимитный вход до отмены
+  entryOffsetPips: number; // отступ лимитной цены от пассивной стороны (0 = ровно bid/ask)
+  tradeHoursUtc: number[]; // разрешённые часы UTC для входов (пусто = все)
   autoBlackoutHours: number[]; // часы UTC, отключённые модулем обучения
 }
 
 export const DEFAULT_PARAMS: AgentParams = {
+  strategyType: 'momentum',
   windowSec: 300,
   thresholdPips: 5,
   tpPips: 12,
@@ -28,6 +37,10 @@ export const DEFAULT_PARAMS: AgentParams = {
   maxDailyLossUsd: 5,
   spreadGuardPips: 1.5,
   newsBufferMin: 15,
+  entryMode: 'market',
+  entryTtlSec: 180,
+  entryOffsetPips: 0,
+  tradeHoursUtc: [],
   autoBlackoutHours: [],
 };
 
@@ -44,13 +57,17 @@ function clampNum(v: unknown, min: number, max: number, def: number): number {
   return Math.min(Math.max(n, min), max);
 }
 
+function hourList(v: unknown, maxLen: number): number[] {
+  return Array.isArray(v)
+    ? v.filter(h => Number.isInteger(h) && h >= 0 && h < 24).slice(0, maxLen)
+    : [];
+}
+
 export function clampParams(input: unknown): AgentParams {
   const p = (input && typeof input === 'object' ? input : {}) as Partial<AgentParams>;
-  const hours = Array.isArray(p.autoBlackoutHours)
-    ? p.autoBlackoutHours.filter(h => Number.isInteger(h) && h >= 0 && h < 24).slice(0, 8)
-    : [];
   return {
-    windowSec: Math.round(clampNum(p.windowSec, 10, 3600, DEFAULT_PARAMS.windowSec)),
+    strategyType: p.strategyType === 'meanrev' ? 'meanrev' : 'momentum',
+    windowSec: Math.round(clampNum(p.windowSec, 10, 14400, DEFAULT_PARAMS.windowSec)),
     thresholdPips: clampNum(p.thresholdPips, 0.5, 100, DEFAULT_PARAMS.thresholdPips),
     tpPips: clampNum(p.tpPips, 2, 200, DEFAULT_PARAMS.tpPips),
     slPips: clampNum(p.slPips, 2, 200, DEFAULT_PARAMS.slPips),
@@ -61,12 +78,26 @@ export function clampParams(input: unknown): AgentParams {
     maxDailyLossUsd: clampNum(p.maxDailyLossUsd, 0.5, HARD_LIMITS.maxDailyLossUsd, DEFAULT_PARAMS.maxDailyLossUsd),
     spreadGuardPips: clampNum(p.spreadGuardPips, 0.2, 10, DEFAULT_PARAMS.spreadGuardPips),
     newsBufferMin: Math.round(clampNum(p.newsBufferMin, 0, 120, DEFAULT_PARAMS.newsBufferMin)),
-    autoBlackoutHours: hours,
+    entryMode: p.entryMode === 'limit' ? 'limit' : 'market',
+    entryTtlSec: Math.round(clampNum(p.entryTtlSec, 10, 3600, DEFAULT_PARAMS.entryTtlSec)),
+    entryOffsetPips: clampNum(p.entryOffsetPips, -2, 5, DEFAULT_PARAMS.entryOffsetPips),
+    tradeHoursUtc: hourList(p.tradeHoursUtc, 24),
+    autoBlackoutHours: hourList(p.autoBlackoutHours, 8),
   };
 }
 
-// Ключи, которые разрешено менять через /agent_params set и PWA
+// Числовые ключи, которые разрешено менять через /agent_params set и PWA
 export const EDITABLE_KEYS: (keyof AgentParams)[] = [
   'windowSec', 'thresholdPips', 'tpPips', 'slPips', 'cooldownSec', 'units',
   'maxConcurrent', 'maxTradesPerDay', 'maxDailyLossUsd', 'spreadGuardPips', 'newsBufferMin',
+  'entryTtlSec', 'entryOffsetPips',
 ];
+
+// Строковые ключи с перечислимыми значениями
+export const ENUM_KEYS: Record<string, string[]> = {
+  strategyType: ['momentum', 'meanrev'],
+  entryMode: ['market', 'limit'],
+};
+
+// Ключи-списки часов UTC (задаются как "0,1,2,3" или "-" для пусто)
+export const HOURLIST_KEYS = ['tradeHoursUtc'] as const;

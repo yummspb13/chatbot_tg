@@ -4,7 +4,7 @@
 import { config } from '../config';
 import { errMsg, log } from '../logger';
 import { AgentParams, clampParams } from './params';
-import { MomentumStrategy, Signal } from './strategy';
+import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -24,13 +24,30 @@ export function fmtUsd(v: number): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}$`;
 }
 
+interface PendingEntry {
+  orderId: string;
+  placedAt: number;
+  ttlSec: number;
+  side: Side;
+  units: number;
+  limitPrice: number;
+  slPrice: number;
+  tpPrice: number;
+  reason: string;
+  spreadAtSignal: number;
+  volAtSignal: number;
+  newsDist: number | null;
+}
+
 export class AgentEngine {
   private running = false;
   private killing = false;
   private abort: AbortController | null = null;
   private adapter: ExecutionAdapter | null = null;
-  private strategy: MomentumStrategy | null = null;
+  private strategy: TradingStrategy | null = null;
   private risk: RiskManager | null = null;
+  private pendingEntries: PendingEntry[] = [];
+  private lastPendingCheckAt = 0;
   private settings: SettingsState | null = null;
   private lastQuote: Quote | null = null;
   private lastQuoteAt = 0;
@@ -77,8 +94,9 @@ export class AgentEngine {
 
     this.settings = settings;
     this.adapter = adapter;
-    this.strategy = new MomentumStrategy(settings.params);
+    this.strategy = buildStrategy(settings.params);
     this.risk = new RiskManager(settings.params);
+    this.pendingEntries = [];
     this.dayKey = new Date().toISOString().slice(0, 10);
     this.tradesToday = await this.deps.store.countTradesToday(settings.mode);
     this.realizedToday = await this.deps.store.realizedPnlToday(settings.mode);
@@ -100,7 +118,10 @@ export class AgentEngine {
     const label = settings.mode === 'sim'
       ? 'sim (симулятор, без реальных денег)'
       : `live → OANDA ${config.oandaEnv}${config.oandaEnv === 'practice' ? ' (демо-счёт)' : ' (РЕАЛЬНЫЕ ДЕНЬГИ)'}`;
-    log.success(`агент запущен: ${label}, ${settings.symbol}`, undefined, 'engine');
+    log.success(
+      `агент запущен: ${label}, ${settings.symbol}, стратегия ${settings.params.strategyType}, вход ${settings.params.entryMode}`,
+      undefined, 'engine',
+    );
     if (isFxWeekend(new Date())) {
       return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.`;
     }
@@ -110,6 +131,7 @@ export class AgentEngine {
   async stop(): Promise<string> {
     if (!this.running) return 'Агент уже остановлен';
     const s = this.settings;
+    await this.cancelAllPending();
     // в sim позиции живут только в памяти адаптера — закрываем по рынку перед стопом
     let closedNote = '';
     if (s?.mode === 'sim' && this.adapter) {
@@ -157,6 +179,7 @@ export class AgentEngine {
     this.killing = true;
     try {
       log.error(`KILL-SWITCH: ${reason}`, undefined, 'engine');
+      await this.cancelAllPending();
       const settings = this.settings ?? await this.deps.store.getSettings();
       const adapter = this.adapter ?? this.buildAdapter(settings.mode);
       const closed = await adapter.closeAll();
@@ -251,6 +274,10 @@ export class AgentEngine {
       this.lastSnapshotAt = t;
       await this.snapshot();
     }
+    if (this.pendingEntries.length && t - this.lastPendingCheckAt > 3_000) {
+      this.lastPendingCheckAt = t;
+      await this.processPendingEntries();
+    }
 
     const strategy = this.strategy;
     const risk = this.risk;
@@ -265,7 +292,7 @@ export class AgentEngine {
     const unrealized = this.account ? this.account.equity - this.account.balance : 0;
     const verdict = risk.check({
       now: q.time,
-      openCount: open.length,
+      openCount: open.length + this.pendingEntries.length, // отложенные входы резервируют слот
       tradesToday: this.tradesToday,
       plToday: this.realizedToday + unrealized,
       spreadPips,
@@ -275,7 +302,106 @@ export class AgentEngine {
       log.info(`сигнал (${sig.reason}) отклонён: ${verdict.reason}`, undefined, 'engine');
       return;
     }
-    await this.openPosition(sig, q, spreadPips);
+    if (settings.params.entryMode === 'limit' && this.adapter?.limitOrder) {
+      await this.placeLimitEntry(sig, q, spreadPips);
+    } else {
+      await this.openPosition(sig, q, spreadPips);
+    }
+  }
+
+  /** Пассивный вход: лимитка на своей стороне спреда — издержку спреда не платим. */
+  private async placeLimitEntry(sig: Signal, q: Quote, spreadPips: number): Promise<void> {
+    const settings = this.settings;
+    const adapter = this.adapter;
+    const strategy = this.strategy;
+    if (!settings || !adapter?.limitOrder || !strategy) return;
+    const p = settings.params;
+    const price = round5(sig.side === 'BUY' ? q.bid - p.entryOffsetPips * PIP : q.ask + p.entryOffsetPips * PIP);
+    const tpPrice = round5(sig.side === 'BUY' ? price + sig.tpPips * PIP : price - sig.tpPips * PIP);
+    const slPrice = round5(sig.side === 'BUY' ? price - sig.slPips * PIP : price + sig.slPips * PIP);
+    const tag = `fxa-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const { orderId } = await adapter.limitOrder({
+      symbol: settings.symbol,
+      side: sig.side,
+      units: p.units,
+      price,
+      slPrice,
+      tpPrice,
+      ttlSec: p.entryTtlSec,
+      tag,
+    });
+    this.pendingEntries.push({
+      orderId,
+      placedAt: Date.now(),
+      ttlSec: p.entryTtlSec,
+      side: sig.side,
+      units: p.units,
+      limitPrice: price,
+      slPrice,
+      tpPrice,
+      reason: sig.reason,
+      spreadAtSignal: spreadPips,
+      volAtSignal: strategy.windowRangePips(),
+      newsDist: this.deps.newsDistanceMin(q.time),
+    });
+    log.info(`⏳ лимитный вход ${sig.side} ${p.units} @ ${price.toFixed(5)} (TTL ${p.entryTtlSec}с, ${sig.reason})`, undefined, 'engine');
+  }
+
+  private async processPendingEntries(): Promise<void> {
+    const settings = this.settings;
+    const adapter = this.adapter;
+    if (!settings || !adapter?.checkOrder) return;
+    const keep: PendingEntry[] = [];
+    for (const pe of this.pendingEntries) {
+      try {
+        const expired = Date.now() - pe.placedAt > (pe.ttlSec + 10) * 1000;
+        const check = await adapter.checkOrder(pe.orderId);
+        if (check.state === 'FILLED') {
+          this.tradesToday += 1;
+          const trade = await this.deps.store.openTrade({
+            mode: settings.mode,
+            symbol: settings.symbol,
+            side: pe.side,
+            units: pe.units,
+            entryPrice: check.fillPrice,
+            slPrice: pe.slPrice,
+            tpPrice: pe.tpPrice,
+            openedAt: check.filledAt,
+            costSpread: 0, // пассивный вход — спред не платили
+            costCommission: 0,
+            brokerTradeId: check.brokerTradeId,
+            spreadAtEntry: pe.spreadAtSignal,
+            volAtEntry: pe.volAtSignal,
+            hourUtc: check.filledAt.getUTCHours(),
+            newsDistMin: pe.newsDist,
+            paramsSnapshot: settings.params,
+          });
+          await this.deps.notify(
+            `📈 №${trade.id} ${pe.side} ${pe.units} ${settings.symbol} @ ${check.fillPrice.toFixed(5)} (лимитный вход, спред не платили)\n`
+            + `TP ${pe.tpPrice.toFixed(5)} · SL ${pe.slPrice.toFixed(5)} · ${pe.reason}`,
+          );
+        } else if (check.state === 'GONE' || expired) {
+          if (expired && check.state === 'PENDING') await adapter.cancelOrder?.(pe.orderId);
+          log.info(`лимитный вход ${pe.orderId} не исполнился (${check.state === 'GONE' ? 'отменён/истёк' : 'TTL'})`, undefined, 'engine');
+        } else {
+          keep.push(pe);
+        }
+      } catch (e) {
+        log.warn(`processPendingEntries: ${errMsg(e)}`, undefined, 'engine');
+        keep.push(pe);
+      }
+    }
+    this.pendingEntries = keep;
+  }
+
+  private async cancelAllPending(): Promise<void> {
+    const adapter = this.adapter;
+    if (adapter?.cancelOrder) {
+      for (const pe of this.pendingEntries) {
+        await adapter.cancelOrder(pe.orderId).catch(() => {});
+      }
+    }
+    this.pendingEntries = [];
   }
 
   private async openPosition(sig: Signal, q: Quote, spreadPips: number): Promise<void> {
@@ -393,7 +519,11 @@ export class AgentEngine {
     const params = clampParams({ ...settings.params, ...patch });
     await this.deps.store.saveSettings({ params });
     if (this.settings) this.settings.params = params;
-    this.strategy?.updateParams(params);
+    if (this.strategy && patch.strategyType && patch.strategyType !== settings.params.strategyType) {
+      this.strategy = buildStrategy(params); // смена типа стратегии — с чистым окном
+    } else {
+      this.strategy?.updateParams(params);
+    }
     this.risk?.updateParams(params);
     log.info(`параметры обновлены: ${JSON.stringify(patch)}`, undefined, 'engine');
     return params;

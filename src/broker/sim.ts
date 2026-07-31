@@ -2,13 +2,20 @@
 // Гоняет весь путь движок → БД → уведомления без внешних счетов и риска.
 
 import {
-  AccountState, ClosedPosition, ExecutionAdapter, OrderRequest, OrderResult,
-  PIP, Position, Quote, round5, sleep,
+  AccountState, ClosedPosition, ExecutionAdapter, LimitOrderRequest, OrderCheck,
+  OrderRequest, OrderResult, PIP, Position, Quote, round5, sleep,
 } from './types';
 
 interface SimPosition extends Position {
   slPrice?: number;
   tpPrice?: number;
+}
+
+interface SimOrder {
+  req: LimitOrderRequest;
+  placedAt: number;
+  state: 'PENDING' | 'FILLED' | 'GONE';
+  filled?: { brokerTradeId: string; fillPrice: number; filledAt: Date };
 }
 
 export class SimAdapter implements ExecutionAdapter {
@@ -19,6 +26,7 @@ export class SimAdapter implements ExecutionAdapter {
   private anchor = 1.085;
   private spread = 0.8 * PIP;
   private positions = new Map<string, SimPosition>();
+  private orders = new Map<string, SimOrder>();
   private seq = 1;
   private closedCb: ((p: ClosedPosition) => void) | null = null;
 
@@ -47,6 +55,32 @@ export class SimAdapter implements ExecutionAdapter {
     this.spread = (0.7 + Math.random() * 0.4) * PIP;
 
     const { bid, ask } = this.prices();
+
+    // исполнение отложенных лимитных входов
+    for (const [oid, o] of [...this.orders]) {
+      if (o.state !== 'PENDING') continue;
+      if (Date.now() - o.placedAt > o.req.ttlSec * 1000) {
+        o.state = 'GONE';
+        continue;
+      }
+      const fills = o.req.side === 'BUY' ? bid <= o.req.price : ask >= o.req.price;
+      if (!fills) continue;
+      const tradeId = `sim-${this.seq++}`;
+      this.positions.set(tradeId, {
+        brokerTradeId: tradeId,
+        symbol: o.req.symbol,
+        side: o.req.side,
+        units: o.req.units,
+        entryPrice: o.req.price,
+        slPrice: o.req.slPrice,
+        tpPrice: o.req.tpPrice,
+        openedAt: now,
+      });
+      o.state = 'FILLED';
+      o.filled = { brokerTradeId: tradeId, fillPrice: o.req.price, filledAt: now };
+      this.orders.set(oid, o);
+    }
+
     for (const [id, p] of [...this.positions]) {
       const px = p.side === 'BUY' ? bid : ask; // закрытие BUY — по bid, SELL — по ask
       let reason: string | null = null;
@@ -137,5 +171,23 @@ export class SimAdapter implements ExecutionAdapter {
 
   async getClosedTrade(): Promise<ClosedPosition | null> {
     return null; // закрытия приходят через onPositionClosed
+  }
+
+  async limitOrder(req: LimitOrderRequest): Promise<{ orderId: string }> {
+    const orderId = `simo-${this.seq++}`;
+    this.orders.set(orderId, { req, placedAt: Date.now(), state: 'PENDING' });
+    return { orderId };
+  }
+
+  async checkOrder(orderId: string): Promise<OrderCheck> {
+    const o = this.orders.get(orderId);
+    if (!o || o.state === 'GONE') return { state: 'GONE' };
+    if (o.state === 'FILLED' && o.filled) return { state: 'FILLED', ...o.filled };
+    return { state: 'PENDING' };
+  }
+
+  async cancelOrder(orderId: string): Promise<void> {
+    const o = this.orders.get(orderId);
+    if (o && o.state === 'PENDING') o.state = 'GONE';
   }
 }

@@ -14,10 +14,10 @@ export interface Candle {
   c: number;
 }
 
-export async function loadM1(from: Date, to: Date): Promise<Candle[]> {
-  log.info(`загрузка M1 EUR/USD: ${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}`, undefined, 'backtest');
+export async function loadM1(instrument: string, from: Date, to: Date): Promise<Candle[]> {
+  log.info(`загрузка M1 ${instrument}: ${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}`, undefined, 'backtest');
   const rows = await getHistoricalRates({
-    instrument: 'eurusd',
+    instrument: instrument as 'eurusd',
     dates: { from, to },
     timeframe: 'm1',
     format: 'json',
@@ -46,7 +46,8 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv
 if (isMain) {
   const from = new Date(parseArg('from') ?? '2024-01-01');
   const to = new Date(parseArg('to') ?? new Date().toISOString().slice(0, 10));
-  loadM1(from, to)
+  const instrument = (parseArg('pair') ?? 'eurusd').toLowerCase();
+  loadM1(instrument, from, to)
     .then(c => {
       if (c.length) {
         console.log(`OK: ${c.length} свечей, ${new Date(c[0].t).toISOString()} → ${new Date(c[c.length - 1].t).toISOString()}`);
