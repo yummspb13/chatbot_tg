@@ -1,10 +1,9 @@
 {
   "framework": null,
   "installCommand": "echo skip-install",
-  "buildCommand": "mkdir -p .vercel-static && printf 'User-agent: *\\nDisallow: /\\n' > .vercel-static/robots.txt",
-  "outputDirectory": ".vercel-static",
+  "buildCommand": "echo panel-static",
+  "outputDirectory": "public",
   "rewrites": [
-    { "source": "/", "destination": "/api/proxy?path=" },
-    { "source": "/:path*", "destination": "/api/proxy?path=:path*" }
+    { "source": "/:path*", "destination": "/api/r?p=:path*" }
   ]
 }
