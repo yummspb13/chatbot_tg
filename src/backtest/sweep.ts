@@ -1,17 +1,18 @@
-// Мультипарный research-конвейер: 4 пары × 2 стратегии × 2 режима входа,
+// Мультипарный research-конвейер: пары × стратегии × режимы входа,
 // каждая ячейка — walk-forward (подбор на train 70%, честная оценка на test 30%).
 // Итог — ранжированная таблица: что (если вообще что-то) выживает после издержек.
 //
 // CLI: npm run sweep -- --from 2024-01-01 --to 2026-07-30
+//      npm run sweep -- --pairs btcusd,ethusd            # крипта (24/7, с выходными)
 
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { loadM1 } from './data';
-import { BtReport, gridFor, MARKETS, optimize } from './runner';
+import { BtReport, gridFor, MARKETS, optimize, prepCandles } from './runner';
 import type { AgentParams, EntryMode, StrategyType } from '../agent/params';
 
-const PAIRS = ['eurusd', 'gbpusd', 'audusd', 'nzdusd'] as const;
+const DEFAULT_PAIRS = ['eurusd', 'gbpusd', 'audusd', 'nzdusd'];
 const STRATS: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo'];
 const MODES: EntryMode[] = ['market', 'limit'];
 
@@ -30,11 +31,14 @@ export interface SweepRow {
     maxDrawdownUsd: number;
     unfilledEntries: number;
     tradesPerWeek: number;
+    weekendTrades: number; // сделки, открытые в сб/вс UTC (крипта)
+    weekendNetUsd: number;
   };
 }
 
 function toRow(pair: string, strategy: StrategyType, entryMode: EntryMode, best: { params: Partial<AgentParams>; train: BtReport; test: BtReport } | null): SweepRow {
   if (!best) return { pair, strategy, entryMode, bestParams: null, trainNet: null, test: null };
+  const wknd = best.test.byDow.filter(d => d.dow === 0 || d.dow === 6);
   return {
     pair,
     strategy,
@@ -50,6 +54,8 @@ function toRow(pair: string, strategy: StrategyType, entryMode: EntryMode, best:
       maxDrawdownUsd: best.test.maxDrawdownUsd,
       unfilledEntries: best.test.unfilledEntries,
       tradesPerWeek: best.test.tradesPerWeek,
+      weekendTrades: wknd.reduce((s, d) => s + d.n, 0),
+      weekendNetUsd: wknd.reduce((s, d) => s + d.netUsd, 0),
     },
   };
 }
@@ -59,11 +65,15 @@ function parseArg(name: string): string | undefined {
   return idx >= 0 ? process.argv[idx + 1] : undefined;
 }
 
-export async function runSweep(from: Date, to: Date): Promise<SweepRow[]> {
+export async function runSweep(from: Date, to: Date, pairs: string[] = DEFAULT_PAIRS): Promise<SweepRow[]> {
   const rows: SweepRow[] = [];
-  for (const pair of PAIRS) {
+  for (const pair of pairs) {
     const market = MARKETS[pair];
-    const candles = await loadM1(market.instrument, from, to);
+    if (!market) {
+      console.warn(`${pair}: неизвестный рынок, пропуск (есть: ${Object.keys(MARKETS).join(', ')})`);
+      continue;
+    }
+    const candles = prepCandles(await loadM1(market.instrument, from, to), market);
     if (candles.length < 50_000) {
       console.warn(`${pair}: мало данных (${candles.length}), пропуск`);
       continue;
@@ -71,7 +81,7 @@ export async function runSweep(from: Date, to: Date): Promise<SweepRow[]> {
     for (const strategy of STRATS) {
       for (const entryMode of MODES) {
         const started = Date.now();
-        const opt = optimize(candles, gridFor(strategy, entryMode, 1000), market, 0.7);
+        const opt = optimize(candles, gridFor(strategy, entryMode, 1000, market.pipsMult ?? 1, market.paramsBase), market, 0.7);
         rows.push(toRow(pair, strategy, entryMode, opt.best));
         const r = rows[rows.length - 1];
         console.log(
@@ -93,8 +103,9 @@ if (isMain) {
   (async () => {
     const from = new Date(parseArg('from') ?? '2024-01-01');
     const to = new Date(parseArg('to') ?? new Date().toISOString().slice(0, 10));
-    console.log(`Sweep: ${PAIRS.join(', ')} × ${STRATS.join('/')} × ${MODES.join('/')}\n`);
-    const rows = await runSweep(from, to);
+    const pairs = (parseArg('pairs')?.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)) ?? DEFAULT_PAIRS;
+    console.log(`Sweep: ${pairs.join(', ')} × ${STRATS.join('/')} × ${MODES.join('/')}\n`);
+    const rows = await runSweep(from, to, pairs);
 
     console.log('\n=== ИТОГ (сортировка по test net) ===');
     for (const r of rows) {
@@ -109,6 +120,7 @@ if (isMain) {
         + ` · ${r.test.trades} сд (~${r.test.tradesPerWeek.toFixed(1)}/нед) · wr ${(r.test.winRate * 100).toFixed(1)}%`
         + ` · спред ${r.test.spreadCostUsd.toFixed(2)}$ · DD ${r.test.maxDrawdownUsd.toFixed(2)}$`
         + (r.entryMode === 'limit' ? ` · неисполнено ${r.test.unfilledEntries}` : '')
+        + (r.test.weekendTrades > 0 ? ` · вых ${r.test.weekendTrades}сд ${(r.test.weekendNetUsd >= 0 ? '+' : '') + r.test.weekendNetUsd.toFixed(2)}$` : '')
         + ` · train ${(r.trainNet ?? 0) >= 0 ? '+' : ''}${(r.trainNet ?? 0).toFixed(2)}$`,
       );
     }

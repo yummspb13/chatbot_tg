@@ -9,6 +9,7 @@ export interface RiskContext {
   plToday: number; // реализованный за день + нереализованный сейчас, USD
   spreadPips: number;
   newsBlackout: boolean;
+  crypto?: boolean; // крипто-CFD торгуются 24/7 — блок FX-выходных не применяется
 }
 
 export type RiskVerdict = { ok: true } | { ok: false; reason: string };
@@ -32,7 +33,7 @@ export class RiskManager {
 
   check(ctx: RiskContext): RiskVerdict {
     const p = this.params;
-    if (isFxWeekend(ctx.now)) return { ok: false, reason: 'FX закрыт (выходные)' };
+    if (!ctx.crypto && isFxWeekend(ctx.now)) return { ok: false, reason: 'FX закрыт (выходные)' };
     if (ctx.newsBlackout) return { ok: false, reason: 'новостное окно' };
     if (p.autoBlackoutHours.includes(ctx.now.getUTCHours())) {
       return { ok: false, reason: `авто-блэкаут часа ${ctx.now.getUTCHours()}:00 UTC` };

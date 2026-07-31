@@ -25,14 +25,43 @@ export interface MarketSpec {
   spreadBase: number;      // типичный спред, pips
   spreadRollover: number;  // 21–22 UTC
   spreadSundayOpen: number;
+  crypto?: boolean;        // 24/7 (включая выходные), без FX-ролловера
+  priceScale?: number;     // делитель сырой цены: пип 0.0001 остаётся базовой единицей
+  pipsMult?: number;       // множитель пип-значений грида (волатильность выше FX)
+  paramsBase?: Partial<AgentParams>; // базовые параметры для всех ячеек грида рынка
 }
 
+// Крипто-CFD (Exness BTCUSDm/ETHUSDm) торгуются 24/7. Цена делится на priceScale:
+// «пип» BTC = $10, ETH = $1 — при units=1000 стоимость пипса у ВСЕХ рынков
+// одинаковая ($0.10), а 1000 юнитов BTC = 0.01 лота (минимальный у Exness).
+// Спреды взяты по Exness Standard (заметно шире Dukascopy-фида — честнее);
+// pipsMult откалиброван по медианному часовому ходу (июнь–июль 2026:
+// BTC 13.2 пипса, ETH 4.5, EUR/USD 3.7).
 export const MARKETS: Record<string, MarketSpec> = {
   eurusd: { instrument: 'eurusd', symbol: 'EUR_USD', spreadBase: 1.0, spreadRollover: 2.5, spreadSundayOpen: 2.0 },
   gbpusd: { instrument: 'gbpusd', symbol: 'GBP_USD', spreadBase: 1.3, spreadRollover: 3.0, spreadSundayOpen: 2.5 },
   audusd: { instrument: 'audusd', symbol: 'AUD_USD', spreadBase: 1.2, spreadRollover: 2.8, spreadSundayOpen: 2.2 },
   nzdusd: { instrument: 'nzdusd', symbol: 'NZD_USD', spreadBase: 1.8, spreadRollover: 3.5, spreadSundayOpen: 2.8 },
+  btcusd: {
+    instrument: 'btcusd', symbol: 'BTC_USD',
+    spreadBase: 2.5, spreadRollover: 2.5, spreadSundayOpen: 2.5,
+    crypto: true, priceScale: 100_000, pipsMult: 4,
+    paramsBase: { spreadGuardPips: 5, maxDailyLossUsd: 20 },
+  },
+  ethusd: {
+    instrument: 'ethusd', symbol: 'ETH_USD',
+    spreadBase: 3.0, spreadRollover: 3.0, spreadSundayOpen: 3.0,
+    crypto: true, priceScale: 10_000, pipsMult: 1.5,
+    paramsBase: { spreadGuardPips: 6, maxDailyLossUsd: 10 },
+  },
 };
+
+/** Приведение сырых цен рынка к масштабу, где пип 0.0001 осмыслен (крипта). */
+export function prepCandles(candles: Candle[], market: MarketSpec): Candle[] {
+  const s = market.priceScale ?? 1;
+  if (s === 1) return candles;
+  return candles.map(c => ({ t: c.t, o: c.o / s, h: c.h / s, l: c.l / s, c: c.c / s }));
+}
 
 export interface BtTrade {
   side: 'BUY' | 'SELL';
@@ -66,9 +95,11 @@ export interface BtReport {
   tradesPerWeek: number;
   killDays: number;
   byHour: { hour: number; n: number; netUsd: number }[];
+  byDow: { dow: number; n: number; netUsd: number }[]; // день недели UTC (0=вс, 6=сб)
 }
 
 function spreadPipsAt(t: Date, m: MarketSpec): number {
+  if (m.crypto) return m.spreadBase; // круглосуточный рынок, ролловера нет
   const h = t.getUTCHours();
   const day = t.getUTCDay();
   if (h === 21 || h === 22) return m.spreadRollover;
@@ -209,6 +240,7 @@ export function runBacktest(
       plToday: realizedToday,
       spreadPips,
       newsBlackout: false,
+      crypto: !!market.crypto,
     });
     if (!verdict.ok) continue;
 
@@ -256,11 +288,17 @@ export function runBacktest(
   }
 
   const byHourMap = new Map<number, { n: number; netUsd: number }>();
+  const byDowMap = new Map<number, { n: number; netUsd: number }>();
   for (const t of trades) {
     const b = byHourMap.get(t.hourUtc) ?? { n: 0, netUsd: 0 };
     b.n += 1;
     b.netUsd += t.pnl;
     byHourMap.set(t.hourUtc, b);
+    const dow = new Date(t.openedAt).getUTCDay();
+    const d = byDowMap.get(dow) ?? { n: 0, netUsd: 0 };
+    d.n += 1;
+    d.netUsd += t.pnl;
+    byDowMap.set(dow, d);
   }
 
   const weeks = candles.length ? (candles[candles.length - 1].t - candles[0].t) / (7 * 86400_000) : 1;
@@ -285,6 +323,7 @@ export function runBacktest(
     tradesPerWeek: trades.length / Math.max(weeks, 0.1),
     killDays,
     byHour: [...byHourMap.entries()].map(([hour, b]) => ({ hour, ...b })).sort((a, b) => a.hour - b.hour),
+    byDow: [...byDowMap.entries()].map(([dow, b]) => ({ dow, ...b })).sort((a, b) => a.dow - b.dow),
   };
 }
 
@@ -294,13 +333,20 @@ export interface OptimizeResult {
   split: number;
 }
 
-export function gridFor(strategyType: AgentParams['strategyType'], entryMode: 'market' | 'limit', units: number): Partial<AgentParams>[] {
+export function gridFor(
+  strategyType: AgentParams['strategyType'],
+  entryMode: 'market' | 'limit',
+  units: number,
+  pipsMult = 1, // растяжка пип-порогов под волатильность рынка (крипта: BTC ×4, ETH ×1.5)
+  base: Partial<AgentParams> = {},
+): Partial<AgentParams>[] {
+  const m = (v: number) => v * pipsMult;
   const grid: Partial<AgentParams>[] = [];
   if (strategyType === 'momentum') {
     for (const windowSec of [300, 900]) {
       for (const thresholdPips of [5, 8]) {
         for (const tp of [12, 20]) {
-          grid.push({ strategyType, entryMode, windowSec, thresholdPips, tpPips: tp, slPips: tp, cooldownSec: windowSec, units });
+          grid.push({ ...base, strategyType, entryMode, windowSec, thresholdPips: m(thresholdPips), tpPips: m(tp), slPips: m(tp), cooldownSec: windowSec, units });
         }
       }
     }
@@ -308,7 +354,7 @@ export function gridFor(strategyType: AgentParams['strategyType'], entryMode: 'm
     for (const windowSec of [1800, 3600]) {
       for (const thresholdPips of [8, 12]) {
         for (const tpPips of [6, 10]) {
-          grid.push({ strategyType, entryMode, windowSec, thresholdPips, tpPips, slPips: 20, cooldownSec: 900, units });
+          grid.push({ ...base, strategyType, entryMode, windowSec, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(20), cooldownSec: 900, units });
         }
       }
     }
@@ -317,7 +363,7 @@ export function gridFor(strategyType: AgentParams['strategyType'], entryMode: 'm
     for (const windowSec of [1800, 3600]) {
       for (const thresholdPips of [1, 2]) {
         for (const tpPips of [6, 10]) {
-          grid.push({ strategyType, entryMode, windowSec, thresholdPips, tpPips, slPips: 20, cooldownSec: 900, units });
+          grid.push({ ...base, strategyType, entryMode, windowSec, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(20), cooldownSec: 900, units });
         }
       }
     }
@@ -325,7 +371,7 @@ export function gridFor(strategyType: AgentParams['strategyType'], entryMode: 'm
     // авторская «эхо часа»: порог = отклонение от внутридневного расписания (pips)
     for (const thresholdPips of [10, 15, 20]) {
       for (const tpPips of [8, 12]) {
-        grid.push({ strategyType, entryMode, windowSec: 3600, thresholdPips, tpPips, slPips: 20, cooldownSec: 1800, units });
+        grid.push({ ...base, strategyType, entryMode, windowSec: 3600, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(20), cooldownSec: 1800, units });
       }
     }
   }
@@ -376,6 +422,12 @@ export function formatReport(r: BtReport, title: string): string {
   if (p.entryMode === 'limit') {
     lines.push(`Лимитные входы: исполнено ${r.trades}, не исполнено ${r.unfilledEntries} (${r.signals} сигналов)`);
   }
+  const wknd = r.byDow.filter(d => d.dow === 0 || d.dow === 6);
+  const wkndN = wknd.reduce((s, d) => s + d.n, 0);
+  if (wkndN > 0) {
+    const wkndNet = wknd.reduce((s, d) => s + d.netUsd, 0);
+    lines.push(`Выходные (сб+вс UTC): ${wkndN} сделок, net ${wkndNet >= 0 ? '+' : ''}${wkndNet.toFixed(2)}$`);
+  }
   return lines.join('\n');
 }
 
@@ -395,9 +447,9 @@ if (isMain) {
       console.error(`Неизвестная пара «${pair}». Доступны: ${Object.keys(MARKETS).join(', ')}`);
       process.exit(1);
     }
-    const extra = parseArg('params') ? JSON.parse(parseArg('params')!) : {};
+    const extra = { ...market.paramsBase, ...(parseArg('params') ? JSON.parse(parseArg('params')!) : {}) };
     const doOptimize = process.argv.includes('--optimize');
-    const candles = await loadM1(market.instrument, from, to);
+    const candles = prepCandles(await loadM1(market.instrument, from, to), market);
     if (candles.length < 1000) {
       console.error('Слишком мало данных');
       process.exit(1);
@@ -411,7 +463,7 @@ if (isMain) {
     if (doOptimize) {
       console.log('\nWalk-forward подбор (train 70% / test 30%)…');
       const params = clampParams({ ...DEFAULT_PARAMS, ...extra });
-      const grid = gridFor(params.strategyType, params.entryMode, params.units);
+      const grid = gridFor(params.strategyType, params.entryMode, params.units, market.pipsMult ?? 1, market.paramsBase);
       const opt = optimize(candles, grid, market);
       out.optimize = opt;
       if (opt.best) {
