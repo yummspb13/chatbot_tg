@@ -294,7 +294,7 @@ export interface OptimizeResult {
   split: number;
 }
 
-export function gridFor(strategyType: 'momentum' | 'meanrev', entryMode: 'market' | 'limit', units: number): Partial<AgentParams>[] {
+export function gridFor(strategyType: AgentParams['strategyType'], entryMode: 'market' | 'limit', units: number): Partial<AgentParams>[] {
   const grid: Partial<AgentParams>[] = [];
   if (strategyType === 'momentum') {
     for (const windowSec of [300, 900]) {
@@ -304,12 +304,28 @@ export function gridFor(strategyType: 'momentum' | 'meanrev', entryMode: 'market
         }
       }
     }
-  } else {
+  } else if (strategyType === 'meanrev') {
     for (const windowSec of [1800, 3600]) {
       for (const thresholdPips of [8, 12]) {
         for (const tpPips of [6, 10]) {
           grid.push({ strategyType, entryMode, windowSec, thresholdPips, tpPips, slPips: 20, cooldownSec: 900, units });
         }
+      }
+    }
+  } else if (strategyType === 'impulse') {
+    // авторская «асимметрия импульсов»: порог = разница средних ног (pips)
+    for (const windowSec of [1800, 3600]) {
+      for (const thresholdPips of [1, 2]) {
+        for (const tpPips of [6, 10]) {
+          grid.push({ strategyType, entryMode, windowSec, thresholdPips, tpPips, slPips: 20, cooldownSec: 900, units });
+        }
+      }
+    }
+  } else {
+    // авторская «эхо часа»: порог = отклонение от внутридневного расписания (pips)
+    for (const thresholdPips of [10, 15, 20]) {
+      for (const tpPips of [8, 12]) {
+        grid.push({ strategyType, entryMode, windowSec: 3600, thresholdPips, tpPips, slPips: 20, cooldownSec: 1800, units });
       }
     }
   }

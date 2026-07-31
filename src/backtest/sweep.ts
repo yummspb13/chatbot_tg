@@ -12,7 +12,7 @@ import { BtReport, gridFor, MARKETS, optimize } from './runner';
 import type { AgentParams, EntryMode, StrategyType } from '../agent/params';
 
 const PAIRS = ['eurusd', 'gbpusd', 'audusd', 'nzdusd'] as const;
-const STRATS: StrategyType[] = ['momentum', 'meanrev'];
+const STRATS: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo'];
 const MODES: EntryMode[] = ['market', 'limit'];
 
 export interface SweepRow {

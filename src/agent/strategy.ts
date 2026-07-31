@@ -106,8 +106,229 @@ export class MeanReversionStrategy extends WindowStrategy {
   }
 }
 
+/** Сэмплер минутных закрытий: и живые тики, и M1-бэктест дают ОДИНАКОВЫЙ ряд. */
+class MinuteSampler {
+  private bucket = -1;
+  private lastMid = 0;
+
+  push(t: number, mid: number): { t: number; mid: number } | null {
+    const b = Math.floor(t / 60_000);
+    if (this.bucket === -1) {
+      this.bucket = b;
+      this.lastMid = mid;
+      return null;
+    }
+    if (b === this.bucket) {
+      this.lastMid = mid;
+      return null;
+    }
+    const out = { t: this.bucket * 60_000 + 60_000, mid: this.lastMid };
+    this.bucket = b;
+    this.lastMid = mid;
+    return out;
+  }
+
+  reset(): void {
+    this.bucket = -1;
+  }
+}
+
+/**
+ * АВТОРСКАЯ стратегия «Асимметрия импульсов» (путь наименьшего сопротивления).
+ *
+ * Идея: направление цены и ХАРАКТЕР движения — разные вещи. Разбиваем окно на
+ * «ноги» — непрерывные пробеги минутных закрытий вверх/вниз. Если средняя нога
+ * вниз систематически длиннее средней ноги вверх, падения импульсные, а подъёмы
+ * вымученные → под ценой мало ликвидности, путь наименьшего сопротивления вниз.
+ * Формула: asym = avgLegDown − avgLegUp (pips); asym ≥ порога → SELL, ≤ −порога → BUY.
+ * Это вход не «куда шла цена», а «куда ей легче идти».
+ */
+export class ImpulseAsymmetryStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private minutes: { t: number; mid: number }[] = [];
+  private cooldownUntil = 0;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.minutes = [];
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.minutes.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.minutes) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+
+    this.minutes.push(m);
+    const cutoff = m.t - this.params.windowSec * 1000;
+    while (this.minutes.length && this.minutes[0].t < cutoff) this.minutes.shift();
+
+    if (m.t < this.cooldownUntil) return null;
+    if (this.minutes.length < 20) return null;
+
+    const upLegs: number[] = [];
+    const dnLegs: number[] = [];
+    let dir = 0;
+    let acc = 0;
+    for (let i = 1; i < this.minutes.length; i++) {
+      const d = this.minutes[i].mid - this.minutes[i - 1].mid;
+      if (d === 0) continue;
+      const s = d > 0 ? 1 : -1;
+      if (s === dir) {
+        acc += Math.abs(d);
+      } else {
+        if (dir === 1) upLegs.push(acc);
+        else if (dir === -1) dnLegs.push(acc);
+        dir = s;
+        acc = Math.abs(d);
+      }
+    }
+    if (dir === 1) upLegs.push(acc);
+    else if (dir === -1) dnLegs.push(acc);
+
+    if (upLegs.length < 3 || dnLegs.length < 3) return null;
+
+    const avgUp = upLegs.reduce((a, b) => a + b, 0) / upLegs.length / PIP;
+    const avgDn = dnLegs.reduce((a, b) => a + b, 0) / dnLegs.length / PIP;
+    const asym = avgDn - avgUp;
+    if (Math.abs(asym) < this.params.thresholdPips) return null;
+
+    this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+    return {
+      side: asym > 0 ? 'SELL' : 'BUY',
+      tpPips: this.params.tpPips,
+      slPips: this.params.slPips,
+      reason: `impulse: асимметрия ${asym.toFixed(1)}p (ноги ↓${avgDn.toFixed(1)}p×${dnLegs.length} vs ↑${avgUp.toFixed(1)}p×${upLegs.length})`,
+    };
+  }
+}
+
+/**
+ * АВТОРСКАЯ стратегия «Эхо часа» (возврат к собственному расписанию).
+ *
+ * Идея: у каждой пары есть внутридневной ритм (Азия/Лондон/Нью-Йорк). Строим
+ * якорную кривую — медианный ход цены от открытия дня (00:00 UTC) к концу
+ * каждого часа за последние 20 торговых дней. Если СЕГОДНЯ пара убежала от
+ * своего расписания на ≥ thresholdPips — ставим на возврат к ритму (fade).
+ * Прогрев: сигналы только после ≥5 накопленных дней наблюдений.
+ */
+export class HourEchoStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private recent: { t: number; mid: number }[] = [];
+  private dayKey = '';
+  private dayOpen = 0;
+  private hourEnd: number[] = new Array(24).fill(NaN);
+  private history: number[][] = [];
+  private cooldownUntil = 0;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.recent = [];
+    this.dayKey = '';
+    this.dayOpen = 0;
+    this.hourEnd = new Array(24).fill(NaN);
+    this.history = [];
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.recent.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.recent) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  /** Медиана дисплейсмента на конец часа h по накопленным дням (h<0 → 0). */
+  private median(h: number): number {
+    if (h < 0) return 0;
+    const vals = this.history.map(c => c[h]).sort((a, b) => a - b);
+    return vals.length ? vals[Math.floor(vals.length / 2)] : 0;
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+
+    this.recent.push(m);
+    const cutoff = m.t - 3600_000;
+    while (this.recent.length && this.recent[0].t < cutoff) this.recent.shift();
+
+    const d = new Date(m.t);
+    const key = d.toISOString().slice(0, 10);
+    const hour = d.getUTCHours();
+    const frac = d.getUTCMinutes() / 60;
+
+    if (key !== this.dayKey) {
+      if (this.dayKey) {
+        // завершённый день → в историю (пропуски часов заполняем последним значением)
+        let filled = 0;
+        let last = 0;
+        const curve = this.hourEnd.map(v => {
+          if (Number.isFinite(v)) {
+            last = v;
+            filled += 1;
+          }
+          return last;
+        });
+        if (filled >= 12) {
+          this.history.push(curve);
+          if (this.history.length > 20) this.history.shift();
+        }
+      }
+      this.dayKey = key;
+      this.dayOpen = m.mid;
+      this.hourEnd = new Array(24).fill(NaN);
+    }
+
+    const disp = (m.mid - this.dayOpen) / PIP;
+    this.hourEnd[hour] = disp;
+
+    if (m.t < this.cooldownUntil) return null;
+    if (this.history.length < 5) return null;
+
+    const anchor = this.median(hour - 1) + (this.median(hour) - this.median(hour - 1)) * frac;
+    const dev = disp - anchor;
+    if (Math.abs(dev) < this.params.thresholdPips) return null;
+
+    this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+    return {
+      side: dev > 0 ? 'SELL' : 'BUY',
+      tpPips: this.params.tpPips,
+      slPips: this.params.slPips,
+      reason: `echo: отклонение ${dev.toFixed(1)}p от расписания (день ${disp.toFixed(1)}p vs якорь ${anchor.toFixed(1)}p)`,
+    };
+  }
+}
+
 export function buildStrategy(params: AgentParams): TradingStrategy {
-  return params.strategyType === 'meanrev'
-    ? new MeanReversionStrategy(params)
-    : new MomentumStrategy(params);
+  switch (params.strategyType) {
+    case 'meanrev': return new MeanReversionStrategy(params);
+    case 'impulse': return new ImpulseAsymmetryStrategy(params);
+    case 'echo': return new HourEchoStrategy(params);
+    default: return new MomentumStrategy(params);
+  }
 }

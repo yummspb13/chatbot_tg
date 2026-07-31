@@ -1,11 +1,16 @@
 // Параметры стратегии и риска. Хранятся в AgentSettings.params (JSON),
 // правятся из Telegram (/agent_params set ...) и PWA — но только в пределах HARD_LIMITS.
 
-export type StrategyType = 'momentum' | 'meanrev';
+export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo';
 export type EntryMode = 'market' | 'limit';
 
 export interface AgentParams {
-  strategyType: StrategyType; // momentum — следование за движением; meanrev — возврат к среднему
+  // momentum — следование за движением; meanrev — возврат к среднему;
+  // impulse — «асимметрия импульсов» (авторская: вход в сторону, куда цена ходит
+  //           длинными ногами, против стороны коротких вымученных ног);
+  // echo    — «эхо часа» (авторская: возврат к медианному внутридневному
+  //           расписанию пары за последние 20 дней; для сигналов нужно ≥5 дней прогрева)
+  strategyType: StrategyType;
   windowSec: number;       // окно стратегии, сек (momentum: окно движения; meanrev: окно среднего)
   thresholdPips: number;   // momentum: порог движения; meanrev: порог отклонения от среднего
   tpPips: number;          // take profit, pips
@@ -68,8 +73,12 @@ function hourList(v: unknown, maxLen: number): number[] {
 
 export function clampParams(input: unknown): AgentParams {
   const p = (input && typeof input === 'object' ? input : {}) as Partial<AgentParams>;
+  const strategyType: StrategyType =
+    p.strategyType === 'meanrev' || p.strategyType === 'impulse' || p.strategyType === 'echo'
+      ? p.strategyType
+      : 'momentum';
   return {
-    strategyType: p.strategyType === 'meanrev' ? 'meanrev' : 'momentum',
+    strategyType,
     windowSec: Math.round(clampNum(p.windowSec, 10, 14400, DEFAULT_PARAMS.windowSec)),
     thresholdPips: clampNum(p.thresholdPips, 0.5, 100, DEFAULT_PARAMS.thresholdPips),
     tpPips: clampNum(p.tpPips, 2, 200, DEFAULT_PARAMS.tpPips),
@@ -98,7 +107,7 @@ export const EDITABLE_KEYS: (keyof AgentParams)[] = [
 
 // Строковые ключи с перечислимыми значениями
 export const ENUM_KEYS: Record<string, string[]> = {
-  strategyType: ['momentum', 'meanrev'],
+  strategyType: ['momentum', 'meanrev', 'impulse', 'echo'],
   entryMode: ['market', 'limit'],
 };
 
