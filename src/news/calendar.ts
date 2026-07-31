@@ -17,9 +17,23 @@ const TTL_MS = 6 * 3600_000;
 
 let cache: { at: number; events: NewsEvent[] } = { at: 0, events: [] };
 let degraded = false;
+let lastAttemptAt = 0;
+let failStreak = 0;
+
+// ForexFactory режет по IP (на Render общие адреса → HTTP 429 обычное дело),
+// поэтому после неудачи не долбим фид каждым тиком планировщика (30 с),
+// а ждём 1 → 2 → 4 → 8 мин…, максимум 15 мин.
+const RETRY_MAX_MS = 15 * 60_000;
+
+function retryDelayMs(): number {
+  return Math.min(RETRY_MAX_MS, 60_000 * 2 ** Math.max(0, failStreak - 1));
+}
 
 export async function refreshCalendar(force = false): Promise<void> {
-  if (!force && Date.now() - cache.at < TTL_MS) return;
+  const now = Date.now();
+  if (!force && now - cache.at < TTL_MS) return;
+  if (!force && failStreak > 0 && now - lastAttemptAt < retryDelayMs()) return;
+  lastAttemptAt = now;
   try {
     const res = await request(FEED_URL, { headersTimeout: 10_000, bodyTimeout: 15_000 });
     const text = await res.body.text();
@@ -36,10 +50,13 @@ export async function refreshCalendar(force = false): Promise<void> {
       .filter(e => !Number.isNaN(e.date.getTime()));
     cache = { at: Date.now(), events };
     degraded = false;
+    failStreak = 0;
     log.info(`календарь обновлён: ${events.length} high-impact событий USD/EUR на этой неделе`, undefined, 'news');
   } catch (e) {
+    failStreak++;
     degraded = true;
-    log.warn(`календарь новостей недоступен: ${errMsg(e)} (фильтр деградирует до «выключен»)`, undefined, 'news');
+    const waitMin = Math.max(1, Math.round(retryDelayMs() / 60_000));
+    log.warn(`календарь новостей недоступен: ${errMsg(e)} (фильтр деградирует до «выключен»; следующая попытка через ~${waitMin} мин)`, undefined, 'news');
   }
 }
 
