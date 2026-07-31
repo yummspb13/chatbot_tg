@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b1220">
+  <title>FX Agent</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/uplot.min.css">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="login" class="screen hidden">
+    <div class="card login-card">
+      <h1>FX Agent</h1>
+      <p class="muted">Тестовый авто-агент EUR/USD. Вход только для владельца.</p>
+      <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
+      <button id="loginBtn" class="btn primary">Войти</button>
+      <p id="loginError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <div id="app" class="screen hidden">
+    <header>
+      <h1>FX Agent</h1>
+      <span id="stateBadge" class="badge">…</span>
+    </header>
+
+    <section class="card" id="statusCard">
+      <div class="grid2">
+        <div><span class="muted">Режим</span><div id="stMode">—</div></div>
+        <div><span class="muted">Котировка</span><div id="stQuote">—</div></div>
+        <div><span class="muted">Баланс / Equity</span><div id="stAccount">—</div></div>
+        <div><span class="muted">Сегодня</span><div id="stToday">—</div></div>
+      </div>
+      <div id="stNotes" class="muted small"></div>
+    </section>
+
+    <section class="card">
+      <div class="row">
+        <button id="btnStart" class="btn primary">▶︎ Старт</button>
+        <button id="btnStop" class="btn">⏸ Стоп</button>
+        <button id="btnKill" class="btn danger">🚨 Kill</button>
+      </div>
+      <div class="row">
+        <select id="modeSelect">
+          <option value="sim">sim — симулятор</option>
+          <option value="live">live — OANDA</option>
+        </select>
+        <button id="btnMode" class="btn">Сменить режим</button>
+        <button id="btnPush" class="btn">🔔 Уведомления</button>
+      </div>
+      <p id="actionMsg" class="muted small"></p>
+    </section>
+
+    <section class="card">
+      <h2>Кривая капитала <span class="muted small">(48ч)</span></h2>
+      <div id="equityChart"></div>
+    </section>
+
+    <section class="card">
+      <h2>Сводка <span class="muted small" id="reportWindowLabel"></span></h2>
+      <pre id="reportText" class="mono">—</pre>
+    </section>
+
+    <section class="card">
+      <h2>Сделки <span class="muted small">(последние)</span></h2>
+      <div class="tableWrap">
+        <table id="tradesTable">
+          <thead><tr><th>#</th><th>Сторона</th><th>Вход→Выход</th><th>PnL</th><th>Издержки</th><th>Закрытие</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Параметры</h2>
+      <div id="paramsForm" class="params"></div>
+      <button id="btnSaveParams" class="btn primary">Сохранить</button>
+      <p class="muted small">Жёсткие потолки риска зашиты в код: units ≤ 2000, позиций ≤ 3, сделок/день ≤ 40, дневной убыток ≤ 20$.</p>
+    </section>
+
+    <section class="card">
+      <h2>Предложения обучения</h2>
+      <div id="proposals" class="muted">—</div>
+    </section>
+
+    <section class="card">
+      <h2>Статистика по часам (30 дней)</h2>
+      <div class="tableWrap">
+        <table id="hourTable">
+          <thead><tr><th>Час UTC</th><th>Сделок</th><th>PnL</th><th>Ожидание</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Логи</h2>
+      <pre id="logs" class="mono small">—</pre>
+    </section>
+
+    <footer class="muted small">
+      Тестовый стенд: без обещаний доходности. Издержки каждой «ставки» видны в таблице сделок.
+      <button id="btnLogout" class="linklike">Выйти</button>
+    </footer>
+  </div>
+
+  <script src="/uplot.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

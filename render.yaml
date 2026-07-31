@@ -1,0 +1,41 @@
+# Деплой на Render (Blueprint). Секретов в этом файле НЕТ — задаются в дашборде.
+# Старый сервис afisha-bot-worker перед деплоем выключить/удалить в дашборде Render.
+services:
+  - type: web
+    name: fx-agent
+    env: node
+    plan: starter # free-тир засыпает — для торгового цикла не подходит
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_ADMIN_CHAT_ID
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: AGENT_MODE
+        value: sim
+      - key: SYMBOL
+        value: EUR_USD
+      - key: SIM_START_BALANCE
+        value: "50"
+      - key: OANDA_ENV
+        value: practice
+      - key: OANDA_API_TOKEN
+        sync: false
+      - key: OANDA_ACCOUNT_ID
+        sync: false
+      - key: REPORT_WINDOW_MIN
+        value: "60"
+      - key: AUTO_RETRAIN
+        value: "0"

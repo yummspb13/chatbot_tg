@@ -1,149 +1,86 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
+// FX-агент: все таблицы с префиксом agent_ — БД общая с другим приложением,
+// таблицы afisha_bot_* этой схемой не описываются и не трогаются.
+// Применение схемы: ТОЛЬКО `npx prisma db push` вручную (не в билде деплоя).
+// `prisma migrate` / `migrate reset` на этой общей БД запрещены.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  // Используем PostgreSQL для продакшена (Vercel)
-  // Изменено с sqlite на postgresql для работы на Vercel
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-model City {
-  id          Int          @id @default(autoincrement())
-  name        String // "Москва"
-  slug        String       @unique // "moskva"
-  channels    Channel[]
-  draftEvents DraftEvent[]
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+model AgentSettings {
+  id           Int       @id @default(1)
+  mode         String    @default("sim") // "sim" | "live"
+  symbol       String    @default("EUR_USD")
+  isRunning    Boolean   @default(false)
+  params       Json      @default("{}")
+  killSwitchAt DateTime?
+  updatedAt    DateTime  @updatedAt
 
-  @@map("afisha_bot_City")
+  @@map("agent_Settings")
 }
 
-model Channel {
-  id                   Int          @id @default(autoincrement())
-  cityId               Int
-  city                 City         @relation(fields: [cityId], references: [id], onDelete: Cascade)
-  chatId               String // Telegram chat_id (channel ID)
-  title                String
-  isActive             Boolean      @default(true)
-  lastCheckedMessageId String? // для истории / повторной проверки
-  draftEvents          DraftEvent[]
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+model Trade {
+  id             Int       @id @default(autoincrement())
+  mode           String // "sim" | "live"
+  symbol         String
+  side           String // "BUY" | "SELL"
+  units          Int
+  entryPrice     Float
+  exitPrice      Float?
+  slPrice        Float?
+  tpPrice        Float?
+  openedAt       DateTime  @default(now())
+  closedAt       DateTime?
+  pnl            Float?
+  costSpread     Float?
+  costCommission Float?    @default(0)
+  brokerTradeId  String?
+  closeReason    String? // TP | SL | MANUAL | KILL | RECONCILED
+  // контекст входа («память» агента)
+  spreadAtEntry  Float?
+  volAtEntry     Float?
+  hourUtc        Int?
+  newsDistMin    Int?
+  paramsSnapshot Json?
 
-  @@unique([chatId])
-  @@index([cityId])
-  @@index([isActive])
-  @@map("afisha_bot_Channel")
+  @@index([openedAt])
+  @@index([mode, closedAt])
+  @@map("agent_Trade")
 }
 
-// SQLite не поддерживает enums, используем String
-// DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
+model EquitySnapshot {
+  id            Int      @id @default(autoincrement())
+  ts            DateTime @default(now())
+  mode          String
+  balance       Float
+  equity        Float
+  openPositions Int
 
-model DraftEvent {
+  @@index([ts])
+  @@map("agent_EquitySnapshot")
+}
+
+model ParamProposal {
+  id             Int      @id @default(autoincrement())
+  params         Json
+  backtestReport Json
+  status         String   @default("pending") // pending | applied | rejected
+  createdAt      DateTime @default(now())
+
+  @@map("agent_ParamProposal")
+}
+
+model PushSubscription {
   id        Int      @id @default(autoincrement())
-  cityId    Int?
-  city      City?    @relation(fields: [cityId], references: [id], onDelete: SetNull)
-  channelId Int?
-  channel   Channel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
-
-  telegramMessageId String // исходный message_id
-  telegramChatId    String // исходный chat_id (канал)
-  sourceLink        String? // ссылка на пост в TG (если возможно)
-
-  // Извлечённые поля:
-  title       String
-  startDate   DateTime
-  endDate     DateTime?
-  venue       String?
-  description String?
-  cityName    String?
-  coverImage     String? // URL главного изображения
-  gallery        String? // JSON массив URL изображений (TEXT в SQLite)
-  pendingGallery String? // JSON массив base64 строк для временного хранения фото из сообщений без текста
-  adminNotes     String? // JSON строка с админ-заметками: ссылки на пост, билеты, координаты
-  partnerLink    String? // ссылка на партнера
-  isFree         Boolean @default(false) // бесплатное мероприятие
-  tickets        String? // JSON массив билетов [{name: "1", price: 300}]
-  conversationId Int? @unique // связь с диалогом (один-к-одному)
-  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
-
-  status    String   @default("NEW") // DraftStatus: NEW | APPROVED | REJECTED | SENT_TO_AFISHA | DUPLICATE
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
 
-  @@index([telegramMessageId, telegramChatId])
-  @@index([title, startDate])
-  @@index([status])
-  @@index([conversationId])
-  @@map("afisha_bot_DraftEvent")
-}
-
-// Модель для хранения диалогов с пользователем
-model Conversation {
-  id                Int         @id @default(autoincrement())
-  draftEventId      Int?
-  draftEvent        DraftEvent? @relation
-  telegramChatId    String
-  telegramMessageId String // ID исходного сообщения
-  messages          String      // JSON массив сообщений [{role: "bot"|"user", content: string}]
-  status            String      @default("active") // "active" | "completed" | "cancelled"
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-
-  @@index([draftEventId])
-  @@index([telegramChatId, telegramMessageId])
-  @@index([status])
-  @@map("afisha_bot_Conversation")
-}
-
-// SQLite не поддерживает enums, используем String
-// UserDecision: APPROVED | REJECTED
-
-model LearningDecision {
-  id                Int      @id @default(autoincrement())
-  telegramMessageId String
-  telegramChatId    String
-  originalText      String // полный текст поста (TEXT в SQLite)
-  extractedFields   String // JSON с извлеченными полями (TEXT в SQLite)
-  userDecision      String // UserDecision: APPROVED | REJECTED
-  agentPrediction   String // что предсказал агент перед решением: APPROVED | REJECTED
-  agentConfidence   Float // 0-1
-  agentReasoning    String? // объяснение агента (TEXT в SQLite)
-  createdAt         DateTime @default(now())
-
-  @@index([telegramMessageId, telegramChatId])
-  @@index([userDecision])
-  @@index([createdAt])
-  @@map("afisha_bot_LearningDecision")
-}
-
-// SQLite не поддерживает enums, используем String
-// BotMode: MANUAL | AUTO
-
-model BotSettings {
-  id                  Int      @id @default(autoincrement())
-  mode                String   @default("MANUAL") // BotMode: MANUAL | AUTO
-  confidenceThreshold Float    @default(0.8) // 0-1
-  isRunning           Boolean  @default(false)
-  workerEnabled       Boolean  @default(true) // включен ли Worker для мониторинга каналов
-  updatedAt           DateTime @updatedAt
-
-  @@unique([id])
-  @@map("afisha_bot_BotSettings")
-}
-
-model AdminUser {
-  id        Int      @id @default(autoincrement())
-  username  String   @unique
-  password  String // хеш пароля
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@map("afisha_bot_AdminUser")
+  @@map("agent_PushSubscription")
 }
