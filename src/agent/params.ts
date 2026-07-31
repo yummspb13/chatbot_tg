@@ -24,20 +24,23 @@ export interface AgentParams {
   autoBlackoutHours: number[]; // часы UTC, отключённые модулем обучения
 }
 
+// Дефолт = лучшая ячейка sweep 31.07.2026 (EUR/USD meanrev/limit:
+// единственная комбинация, положительная и на train (+8$), и на test (+60$/9 мес);
+// см. docs/SWEEP-2026-07-31.md — с оговорками о модели лимитных филлов).
 export const DEFAULT_PARAMS: AgentParams = {
-  strategyType: 'momentum',
-  windowSec: 300,
-  thresholdPips: 5,
-  tpPips: 12,
-  slPips: 12,
-  cooldownSec: 300,
+  strategyType: 'meanrev',
+  windowSec: 3600,
+  thresholdPips: 12,
+  tpPips: 10,
+  slPips: 20,
+  cooldownSec: 900,
   units: 1000,
   maxConcurrent: 1,
   maxTradesPerDay: 20,
   maxDailyLossUsd: 5,
   spreadGuardPips: 1.5,
   newsBufferMin: 15,
-  entryMode: 'market',
+  entryMode: 'limit',
   entryTtlSec: 180,
   entryOffsetPips: 0,
   tradeHoursUtc: [],
