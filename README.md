@@ -104,6 +104,11 @@ API-токен: My Account → Manage API Access. На счёте $10 ставь
 
 ## Деплой на Render
 
+Этот сервис — долгоживущий процесс, **Vercel ему не подходит** (там serverless).
+Старый Vercel-проект репозитория будет пытаться собирать каждый пуш и падать —
+`vercel.json` с `git.deploymentEnabled: false` отключает эти авто-сборки;
+окончательно — удалить проект chatbot-tg в дашборде Vercel (Settings → Delete).
+
 `render.yaml` в корне (Blueprint). План `starter` — free-тир засыпает и убивает цикл.
 После деплоя: env-переменные в дашборде, `npx prisma db push` запустить один раз локально
 (в билд не встроено намеренно — БД общая). Graceful: на SIGTERM агент приостанавливается
