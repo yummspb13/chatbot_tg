@@ -1,7 +1,7 @@
 {
   "framework": null,
   "installCommand": "npm install",
-  "buildCommand": "mkdir -p public",
+  "buildCommand": "mkdir -p public && printf 'User-agent: *\\nDisallow: /\\n' > public/robots.txt",
   "outputDirectory": "public",
   "rewrites": [
     { "source": "/:path*", "destination": "/api/proxy?path=:path*" }
