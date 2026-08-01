@@ -76,7 +76,8 @@ export class BinanceFuturesClient {
     try {
       json = JSON.parse(text);
     } catch {
-      throw new Error(`binance ${path}: HTTP ${res.statusCode} не-JSON: ${text.slice(0, 120)}`);
+      // тестнет любит отвечать nginx-страницами (502) — в одну строку и коротко
+      throw new Error(`binance ${path}: HTTP ${res.statusCode} ${text.replace(/\s+/g, ' ').slice(0, 60)}`);
     }
     const err = json as { code?: number; msg?: string };
     if (res.statusCode >= 400 || (typeof err.code === 'number' && err.code < 0)) {

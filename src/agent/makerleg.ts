@@ -92,6 +92,8 @@ export class MakerLeg {
   private lastQuoteAt = 0;
   private lastSnapshotAt = 0;
   private lastError: string | null = null;
+  private errMuteUntil = 0;
+  private errMuted = 0;
 
   constructor(private deps: MakerLegDeps) {
     if (!config.binanceTestnetKey || !config.binanceTestnetSecret) {
@@ -195,7 +197,18 @@ export class MakerLeg {
         backoff = 1000;
       } catch (e) {
         this.lastError = errMsg(e);
-        log.warn(`мейкер tick: ${this.lastError}`, undefined, 'maker');
+        // 5xx тестнета приходят пачками — пишем не чаще раза в минуту, со счётчиком
+        const transient = /HTTP 5\d\d/.test(this.lastError);
+        if (transient && Date.now() < this.errMuteUntil) {
+          this.errMuted += 1;
+        } else {
+          const muted = this.errMuted ? ` (+${this.errMuted} таких же за минуту)` : '';
+          log.warn(`мейкер tick: ${this.lastError}${muted}`, undefined, 'maker');
+          if (transient) {
+            this.errMuteUntil = Date.now() + 60_000;
+            this.errMuted = 0;
+          }
+        }
         await sleep(backoff, this.abort.signal);
         backoff = Math.min(backoff * 2, 60_000);
       }
