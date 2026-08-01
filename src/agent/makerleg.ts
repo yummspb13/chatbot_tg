@@ -114,13 +114,27 @@ export class MakerLeg {
     this.dayKey = new Date().toISOString().slice(0, 10);
     this.tradesToday = await this.deps.store.countTradesToday(MODE, DB_SYMBOL);
     this.realizedToday = await this.deps.store.realizedPnlToday(MODE, DB_SYMBOL);
-    // инвентарь, переживший рестарт — усыновляем
+    // инвентарь, переживший рестарт — усыновляем, восстановив его входные филлы
+    // из недавней истории (иначе у круга не будет цены входа и realizedPnl)
     const pos = await this.client.position(config.binanceSymbol);
     this.posAmt = pos.amt;
     if (pos.amt !== 0) {
-      this.cycle = { openedAt: new Date(), side: pos.amt > 0 ? 'BUY' : 'SELL', fills: [] };
+      const posSide: 'BUY' | 'SELL' = pos.amt > 0 ? 'BUY' : 'SELL';
+      const entries: FuturesFill[] = [];
+      let acc = 0;
+      for (const f of [...prev].reverse()) {
+        if (f.side !== posSide) continue;
+        entries.unshift(f);
+        acc += f.qty;
+        if (acc >= Math.abs(pos.amt) - 1e-9) break;
+      }
+      this.cycle = {
+        openedAt: entries.length ? new Date(entries[0].time) : new Date(),
+        side: posSide,
+        fills: entries,
+      };
       this.inventorySince = Date.now();
-      log.warn(`мейкер: найден инвентарь с прошлого запуска (${pos.amt} BTC) — управляю им`, undefined, 'maker');
+      log.warn(`мейкер: найден инвентарь с прошлого запуска (${pos.amt} BTC, входных филлов ${entries.length}) — управляю им`, undefined, 'maker');
     }
     this.running = true;
     this.loopPromise = this.loop();
@@ -307,13 +321,20 @@ export class MakerLeg {
     const c = this.cycle;
     this.cycle = null;
     this.inventorySince = 0;
+    this.lastExitPrice = null;
     if (!c || !c.fills.length) return;
-    const opens = c.fills.filter(f => f.side === c.side);
-    const closes = c.fills.filter(f => f.side !== c.side);
+    // сторона круга — по ПЕРВОМУ филлу (снимок позиции между синками может
+    // не заметить мгновенный «оба исполнились» и переврать сторону)
+    const side = c.fills[0].side;
+    const opens = c.fills.filter(f => f.side === side);
+    const closes = c.fills.filter(f => f.side !== side);
     const wavg = (fs: FuturesFill[]) => {
       const qty = fs.reduce((s, f) => s + f.qty, 0);
       return qty ? fs.reduce((s, f) => s + f.price * f.qty, 0) / qty : 0;
     };
+    const structureOk = opens.length > 0 && closes.length > 0;
+    const entryP = opens.length ? wavg(opens) : wavg(closes);
+    const exitP = closes.length ? wavg(closes) : entryP;
     const commission = c.fills.reduce((s, f) => s + f.commission, 0);
     const pnl = c.fills.reduce((s, f) => s + f.realizedPnl, 0) - commission;
     const makerFills = c.fills.filter(f => f.maker).length;
@@ -323,9 +344,9 @@ export class MakerLeg {
     const row = await this.deps.store.openTrade({
       mode: MODE,
       symbol: DB_SYMBOL,
-      side: c.side,
+      side,
       units: MAKER_PRESET.units,
-      entryPrice: wavg(opens) / SCALE,
+      entryPrice: entryP / SCALE,
       slPrice: null,
       tpPrice: null,
       openedAt: c.openedAt,
@@ -339,13 +360,15 @@ export class MakerLeg {
       paramsSnapshot: MAKER_PRESET,
     });
     await this.deps.store.closeTradeById(row.id, {
-      exitPrice: wavg(closes) / SCALE,
+      exitPrice: exitP / SCALE,
       closedAt: new Date(),
       pnl,
-      closeReason: makerFills === c.fills.length ? 'TP' : 'SL', // все филлы мейкерские = чистый круг
+      // все филлы мейкерские и структура полная = чистый круг; рваный
+      // (например через рестарт) — помечаем RECONCILED, не приукрашиваем
+      closeReason: !structureOk ? 'RECONCILED' : makerFills === c.fills.length ? 'TP' : 'SL',
     });
 
-    log.info(`⚗️ круг закрыт: ${c.side} ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}$ (комиссии ${commission.toFixed(4)}$, филлов ${c.fills.length}, мейкерских ${makerFills}) · день ${this.realizedToday >= 0 ? '+' : ''}${this.realizedToday.toFixed(3)}$/${this.tradesToday} кругов`, undefined, 'maker');
+    log.info(`⚗️ круг закрыт: ${side} ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}$ (комиссии ${commission.toFixed(4)}$, филлов ${c.fills.length}, мейкерских ${makerFills}) · день ${this.realizedToday >= 0 ? '+' : ''}${this.realizedToday.toFixed(3)}$/${this.tradesToday} кругов`, undefined, 'maker');
     if (this.tradesToday === 1 || Math.abs(pnl) >= 0.05) {
       await this.deps.notify(
         `⚗️ Мейкер-тестнет: круг №${this.tradesToday} за день, ${pnl >= 0 ? '+' : ''}${pnl.toFixed(4)}$ `
