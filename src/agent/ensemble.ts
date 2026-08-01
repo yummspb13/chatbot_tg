@@ -50,6 +50,7 @@ interface VOpen {
   entry: number;
   tp: number;
   sl: number;
+  beLocked?: boolean; // BE-лок: SL уже перенесён на вход
 }
 
 class MemberState {
@@ -214,11 +215,25 @@ export class EnsembleLeg {
           else if (q.ask <= o.tp) { exit = o.tp; reason = 'TP'; }
         }
         if (exit === null) {
+          // BE-лок: пройдена доля пути к TP → SL переносится на вход
+          if (p.beLockFrac > 0 && !o.beLocked) {
+            const trigger = o.entry + (o.tp - o.entry) * p.beLockFrac;
+            const reached = o.side === 'BUY' ? q.bid >= trigger : q.ask <= trigger;
+            if (reached) {
+              o.sl = o.entry;
+              o.beLocked = true;
+            }
+          }
           keep.push(o);
           continue;
         }
         const pnl = (o.side === 'BUY' ? exit - o.entry : o.entry - exit) * m.member.params.units;
-        await this.deps.store.closeTradeById(o.rowId, { exitPrice: exit, closedAt: q.time, pnl, closeReason: reason });
+        await this.deps.store.closeTradeById(o.rowId, {
+          exitPrice: exit,
+          closedAt: q.time,
+          pnl,
+          closeReason: o.beLocked && exit === o.entry ? 'BE' : reason,
+        });
         m.realizedToday += pnl;
       }
       m.open = keep;

@@ -162,6 +162,9 @@ export interface EnsembleMember {
 
 export const ENSEMBLE_MEMBERS: EnsembleMember[] = [
   { key: 'meanrev', params: { ...DEFAULT_PARAMS } },
+  // победитель прогона выходов 01.08.2026 (docs/EXITS-CONCURRENCY-2026-08-01.md):
+  // BE-лок 0.5 пережил слип-стресс только на EUR/USD — доказывает себя виртуально
+  { key: 'meanrev-be', params: { ...DEFAULT_PARAMS, beLockFrac: 0.5 } },
   {
     key: 'spreadw', // лучшая ячейка длинного прогона (docs/IDEAS-2026-07-31.md)
     params: { ...DEFAULT_PARAMS, strategyType: 'spreadweather', windowSec: 7200, thresholdPips: 4, tpPips: 10, slPips: 24, cooldownSec: 900 },

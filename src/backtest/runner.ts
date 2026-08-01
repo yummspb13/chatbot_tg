@@ -29,6 +29,7 @@ export interface MarketSpec {
   priceScale?: number;     // делитель сырой цены: пип 0.0001 остаётся базовой единицей
   pipsMult?: number;       // множитель пип-значений грида (волатильность выше FX)
   paramsBase?: Partial<AgentParams>; // базовые параметры для всех ячеек грида рынка
+  beSlipPips?: number;     // проскальзывание стопа-в-безубытке (BE-лок), pips — пессимизм модели
 }
 
 // Крипто-CFD (Exness BTCUSDm/ETHUSDm) торгуются 24/7. Цена делится на priceScale:
@@ -38,21 +39,23 @@ export interface MarketSpec {
 // pipsMult откалиброван по медианному часовому ходу (июнь–июль 2026:
 // BTC 13.2 пипса, ETH 4.5, EUR/USD 3.7).
 export const MARKETS: Record<string, MarketSpec> = {
-  eurusd: { instrument: 'eurusd', symbol: 'EUR_USD', spreadBase: 1.0, spreadRollover: 2.5, spreadSundayOpen: 2.0 },
-  gbpusd: { instrument: 'gbpusd', symbol: 'GBP_USD', spreadBase: 1.3, spreadRollover: 3.0, spreadSundayOpen: 2.5 },
-  audusd: { instrument: 'audusd', symbol: 'AUD_USD', spreadBase: 1.2, spreadRollover: 2.8, spreadSundayOpen: 2.2 },
-  nzdusd: { instrument: 'nzdusd', symbol: 'NZD_USD', spreadBase: 1.8, spreadRollover: 3.5, spreadSundayOpen: 2.8 },
+  eurusd: { instrument: 'eurusd', symbol: 'EUR_USD', spreadBase: 1.0, spreadRollover: 2.5, spreadSundayOpen: 2.0, beSlipPips: 0.3 },
+  gbpusd: { instrument: 'gbpusd', symbol: 'GBP_USD', spreadBase: 1.3, spreadRollover: 3.0, spreadSundayOpen: 2.5, beSlipPips: 0.4 },
+  audusd: { instrument: 'audusd', symbol: 'AUD_USD', spreadBase: 1.2, spreadRollover: 2.8, spreadSundayOpen: 2.2, beSlipPips: 0.4 },
+  nzdusd: { instrument: 'nzdusd', symbol: 'NZD_USD', spreadBase: 1.8, spreadRollover: 3.5, spreadSundayOpen: 2.8, beSlipPips: 0.5 },
   btcusd: {
     instrument: 'btcusd', symbol: 'BTC_USD',
     spreadBase: 2.5, spreadRollover: 2.5, spreadSundayOpen: 2.5,
     crypto: true, priceScale: 100_000, pipsMult: 4,
     paramsBase: { spreadGuardPips: 5, maxDailyLossUsd: 20 },
+    beSlipPips: 2, // $20/BTC — стоп в крипте скользит ощутимо
   },
   ethusd: {
     instrument: 'ethusd', symbol: 'ETH_USD',
     spreadBase: 3.0, spreadRollover: 3.0, spreadSundayOpen: 3.0,
     crypto: true, priceScale: 10_000, pipsMult: 1.5,
     paramsBase: { spreadGuardPips: 6, maxDailyLossUsd: 10 },
+    beSlipPips: 3,
   },
 };
 
@@ -249,6 +252,13 @@ export function runBacktest(
         reason = 'TIME';
       }
       if (exit !== null) {
+        // стоп-в-безубытке — это стоп: в реальности он проскальзывает; модель
+        // без этой поправки завышает пользу BE-лока на порядок частых $0-выходов
+        if (p.beLocked && reason === 'SL' && exit === p.entry) {
+          const slip = (market.beSlipPips ?? 0) * PIP;
+          exit = p.side === 'BUY' ? exit - slip : exit + slip;
+          reason = 'BE';
+        }
         closePos(p, exit, c.t, reason);
         continue;
       }
