@@ -13,7 +13,9 @@ import { BtReport, gridFor, MARKETS, optimize, prepCandles } from './runner';
 import type { AgentParams, EntryMode, StrategyType } from '../agent/params';
 
 const DEFAULT_PAIRS = ['eurusd', 'gbpusd', 'audusd', 'nzdusd'];
-const STRATS: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo'];
+// straddle исключён (похоронен, docs/IDEAS-2026-08-01.md), spreadweather
+// исключена (ей нужен реальный спред loadM1WithSpread, а sweep ходит по bid)
+const STRATS: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'matrend', 'vprofile'];
 const MODES: EntryMode[] = ['market', 'limit'];
 
 export interface SweepRow {

@@ -43,6 +43,41 @@ export const MARKETS: Record<string, MarketSpec> = {
   gbpusd: { instrument: 'gbpusd', symbol: 'GBP_USD', spreadBase: 1.3, spreadRollover: 3.0, spreadSundayOpen: 2.5, beSlipPips: 0.4 },
   audusd: { instrument: 'audusd', symbol: 'AUD_USD', spreadBase: 1.2, spreadRollover: 2.8, spreadSundayOpen: 2.2, beSlipPips: 0.4 },
   nzdusd: { instrument: 'nzdusd', symbol: 'NZD_USD', spreadBase: 1.8, spreadRollover: 3.5, spreadSundayOpen: 2.8, beSlipPips: 0.5 },
+  // Расширение портфеля 01.08.2026 (калибровка по июню-июлю 2026, спреды Exness
+  // Standard): JPY-пары через priceScale 100 (пип 0.01), золото/индекс через
+  // 10000 (пип $1), нефть через 100 (пип 1 цент). pipsMult — по медианному
+  // часовому ходу против EUR/USD (3.7п): jpy 3.2→1, gbpjpy 7.4→2, gold 6.3→2,
+  // sp500 6.3→2, oil 25→6.
+  usdjpy: {
+    instrument: 'usdjpy', symbol: 'USD_JPY',
+    spreadBase: 1.6, spreadRollover: 3.5, spreadSundayOpen: 2.5,
+    priceScale: 100, pipsMult: 1, beSlipPips: 0.4,
+    paramsBase: { spreadGuardPips: 3, maxDailyLossUsd: 5 },
+  },
+  gbpjpy: {
+    instrument: 'gbpjpy', symbol: 'GBP_JPY',
+    spreadBase: 3.0, spreadRollover: 5.0, spreadSundayOpen: 4.0,
+    priceScale: 100, pipsMult: 2, beSlipPips: 0.6,
+    paramsBase: { spreadGuardPips: 6, maxDailyLossUsd: 10 },
+  },
+  xauusd: {
+    instrument: 'xauusd', symbol: 'XAU_USD',
+    spreadBase: 0.4, spreadRollover: 0.9, spreadSundayOpen: 0.7,
+    priceScale: 10_000, pipsMult: 2, beSlipPips: 0.5,
+    paramsBase: { spreadGuardPips: 1.5, maxDailyLossUsd: 10 },
+  },
+  usa500idxusd: {
+    instrument: 'usa500idxusd', symbol: 'SPX500_USD',
+    spreadBase: 0.7, spreadRollover: 1.5, spreadSundayOpen: 1.0,
+    priceScale: 10_000, pipsMult: 2, beSlipPips: 0.5,
+    paramsBase: { spreadGuardPips: 2, maxDailyLossUsd: 10 },
+  },
+  lightcmdusd: {
+    instrument: 'lightcmdusd', symbol: 'WTICO_USD',
+    spreadBase: 3.5, spreadRollover: 6.0, spreadSundayOpen: 5.0,
+    priceScale: 100, pipsMult: 6, beSlipPips: 1,
+    paramsBase: { spreadGuardPips: 8, maxDailyLossUsd: 20 },
+  },
   btcusd: {
     instrument: 'btcusd', symbol: 'BTC_USD',
     spreadBase: 2.5, spreadRollover: 2.5, spreadSundayOpen: 2.5,
