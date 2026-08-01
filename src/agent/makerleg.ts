@@ -116,6 +116,11 @@ export class MakerLeg {
     this.dayKey = new Date().toISOString().slice(0, 10);
     this.tradesToday = await this.deps.store.countTradesToday(MODE, DB_SYMBOL);
     this.realizedToday = await this.deps.store.realizedPnlToday(MODE, DB_SYMBOL);
+    // дневная пауза переживает рестарт: убыток дня уже за лимитом → не торгуем
+    if (this.realizedToday <= -MAKER_PRESET.maxDailyLossUsd) {
+      this.haltDay = this.dayKey;
+      log.warn(`мейкер: дневной лимит уже выбран (${this.realizedToday.toFixed(2)}$) — пауза до следующего дня UTC`, undefined, 'maker');
+    }
     // инвентарь, переживший рестарт — усыновляем, восстановив его входные филлы
     // из недавней истории (иначе у круга не будет цены входа и realizedPnl)
     const pos = await this.client.position(config.binanceSymbol);

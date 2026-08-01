@@ -56,7 +56,11 @@ export async function refreshCalendar(force = false): Promise<void> {
     failStreak++;
     degraded = true;
     const waitMin = Math.max(1, Math.round(retryDelayMs() / 60_000));
-    log.warn(`календарь новостей недоступен: ${errMsg(e)} (фильтр деградирует до «выключен»; следующая попытка через ~${waitMin} мин)`, undefined, 'news');
+    // фид отдаёт события на всю неделю — пока кэш не пуст, фильтр продолжает работать
+    const state = cache.events.length
+      ? `фильтр работает на кэше от ${new Date(cache.at).toISOString().slice(0, 16)} UTC (${cache.events.length} соб.)`
+      : 'кэша нет — фильтр временно выключен';
+    log.warn(`календарь новостей недоступен: ${errMsg(e)} (${state}; следующая попытка через ~${waitMin} мин)`, undefined, 'news');
   }
 }
 
