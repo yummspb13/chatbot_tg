@@ -28,8 +28,13 @@ export interface EnsembleDeps {
   isNewsBlackout: (ts: Date, bufferMin: number) => boolean;
 }
 
+export interface EnsembleConfig {
+  baseSymbol: string; // EUR_USD | BTC_USD — префикс виртуальных символов в БД
+  crypto: boolean;    // true → риск-модуль не применяет блок FX-выходных (24/7)
+  warmup: { instrument: string; scale: number } | null; // история для прогрева
+}
+
 const MODE = 'virtual';
-const BASE_SYMBOL = 'EUR_USD';
 
 interface VPending {
   side: 'BUY' | 'SELL';
@@ -56,13 +61,13 @@ class MemberState {
   tradesToday = 0;
   realizedToday = 0;
 
-  constructor(public member: EnsembleMember) {
+  constructor(public member: EnsembleMember, private baseSymbol: string) {
     this.strategy = buildStrategy(member.params);
     this.risk = new RiskManager(member.params);
   }
 
   symbol(): string {
-    return `${BASE_SYMBOL}~${this.member.key}`;
+    return `${this.baseSymbol}~${this.member.key}`;
   }
 }
 
@@ -71,8 +76,12 @@ export class EnsembleLeg {
   private running = false;
   private lastQuoteAt = 0;
 
-  constructor(private deps: EnsembleDeps, roster: EnsembleMember[] = ENSEMBLE_MEMBERS) {
-    this.members = roster.map(m => new MemberState(m));
+  constructor(
+    private deps: EnsembleDeps,
+    private cfg: EnsembleConfig = { baseSymbol: 'EUR_USD', crypto: false, warmup: { instrument: 'eurusd', scale: 1 } },
+    roster: EnsembleMember[] = ENSEMBLE_MEMBERS,
+  ) {
+    this.members = roster.map(m => new MemberState(m, cfg.baseSymbol));
   }
 
   isRunning(): boolean {
@@ -94,7 +103,7 @@ export class EnsembleLeg {
     await this.warmupFromHistory();
     this.running = true;
     log.success(
-      `ансамбль запущен: ${this.members.map(m => m.member.key).join(', ')} — виртуально, на живых котировках`,
+      `ансамбль ${this.cfg.baseSymbol} запущен: ${this.members.map(m => m.member.key).join(', ')} — виртуально, на живых котировках`,
       undefined, 'ensemble',
     );
   }
@@ -109,23 +118,26 @@ export class EnsembleLeg {
   /** Прогрев стратегий историей с реальным спредом (echo — 20-дневное расписание,
    *  spreadweather — базовая линия). Сигналы прогрева отбрасываются. */
   private async warmupFromHistory(): Promise<void> {
+    const w = this.cfg.warmup;
+    if (!w) return;
     try {
       const { loadM1WithSpread } = await import('../backtest/data');
       const to = new Date();
       const from = new Date(Date.now() - 26 * 86400_000);
-      const candles = await loadM1WithSpread('eurusd', from, to);
+      const candles = await loadM1WithSpread(w.instrument, from, to);
       if (candles.length < 1440) {
-        log.warn(`ансамбль: мало истории для прогрева (${candles.length}) — холодный старт`, undefined, 'ensemble');
+        log.warn(`ансамбль ${this.cfg.baseSymbol}: мало истории для прогрева (${candles.length}) — холодный старт`, undefined, 'ensemble');
         return;
       }
       for (const c of candles) {
-        const half = (c.sp ?? PIP) / 2;
-        const q: Quote = { symbol: BASE_SYMBOL, bid: c.c - half, ask: c.c + half, time: new Date(c.t) };
+        const mid = c.c / w.scale;
+        const half = ((c.sp ?? PIP) / w.scale) / 2;
+        const q: Quote = { symbol: this.cfg.baseSymbol, bid: mid - half, ask: mid + half, time: new Date(c.t) };
         for (const m of this.members) m.strategy.onQuote(q);
       }
-      log.success(`ансамбль: прогрев ${candles.length} минуток (echo и spreadweather готовы сразу)`, undefined, 'ensemble');
+      log.success(`ансамбль ${this.cfg.baseSymbol}: прогрев ${candles.length} минуток (echo и spreadweather готовы сразу)`, undefined, 'ensemble');
     } catch (e) {
-      log.warn(`ансамбль: прогрев не удался (${errMsg(e)}) — echo даст сигналы через ~5 дней`, undefined, 'ensemble');
+      log.warn(`ансамбль ${this.cfg.baseSymbol}: прогрев не удался (${errMsg(e)}) — echo даст сигналы через ~5 дней`, undefined, 'ensemble');
     }
   }
 
@@ -222,6 +234,7 @@ export class EnsembleLeg {
       plToday: m.realizedToday,
       spreadPips,
       newsBlackout: this.deps.isNewsBlackout(q.time, p.newsBufferMin),
+      crypto: this.cfg.crypto,
     });
     if (!verdict.ok) return;
     const price = round5(sig.side === 'BUY' ? q.bid - p.entryOffsetPips * PIP : q.ask + p.entryOffsetPips * PIP);

@@ -170,6 +170,34 @@ export const ENSEMBLE_MEMBERS: EnsembleMember[] = [
   },
 ];
 
+// Крипто-ансамбль: те же роли на BTC-стриме крипто-ноги (24/7, включая выходные).
+// Пороги ×4 (крипто-sweep), пипс при units=1000 стоит те же $0.10 — сравнимо с FX.
+// echo-btc = копия live-пресета крипто-ноги: виртуальный vs реальный = замер
+// исполнения на крипте; spreadweather на BTC впервые получает данные вообще
+// (в бэктесте не хватило ask-истории).
+export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
+  {
+    key: 'btc-meanrev',
+    params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 32, tpPips: 24, slPips: 80, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+  {
+    key: 'btc-spreadw',
+    params: { ...DEFAULT_PARAMS, strategyType: 'spreadweather', windowSec: 7200, thresholdPips: 16, tpPips: 40, slPips: 96, cooldownSec: 900, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+  {
+    key: 'btc-echo',
+    params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 40, tpPips: 48, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+  {
+    key: 'btc-momentum',
+    params: { ...DEFAULT_PARAMS, strategyType: 'momentum', windowSec: 300, thresholdPips: 32, tpPips: 80, slPips: 80, cooldownSec: 300, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+  {
+    key: 'btc-impulse',
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 8, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+];
+
 export interface CryptoPreset {
   key: 'btc' | 'eth';
   symbol: string;      // внутреннее имя в БД/отчётах

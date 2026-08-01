@@ -27,6 +27,8 @@ import type { TradeStore } from '../store';
 export interface CryptoLegDeps {
   store: TradeStore;
   notify: (text: string) => Promise<void>;
+  /** Кран котировок для крипто-ансамбля: каждый тик BTC уходит и виртуальным стратегиям. */
+  tapQuote?: (q: Quote) => Promise<void>;
 }
 
 interface LegPending {
@@ -209,6 +211,9 @@ export class CryptoLeg {
   }
 
   private async onQuote(q: Quote): Promise<void> {
+    if (this.deps.tapQuote) {
+      await this.deps.tapQuote(q).catch(e => log.warn(`крипто-ансамбль onQuote: ${errMsg(e)}`, undefined, 'ensemble'));
+    }
     await this.rollDay(q.time);
     const t = Date.now();
     if (t - this.lastReconcileAt > 5_000) {

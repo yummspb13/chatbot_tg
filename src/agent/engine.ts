@@ -3,7 +3,7 @@
 
 import { config } from '../config';
 import { errMsg, log } from '../logger';
-import { AgentParams, clampParams, CRYPTO_PRESETS } from './params';
+import { AgentParams, clampParams, CRYPTO_PRESETS, ENSEMBLE_MEMBERS, ENSEMBLE_MEMBERS_BTC } from './params';
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
 import { EnsembleLeg } from './ensemble';
@@ -68,6 +68,7 @@ export class AgentEngine {
   private cryptoLeg: CryptoLeg | null = null;
   private makerLeg: MakerLeg | null = null;
   private ensembleLeg: EnsembleLeg | null = null;
+  private btcEnsemble: EnsembleLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -150,15 +151,32 @@ export class AgentEngine {
     if (config.cryptoWeekend) {
       if (settings.mode === 'live' && config.broker === 'metaapi') {
         try {
+          // крипто-ансамбль питается котировками крипто-ноги (24/7, включая выходные)
+          if (config.ensemble) {
+            this.btcEnsemble = new EnsembleLeg(
+              { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout },
+              { baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 } },
+              ENSEMBLE_MEMBERS_BTC,
+            );
+            await this.btcEnsemble.start();
+          }
+          const btcEns = this.btcEnsemble;
           this.cryptoLeg = new CryptoLeg(
-            { store: this.deps.store, notify: this.deps.notify },
+            {
+              store: this.deps.store,
+              notify: this.deps.notify,
+              tapQuote: btcEns ? q => btcEns.onQuote(q) : undefined,
+            },
             CRYPTO_PRESETS[config.cryptoPreset],
           );
           await this.cryptoLeg.start();
           const st = this.cryptoLeg.status();
           cryptoNote = `\n🧪 Крипто-эксперимент: ${st.symbol} (${st.mt5Symbol}), ${st.strategy} — входы только пока FX закрыт, дневной лимит ${st.maxDailyLossUsd}$. Преимущество бэктестом НЕ подтверждено — сбор форвард-данных на демо.`;
+          if (this.btcEnsemble) cryptoNote += '\n🎼 Крипто-ансамбль: 5 виртуальных стратегий на BTC-стриме, 24/7 (в т.ч. выходные).';
         } catch (e) {
           this.cryptoLeg = null;
+          this.btcEnsemble?.stop();
+          this.btcEnsemble = null;
           cryptoNote = `\n⚠️ Крипто-эксперимент не запустился: ${errMsg(e)}`;
           log.error(`крипто-нога не запустилась: ${errMsg(e)}`, undefined, 'crypto');
         }
@@ -239,6 +257,10 @@ export class AgentEngine {
     if (this.ensembleLeg) {
       this.ensembleLeg.stop();
       this.ensembleLeg = null;
+    }
+    if (this.btcEnsemble) {
+      this.btcEnsemble.stop();
+      this.btcEnsemble = null;
     }
   }
 
@@ -685,8 +707,16 @@ export class AgentEngine {
     };
   }
 
-  /** Сводка ансамбля (null — если выключен/не запущен). */
+  /** Сводка ансамблей — FX и крипто вместе (null — если выключены/не запущены). */
   async ensembleStats() {
-    return this.ensembleLeg ? this.ensembleLeg.stats() : null;
+    const fx = this.ensembleLeg ? await this.ensembleLeg.stats() : null;
+    const btc = this.btcEnsemble ? await this.btcEnsemble.stats() : null;
+    if (!fx && !btc) return null;
+    const ages = [fx?.lastQuoteAgoSec, btc?.lastQuoteAgoSec].filter((x): x is number => typeof x === 'number');
+    return {
+      running: (fx?.running ?? false) || (btc?.running ?? false),
+      lastQuoteAgoSec: ages.length ? Math.min(...ages) : null,
+      members: [...(fx?.members ?? []), ...(btc?.members ?? [])],
+    };
   }
 }
