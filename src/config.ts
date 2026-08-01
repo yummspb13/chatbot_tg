@@ -43,6 +43,10 @@ export const config = {
   binanceTestnetKey: process.env.BINANCE_TESTNET_KEY || null,
   binanceTestnetSecret: process.env.BINANCE_TESTNET_SECRET || null,
   binanceSymbol: process.env.BINANCE_SYMBOL || 'BTCUSDT',
+  // размер цикла и дневной лимит мейкера (деньги фейковые; комиссия ПРОЦЕНТНАЯ —
+  // размер меняет читаемость цифр, но не знак ожидания)
+  makerQtyBtc: num(process.env.MAKER_QTY_BTC, 0.01),
+  makerDailyLossUsd: num(process.env.MAKER_DAILY_LOSS_USD, 50),
 
   // Ансамбль виртуальных стратегий на живых котировках (mode=virtual в БД).
   // Включён по умолчанию в live-режиме; ENSEMBLE=0 — выключить.

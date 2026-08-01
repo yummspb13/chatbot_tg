@@ -76,7 +76,8 @@ export class MakerLeg {
   private client: BinanceFuturesClient;
   private strategy = new StraddleStrategy(MAKER_PRESET);
   private rules: SymbolRules = { tickSize: 0.1, stepSize: 0.001, minQty: 0.001 };
-  private qtyBtc = MAKER_PRESET.units / SCALE;
+  private qtyBtc = config.makerQtyBtc;
+  private dailyLossUsd = config.makerDailyLossUsd;
 
   private fillCursor: number | undefined;
   private cycle: Cycle | null = null;
@@ -116,7 +117,7 @@ export class MakerLeg {
   async start(): Promise<void> {
     if (this.running) return;
     this.rules = await this.client.symbolRules(config.binanceSymbol);
-    this.qtyBtc = Math.max(this.rules.minQty, MAKER_PRESET.units / SCALE);
+    this.qtyBtc = Math.max(this.rules.minQty, config.makerQtyBtc);
     // курсор филлов: всё, что было до старта, не наше
     const prev = await this.client.userTrades(config.binanceSymbol).catch(() => [] as FuturesFill[]);
     this.fillCursor = prev.length ? Math.max(...prev.map(f => f.id)) + 1 : 0;
@@ -124,7 +125,7 @@ export class MakerLeg {
     this.tradesToday = await this.deps.store.countTradesToday(MODE, DB_SYMBOL);
     this.realizedToday = await this.deps.store.realizedPnlToday(MODE, DB_SYMBOL);
     // дневная пауза переживает рестарт: убыток дня уже за лимитом → не торгуем
-    if (this.realizedToday <= -MAKER_PRESET.maxDailyLossUsd) {
+    if (this.realizedToday <= -this.dailyLossUsd) {
       this.haltDay = this.dayKey;
       log.warn(`мейкер: дневной лимит уже выбран (${this.realizedToday.toFixed(2)}$) — пауза до следующего дня UTC`, undefined, 'maker');
     }
@@ -155,7 +156,7 @@ export class MakerLeg {
     log.success(
       `мейкер-нога v2 запущена: Binance Futures TESTNET, ${config.binanceSymbol}, qty ${this.qtyBtc} BTC, `
       + `тихий гейт ≤${MAKER_PRESET.thresholdPips}p/${MAKER_PRESET.windowSec / 60}м, выход с целью ≥$${(MAKER_PRESET.tpPips * PIP * SCALE).toFixed(0)}/BTC, `
-      + `дневной лимит ${MAKER_PRESET.maxDailyLossUsd}$ (фейковые деньги)`,
+      + `дневной лимит ${this.dailyLossUsd}$ (фейковые деньги)`,
       undefined, 'maker',
     );
   }
@@ -378,7 +379,7 @@ export class MakerLeg {
       mode: MODE,
       symbol: DB_SYMBOL,
       side,
-      units: MAKER_PRESET.units,
+      units: Math.round(this.qtyBtc * SCALE),
       entryPrice: entryP / SCALE,
       slPrice: null,
       tpPrice: null,
@@ -409,11 +410,11 @@ export class MakerLeg {
       );
     }
 
-    if (this.realizedToday <= -MAKER_PRESET.maxDailyLossUsd && !this.halted()) {
+    if (this.realizedToday <= -this.dailyLossUsd && !this.halted()) {
       this.haltDay = this.dayKey;
       await this.client.cancelAll(config.binanceSymbol).catch(() => {});
       await this.deps.notify(
-        `⚗️🟠 Мейкер-тестнет: дневной лимит −${MAKER_PRESET.maxDailyLossUsd}$ достигнут (${this.realizedToday.toFixed(2)}$) — пауза до следующего дня UTC.`,
+        `⚗️🟠 Мейкер-тестнет: дневной лимит −${this.dailyLossUsd}$ достигнут (${this.realizedToday.toFixed(2)}$) — пауза до следующего дня UTC.`,
       );
     }
   }
@@ -433,7 +434,7 @@ export class MakerLeg {
       realizedToday: this.realizedToday,
       lastQuoteAgoSec: this.lastQuoteAt ? Math.round((Date.now() - this.lastQuoteAt) / 1000) : null,
       lastError: this.lastError,
-      maxDailyLossUsd: MAKER_PRESET.maxDailyLossUsd,
+      maxDailyLossUsd: this.dailyLossUsd,
     };
   }
 }
