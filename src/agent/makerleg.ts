@@ -61,7 +61,12 @@ export const MAKER_PRESET: AgentParams = {
   autoBlackoutHours: [],
 };
 
-const TIME_STOP_SEC = 900; // инвентарь старше 15 мин закрываем по рынку
+// v2.1 — трёхфазный выход (данные 01.08: 88% потерь v2 = тейкер-комиссии
+// рыночных тайм-стопов): 0–15 мин держим ЦЕЛЕВУЮ котировку; 15–30 мин сдаёмся
+// в цене, но выходим ПАССИВНО (post-only по рынку — мейкер, без рыночного
+// удара); после 30 мин — рыночное закрытие как последняя мера.
+const TARGET_PHASE_SEC = 900;
+const HARD_STOP_SEC = 1800;
 
 interface Cycle {
   openedAt: Date;
@@ -310,20 +315,22 @@ export class MakerLeg {
    *  Котировка переставляется ТОЛЬКО когда цена реально ушла (мёртвая зона),
    *  иначе непрерывный cancel/replace спамит и биржу, и интерфейс владельца. */
   private async manageInventory(bid: number, ask: number, now: number): Promise<void> {
+    const age = this.inventorySince ? now - this.inventorySince : 0;
     const stopHit = this.posUnrealized <= -this.slUsd();
-    const timeHit = this.inventorySince && now - this.inventorySince > TIME_STOP_SEC * 1000;
-    if (stopHit || timeHit || this.halted()) {
+    const hardStop = age > HARD_STOP_SEC * 1000;
+    if (stopHit || hardStop || this.halted()) {
       await this.client.cancelAll(config.binanceSymbol);
       await this.client.marketClose(config.binanceSymbol, this.posAmt);
-      log.warn(`мейкер: инвентарь закрыт по рынку (${stopHit ? 'стоп' : timeHit ? 'тайм-стоп' : 'пауза дня'})`, undefined, 'maker');
+      log.warn(`мейкер: инвентарь закрыт по рынку (${stopHit ? 'стоп' : hardStop ? 'жёсткий тайм-стоп 30м' : 'пауза дня'})`, undefined, 'maker');
       this.lastExitPrice = null;
       this.lastStateSyncAt = 0; // форсируем пересинк на следующем тике
       return;
     }
     const exitSide: 'BUY' | 'SELL' = this.posAmt > 0 ? 'SELL' : 'BUY';
-    // v2: не отдаём инвентарь по текущей цене — котируем выход не ближе целевого
-    // профита от входа (лимитка исполнится, только если рынок дойдёт до цели)
-    const minProfit = MAKER_PRESET.tpPips * PIP * SCALE; // $/BTC
+    // фаза 1 (0–15м): выход не ближе целевого профита; фаза 2 (15–30м): сдаёмся
+    // в цене, но всё ещё пассивно (post-only) — тейкера не платим
+    const givingUp = age > TARGET_PHASE_SEC * 1000;
+    const minProfit = givingUp ? 0 : MAKER_PRESET.tpPips * PIP * SCALE; // $/BTC
     const target = this.priceStr(
       exitSide === 'SELL'
         ? Math.max(ask, this.posEntry + minProfit)
