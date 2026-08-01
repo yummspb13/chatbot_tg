@@ -215,6 +215,12 @@ export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
     key: 'btc-matrend',
     params: { ...DEFAULT_PARAMS, strategyType: 'matrend', windowSec: 7200, thresholdPips: 12, tpPips: 100, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
   },
+  // уровневая школа 01.08.2026 (там же, часть 3): POC/VA прошлой сессии + тренд —
+  // третий честный кандидат (train +88$ / test +200$); коррелирует с matrend
+  {
+    key: 'btc-vprofile',
+    params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 12, tpPips: 100, slPips: 60, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
 ];
 
 export interface CryptoPreset {
