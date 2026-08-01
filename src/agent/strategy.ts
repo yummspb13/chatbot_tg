@@ -706,6 +706,71 @@ export class SessionProfileStrategy implements TradingStrategy {
   }
 }
 
+/**
+ * НАМАЙНЕННОЕ правило btc-21h (docs/MINER-2026-08-01.md): единственный из 1244
+ * гипотез выживший все три сита. BTC, час 21 UTC (ролловер FX — самый тонкий
+ * час суток), EMA-режим «аптренд, цена под медленной» (mid>slow, price<slow) →
+ * LONG. Проверялось с рыночным входом, TP/SL 80/80 пипсов и часовым
+ * тайм-выходом — участник ансамбля обязан жить в той же механике.
+ */
+export class Btc21hRuleStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private recent: { t: number; mid: number }[] = [];
+  private emaMid = NaN;
+  private emaSlow = NaN;
+  private cooldownUntil = 0;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.recent = [];
+    this.emaMid = NaN;
+    this.emaSlow = NaN;
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.recent.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.recent) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+    this.recent.push(m);
+    const cutoff = m.t - 3600_000;
+    while (this.recent.length && this.recent[0].t < cutoff) this.recent.shift();
+
+    const aMid = 2 / (120 + 1);  // EMA 2ч по минутам — как в майнере
+    const aSlow = 2 / (480 + 1); // EMA 8ч
+    this.emaMid = Number.isFinite(this.emaMid) ? this.emaMid + aMid * (m.mid - this.emaMid) : m.mid;
+    this.emaSlow = Number.isFinite(this.emaSlow) ? this.emaSlow + aSlow * (m.mid - this.emaSlow) : m.mid;
+
+    if (m.t < this.cooldownUntil) return null;
+    if (new Date(m.t).getUTCHours() !== 21) return null;
+    const stateMatch = this.emaMid > this.emaSlow && m.mid < this.emaSlow;
+    if (!stateMatch) return null;
+
+    this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+    return {
+      side: 'BUY',
+      tpPips: this.params.tpPips,
+      slPips: this.params.slPips,
+      reason: 'btc-21h: 21:00 UTC, аптренд EMA, цена под медленной (намайненное правило)',
+    };
+  }
+}
+
 export function buildStrategy(params: AgentParams): TradingStrategy {
   switch (params.strategyType) {
     case 'meanrev': return new MeanReversionStrategy(params);
@@ -715,6 +780,7 @@ export function buildStrategy(params: AgentParams): TradingStrategy {
     case 'spreadweather': return new SpreadWeatherStrategy(params);
     case 'matrend': return new MATrendStrategy(params);
     case 'vprofile': return new SessionProfileStrategy(params);
+    case 'btc21h': return new Btc21hRuleStrategy(params);
     default: return new MomentumStrategy(params);
   }
 }

@@ -1,7 +1,7 @@
 // Параметры стратегии и риска. Хранятся в AgentSettings.params (JSON),
 // правятся из Telegram (/agent_params set ...) и PWA — но только в пределах HARD_LIMITS.
 
-export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather' | 'matrend' | 'vprofile';
+export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather' | 'matrend' | 'vprofile' | 'btc21h';
 // ladder — лимитная «лестница»: сигнал разбивается на 3 ступени (цена, −шаг, −2·шаг)
 // с ОБЩИМИ TP/SL от якорной цены; суммарный объём = units, риск не превышает
 // одиночного входа (это НЕ мартингейл: объём зафиксирован до входа).
@@ -90,7 +90,7 @@ function hourList(v: unknown, maxLen: number): number[] {
     : [];
 }
 
-const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile'];
+const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile', 'btc21h'];
 
 export function clampParams(input: unknown): AgentParams {
   const p = (input && typeof input === 'object' ? input : {}) as Partial<AgentParams>;
@@ -130,7 +130,7 @@ export const EDITABLE_KEYS: (keyof AgentParams)[] = [
 
 // Строковые ключи с перечислимыми значениями
 export const ENUM_KEYS: Record<string, string[]> = {
-  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile'],
+  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile', 'btc21h'],
   entryMode: ['market', 'limit', 'ladder'],
 };
 
@@ -220,6 +220,12 @@ export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
   {
     key: 'btc-vprofile',
     params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 12, tpPips: 100, slPips: 60, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+  // намайненное правило btc-21h (docs/MINER-2026-08-01.md): 1 выживший из 1244;
+  // механика как в майнере — РЫНОЧНЫЙ вход, TP/SL 80/80, часовой тайм-выход
+  {
+    key: 'btc-21h',
+    params: { ...DEFAULT_PARAMS, strategyType: 'btc21h', entryMode: 'market', windowSec: 7200, tpPips: 80, slPips: 80, cooldownSec: 900, maxHoldSec: 3600, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
   },
 ];
 

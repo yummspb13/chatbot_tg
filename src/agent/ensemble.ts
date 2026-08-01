@@ -50,6 +50,7 @@ interface VOpen {
   entry: number;
   tp: number;
   sl: number;
+  openedAt: number;   // для тайм-выхода (maxHoldSec)
   beLocked?: boolean; // BE-лок: SL уже перенесён на вход
 }
 
@@ -99,7 +100,7 @@ export class EnsembleLeg {
       const rows = await this.deps.store.listOpenTrades(MODE, m.symbol());
       m.open = rows
         .filter(r => r.tpPrice !== null && r.slPrice !== null)
-        .map(r => ({ rowId: r.id, side: r.side, entry: r.entryPrice, tp: r.tpPrice!, sl: r.slPrice! }));
+        .map(r => ({ rowId: r.id, side: r.side, entry: r.entryPrice, tp: r.tpPrice!, sl: r.slPrice!, openedAt: r.openedAt.getTime() }));
     }
     await this.warmupFromHistory();
     this.running = true;
@@ -195,7 +196,7 @@ export class EnsembleLeg {
           newsDistMin: null,
           paramsSnapshot: p,
         });
-        m.open.push({ rowId: row.id, side: pe.side, entry: pe.price, tp: pe.tp, sl: pe.sl });
+        m.open.push({ rowId: row.id, side: pe.side, entry: pe.price, tp: pe.tp, sl: pe.sl, openedAt: q.time.getTime() });
         m.tradesToday += 1;
       }
       m.pending = keep;
@@ -213,6 +214,11 @@ export class EnsembleLeg {
         } else {
           if (q.ask >= o.sl) { exit = o.sl; reason = 'SL'; }
           else if (q.ask <= o.tp) { exit = o.tp; reason = 'TP'; }
+        }
+        // тайм-выход по рынку (пассивная сторона) — механика намайненных правил
+        if (exit === null && p.maxHoldSec > 0 && now - o.openedAt >= p.maxHoldSec * 1000) {
+          exit = o.side === 'BUY' ? q.bid : q.ask;
+          reason = 'TIME';
         }
         if (exit === null) {
           // BE-лок: пройдена доля пути к TP → SL переносится на вход
@@ -252,6 +258,33 @@ export class EnsembleLeg {
       crypto: this.cfg.crypto,
     });
     if (!verdict.ok) return;
+    if (p.entryMode === 'market') {
+      // рыночный вход: платим спред сразу (механика намайненных правил)
+      const entry = sig.side === 'BUY' ? q.ask : q.bid;
+      const tp = round5(sig.side === 'BUY' ? entry + sig.tpPips * PIP : entry - sig.tpPips * PIP);
+      const sl = round5(sig.side === 'BUY' ? entry - sig.slPips * PIP : entry + sig.slPips * PIP);
+      const row = await this.deps.store.openTrade({
+        mode: MODE,
+        symbol: m.symbol(),
+        side: sig.side,
+        units: p.units,
+        entryPrice: entry,
+        slPrice: sl,
+        tpPrice: tp,
+        openedAt: q.time,
+        costSpread: (q.ask - q.bid) * p.units,
+        costCommission: 0,
+        brokerTradeId: null,
+        spreadAtEntry: spreadPips,
+        volAtEntry: m.strategy.windowRangePips(),
+        hourUtc: q.time.getUTCHours(),
+        newsDistMin: null,
+        paramsSnapshot: p,
+      });
+      m.open.push({ rowId: row.id, side: sig.side, entry, tp, sl, openedAt: q.time.getTime() });
+      m.tradesToday += 1;
+      return;
+    }
     const price = round5(sig.side === 'BUY' ? q.bid - p.entryOffsetPips * PIP : q.ask + p.entryOffsetPips * PIP);
     m.pending.push({
       side: sig.side,
