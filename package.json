@@ -15,7 +15,8 @@
     "backtest": "tsx src/backtest/runner.ts",
     "backtest:data": "tsx src/backtest/data.ts",
     "sweep": "tsx src/backtest/sweep.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "miner": "tsx src/backtest/miner.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.19.0",
