@@ -209,6 +209,12 @@ export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
     key: 'btc-impulse',
     params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 8, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
   },
+  // «учебник» 01.08.2026 (docs/TEXTBOOK-2026-08-01.md): тренд+откат прошёл строгий
+  // фильтр на BTC (train +253$ / test +151$) — второй честный кандидат проекта
+  {
+    key: 'btc-matrend',
+    params: { ...DEFAULT_PARAMS, strategyType: 'matrend', windowSec: 7200, thresholdPips: 12, tpPips: 100, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
 ];
 
 export interface CryptoPreset {
