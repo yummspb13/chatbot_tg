@@ -460,6 +460,15 @@ export function gridFor(
         }
       }
     }
+  } else if (strategyType === 'matrend') {
+    // учебниковая «тренд + откат к EMA»: порог = мин. глубина отката (pips)
+    for (const windowSec of [7200, 14400]) {
+      for (const thresholdPips of [3, 6]) {
+        for (const tpPips of [15, 25]) {
+          grid.push({ ...base, strategyType, entryMode, windowSec, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(20), cooldownSec: 1800, units });
+        }
+      }
+    }
   } else {
     // авторская «эхо часа»: порог = отклонение от внутридневного расписания (pips)
     for (const thresholdPips of [10, 15, 20]) {

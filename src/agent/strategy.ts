@@ -455,6 +455,119 @@ export class SpreadWeatherStrategy implements TradingStrategy {
   }
 }
 
+/**
+ * УЧЕБНИКОВАЯ стратегия «Тренд + откат к скользящей» (matrend).
+ *
+ * Формализация классики, которую реально торгуют трендовые системы:
+ * - режим: средняя EMA (windowSec) против медленной EMA (4×windowSec) и цены —
+ *   торгуем ТОЛЬКО по направлению старшего тренда;
+ * - вход: цена откатилась ПОД среднюю EMA на ≥ thresholdPips (не шум),
+ *   затем вернулась над неё — покупаем откат в аптренде (зеркально в даун);
+ * - выход: обычные TP/SL параметров.
+ * Всё на минутных закрытиях (MinuteSampler) — паритет live/бэктест.
+ */
+export class MATrendStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private emaMid = NaN;
+  private emaSlow = NaN;
+  private wasBelowMid = false; // для BUY-сетапа: цена была под средней
+  private wasAboveMid = false; // для SELL-сетапа
+  private extremePips = 0;     // глубина отката от средней, pips
+  private recent: { t: number; mid: number }[] = [];
+  private cooldownUntil = 0;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.emaMid = NaN;
+    this.emaSlow = NaN;
+    this.wasBelowMid = false;
+    this.wasAboveMid = false;
+    this.extremePips = 0;
+    this.recent = [];
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.recent.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.recent) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+
+    this.recent.push(m);
+    const cutoff = m.t - 3600_000;
+    while (this.recent.length && this.recent[0].t < cutoff) this.recent.shift();
+
+    const nMid = Math.max(2, this.params.windowSec / 60);
+    const aMid = 2 / (nMid + 1);
+    const aSlow = 2 / (nMid * 4 + 1);
+    this.emaMid = Number.isFinite(this.emaMid) ? this.emaMid + aMid * (m.mid - this.emaMid) : m.mid;
+    this.emaSlow = Number.isFinite(this.emaSlow) ? this.emaSlow + aSlow * (m.mid - this.emaSlow) : m.mid;
+
+    const upTrend = this.emaMid > this.emaSlow && m.mid > this.emaSlow;
+    const dnTrend = this.emaMid < this.emaSlow && m.mid < this.emaSlow;
+    const distPips = (m.mid - this.emaMid) / PIP; // >0 над средней
+
+    let sig: Signal | null = null;
+    if (m.t >= this.cooldownUntil) {
+      // возврат над среднюю после отката достаточной глубины — вход по тренду
+      if (upTrend && this.wasBelowMid && distPips >= 0 && this.extremePips >= this.params.thresholdPips) {
+        sig = {
+          side: 'BUY',
+          tpPips: this.params.tpPips,
+          slPips: this.params.slPips,
+          reason: `matrend: откат ${this.extremePips.toFixed(1)}p к EMA в аптренде, возврат`,
+        };
+      } else if (dnTrend && this.wasAboveMid && distPips <= 0 && this.extremePips >= this.params.thresholdPips) {
+        sig = {
+          side: 'SELL',
+          tpPips: this.params.tpPips,
+          slPips: this.params.slPips,
+          reason: `matrend: откат ${this.extremePips.toFixed(1)}p к EMA в даунтренде, возврат`,
+        };
+      }
+    }
+
+    // обновление состояния откатов ПОСЛЕ проверки сигнала; при смене стороны
+    // глубина обнуляется (иначе экскурсия одной стороны засчитается другой)
+    if (distPips < 0) {
+      if (!this.wasBelowMid) {
+        this.wasBelowMid = true;
+        this.wasAboveMid = false;
+        this.extremePips = 0;
+      }
+      this.extremePips = Math.max(this.extremePips, -distPips);
+    } else if (distPips > 0) {
+      if (!this.wasAboveMid) {
+        this.wasAboveMid = true;
+        this.wasBelowMid = false;
+        this.extremePips = 0;
+      }
+      this.extremePips = Math.max(this.extremePips, distPips);
+    }
+    if (sig) {
+      this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+      this.wasBelowMid = false;
+      this.wasAboveMid = false;
+      this.extremePips = 0;
+    }
+    return sig;
+  }
+}
+
 export function buildStrategy(params: AgentParams): TradingStrategy {
   switch (params.strategyType) {
     case 'meanrev': return new MeanReversionStrategy(params);
@@ -462,6 +575,7 @@ export function buildStrategy(params: AgentParams): TradingStrategy {
     case 'echo': return new HourEchoStrategy(params);
     case 'straddle': return new StraddleStrategy(params);
     case 'spreadweather': return new SpreadWeatherStrategy(params);
+    case 'matrend': return new MATrendStrategy(params);
     default: return new MomentumStrategy(params);
   }
 }

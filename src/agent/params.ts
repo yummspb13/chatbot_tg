@@ -1,7 +1,7 @@
 // Параметры стратегии и риска. Хранятся в AgentSettings.params (JSON),
 // правятся из Telegram (/agent_params set ...) и PWA — но только в пределах HARD_LIMITS.
 
-export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather';
+export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather' | 'matrend';
 // ladder — лимитная «лестница»: сигнал разбивается на 3 ступени (цена, −шаг, −2·шаг)
 // с ОБЩИМИ TP/SL от якорной цены; суммарный объём = units, риск не превышает
 // одиночного входа (это НЕ мартингейл: объём зафиксирован до входа).
@@ -90,7 +90,7 @@ function hourList(v: unknown, maxLen: number): number[] {
     : [];
 }
 
-const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather'];
+const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend'];
 
 export function clampParams(input: unknown): AgentParams {
   const p = (input && typeof input === 'object' ? input : {}) as Partial<AgentParams>;
@@ -130,7 +130,7 @@ export const EDITABLE_KEYS: (keyof AgentParams)[] = [
 
 // Строковые ключи с перечислимыми значениями
 export const ENUM_KEYS: Record<string, string[]> = {
-  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather'],
+  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend'],
   entryMode: ['market', 'limit', 'ladder'],
 };
 
