@@ -38,7 +38,11 @@ export const MAKER_PRESET: AgentParams = {
   strategyType: 'straddle',
   windowSec: 600,
   thresholdPips: 12,   // тихий рынок: диапазон 10 мин ≤ 12 пипсов ($120)
-  tpPips: 0,           // выход не по TP, а пассивной котировкой за рынком
+  // v2: выход с ЦЕЛЕВЫМ профитом ≥ вход ± tpPips (3.5 пипса = $35/BTC) вместо
+  // «по текущей цене»: ночь v1 показала, что пассивный выход собирает ровно
+  // ноль цены и платит полные комиссии (157 кругов, все в минус, 93% — fees).
+  // Теперь каждый закрытый лимиткой круг покрывает комиссии (~$25/BTC) с запасом.
+  tpPips: 3.5,
   slPips: 40,          // стоп инвентаря: $400 хода × 0.001 BTC = $0.40
   cooldownSec: 30,
   units: 100,          // 100/100000 = 0.001 BTC — минимальный лот
@@ -146,8 +150,9 @@ export class MakerLeg {
     this.running = true;
     this.loopPromise = this.loop();
     log.success(
-      `мейкер-нога запущена: Binance Futures TESTNET, ${config.binanceSymbol}, qty ${this.qtyBtc} BTC, `
-      + `тихий гейт ≤${MAKER_PRESET.thresholdPips}p/${MAKER_PRESET.windowSec / 60}м, дневной лимит ${MAKER_PRESET.maxDailyLossUsd}$ (фейковые деньги)`,
+      `мейкер-нога v2 запущена: Binance Futures TESTNET, ${config.binanceSymbol}, qty ${this.qtyBtc} BTC, `
+      + `тихий гейт ≤${MAKER_PRESET.thresholdPips}p/${MAKER_PRESET.windowSec / 60}м, выход с целью ≥$${(MAKER_PRESET.tpPips * PIP * SCALE).toFixed(0)}/BTC, `
+      + `дневной лимит ${MAKER_PRESET.maxDailyLossUsd}$ (фейковые деньги)`,
       undefined, 'maker',
     );
   }
@@ -312,7 +317,14 @@ export class MakerLeg {
       return;
     }
     const exitSide: 'BUY' | 'SELL' = this.posAmt > 0 ? 'SELL' : 'BUY';
-    const target = this.priceStr(exitSide === 'SELL' ? ask : bid);
+    // v2: не отдаём инвентарь по текущей цене — котируем выход не ближе целевого
+    // профита от входа (лимитка исполнится, только если рынок дойдёт до цели)
+    const minProfit = MAKER_PRESET.tpPips * PIP * SCALE; // $/BTC
+    const target = this.priceStr(
+      exitSide === 'SELL'
+        ? Math.max(ask, this.posEntry + minProfit)
+        : Math.min(bid, this.posEntry - minProfit),
+    );
     const deadband = 5 * this.rules.tickSize; // не гоняемся за каждым тиком
     const haveOrder = this.openOrderCount > 0 && this.lastExitPrice !== null;
     if (haveOrder && Math.abs(target - (this.lastExitPrice as number)) < deadband) return;
