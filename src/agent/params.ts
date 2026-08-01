@@ -36,7 +36,11 @@ export interface AgentParams {
   newsBufferMin: number;   // блокировка входа ± минут вокруг важных новостей
   entryMode: EntryMode;    // market — платим спред; limit — пассивный вход без спреда (риск неисполнения)
   entryTtlSec: number;     // сколько живёт лимитный вход до отмены
-  entryOffsetPips: number; // отступ лимитной цены от пассивной стороны (0 = ровно bid/ask)
+  entryOffsetPips: number; // отступ лимитной цены от пассивной стороны (0 = ровно bid/ladder-шаг)
+  // Варианты выхода (пока учитываются ТОЛЬКО в бэктесте; в live — после победы в walk-forward):
+  maxHoldSec: number;      // тайм-стоп: закрыть по рынку через N сек, если ни TP, ни SL (0 = выкл)
+  beLockFrac: number;      // брейк-ивен-лок: пройдено frac пути к TP → SL переносится на вход (0 = выкл)
+  partialFrac: number;     // частичная фиксация: половина объёма выходит на frac пути к TP (0 = выкл)
   tradeHoursUtc: number[]; // разрешённые часы UTC для входов (пусто = все)
   autoBlackoutHours: number[]; // часы UTC, отключённые модулем обучения
 }
@@ -60,6 +64,9 @@ export const DEFAULT_PARAMS: AgentParams = {
   entryMode: 'limit',
   entryTtlSec: 180,
   entryOffsetPips: 0,
+  maxHoldSec: 0,
+  beLockFrac: 0,
+  partialFrac: 0,
   tradeHoursUtc: [],
   autoBlackoutHours: [],
 };
@@ -106,6 +113,9 @@ export function clampParams(input: unknown): AgentParams {
     entryMode: p.entryMode === 'limit' || p.entryMode === 'ladder' ? p.entryMode : 'market',
     entryTtlSec: Math.round(clampNum(p.entryTtlSec, 10, 3600, DEFAULT_PARAMS.entryTtlSec)),
     entryOffsetPips: clampNum(p.entryOffsetPips, -2, 50, DEFAULT_PARAMS.entryOffsetPips), // ladder: это шаг ступени (крипте нужно ×4)
+    maxHoldSec: Math.round(clampNum(p.maxHoldSec, 0, 604800, DEFAULT_PARAMS.maxHoldSec)),
+    beLockFrac: clampNum(p.beLockFrac, 0, 0.9, DEFAULT_PARAMS.beLockFrac),
+    partialFrac: clampNum(p.partialFrac, 0, 0.75, DEFAULT_PARAMS.partialFrac),
     tradeHoursUtc: hourList(p.tradeHoursUtc, 24),
     autoBlackoutHours: hourList(p.autoBlackoutHours, 8),
   };
@@ -233,6 +243,9 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       entryMode: 'limit',
       entryTtlSec: 180,
       entryOffsetPips: 0,
+      maxHoldSec: 0,
+      beLockFrac: 0,
+      partialFrac: 0,
       tradeHoursUtc: [],
       autoBlackoutHours: [],
     },
@@ -261,6 +274,9 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       entryMode: 'limit',
       entryTtlSec: 180,
       entryOffsetPips: 0,
+      maxHoldSec: 0,
+      beLockFrac: 0,
+      partialFrac: 0,
       tradeHoursUtc: [],
       autoBlackoutHours: [],
     },

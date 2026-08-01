@@ -118,6 +118,25 @@ interface OpenPos {
   units: number;
   openedAt: number;
   spreadCost: number;
+  beLocked?: boolean; // брейк-ивен-лок уже сработал
+}
+
+/** Открытие позиции с учётом partialFrac: одна цель или две (ближняя + полная). */
+function splitPosition(
+  side: 'BUY' | 'SELL', entry: number, tpPips: number, slPips: number,
+  units: number, openedAt: number, spreadCost: number, partialFrac: number,
+): OpenPos[] {
+  const dir = side === 'BUY' ? 1 : -1;
+  const sl = entry - dir * slPips * PIP;
+  if (partialFrac > 0) {
+    const uNear = Math.max(1, Math.round(units / 2));
+    const uFar = Math.max(1, units - uNear);
+    return [
+      { side, entry, tp: entry + dir * tpPips * partialFrac * PIP, sl, units: uNear, openedAt, spreadCost: spreadCost / 2 },
+      { side, entry, tp: entry + dir * tpPips * PIP, sl, units: uFar, openedAt, spreadCost: spreadCost / 2 },
+    ];
+  }
+  return [{ side, entry, tp: entry + dir * tpPips * PIP, sl, units, openedAt, spreadCost }];
 }
 
 interface PendingBt {
@@ -184,15 +203,20 @@ export function runBacktest(
         }
         const fills = p.side === 'BUY' ? (c.l - half) <= p.price : (c.h + half) >= p.price;
         if (fills) {
-          open.push({
-            side: p.side,
-            entry: p.price,
-            tp: p.tpPrice ?? (p.side === 'BUY' ? p.price + p.tpPips * PIP : p.price - p.tpPips * PIP),
-            sl: p.slPrice ?? (p.side === 'BUY' ? p.price - p.slPips * PIP : p.price + p.slPips * PIP),
-            units: p.units ?? params.units,
-            openedAt: c.t,
-            spreadCost: 0,
-          });
+          if (p.tpPrice !== undefined || p.slPrice !== undefined) {
+            // лестница: абсолютные общие уровни, без частичной фиксации
+            open.push({
+              side: p.side,
+              entry: p.price,
+              tp: p.tpPrice ?? (p.side === 'BUY' ? p.price + p.tpPips * PIP : p.price - p.tpPips * PIP),
+              sl: p.slPrice ?? (p.side === 'BUY' ? p.price - p.slPips * PIP : p.price + p.slPips * PIP),
+              units: p.units ?? params.units,
+              openedAt: c.t,
+              spreadCost: 0,
+            });
+          } else {
+            open.push(...splitPosition(p.side, p.price, p.tpPips, p.slPips, p.units ?? params.units, c.t, 0, params.partialFrac));
+          }
           tradesToday += 1;
         } else {
           still.push(p);
@@ -201,7 +225,9 @@ export function runBacktest(
       pending = still;
     }
 
-    // TP/SL внутри свечи (кроме открытых этой же свечой); оба задеты → пессимистично SL
+    // TP/SL внутри свечи (кроме открытых этой же свечой); оба задеты → пессимистично SL.
+    // Затем варианты выхода: тайм-стоп (по рынку) и брейк-ивен-лок (срабатывает
+    // со СЛЕДУЮЩЕЙ свечи — консервативно занижает пользу лока, не завышает).
     const still: OpenPos[] = [];
     for (const p of open) {
       if (p.openedAt === c.t) { still.push(p); continue; }
@@ -218,8 +244,24 @@ export function runBacktest(
         if (askHigh >= p.sl) { exit = p.sl; reason = 'SL'; }
         else if (askLow <= p.tp) { exit = p.tp; reason = 'TP'; }
       }
-      if (exit !== null) closePos(p, exit, c.t, reason);
-      else still.push(p);
+      if (exit === null && params.maxHoldSec > 0 && c.t - p.openedAt >= params.maxHoldSec * 1000) {
+        exit = p.side === 'BUY' ? c.c - half : c.c + half;
+        reason = 'TIME';
+      }
+      if (exit !== null) {
+        closePos(p, exit, c.t, reason);
+        continue;
+      }
+      if (params.beLockFrac > 0 && !p.beLocked) {
+        const dir = p.side === 'BUY' ? 1 : -1;
+        const trigger = p.entry + dir * (p.tp - p.entry) * params.beLockFrac;
+        const reached = p.side === 'BUY' ? (c.h - half) >= trigger : (c.l + half) <= trigger;
+        if (reached) {
+          p.sl = p.entry; // дальше хуже безубытка не будет
+          p.beLocked = true;
+        }
+      }
+      still.push(p);
     }
     open = still;
 
@@ -278,15 +320,7 @@ export function runBacktest(
       pending.push({ side: sig.side, price, tpPips: sig.tpPips, slPips: sig.slPips, placedAt: c.t });
     } else {
       const entry = sig.side === 'BUY' ? ask : bid;
-      open.push({
-        side: sig.side,
-        entry,
-        tp: sig.side === 'BUY' ? entry + sig.tpPips * PIP : entry - sig.tpPips * PIP,
-        sl: sig.side === 'BUY' ? entry - sig.slPips * PIP : entry + sig.slPips * PIP,
-        units: params.units,
-        openedAt: c.t,
-        spreadCost: spreadPips * PIP * params.units,
-      });
+      open.push(...splitPosition(sig.side, entry, sig.tpPips, sig.slPips, params.units, c.t, spreadPips * PIP * params.units, params.partialFrac));
       tradesToday += 1;
     }
   }

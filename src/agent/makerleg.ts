@@ -54,6 +54,9 @@ export const MAKER_PRESET: AgentParams = {
   entryMode: 'limit',
   entryTtlSec: 60,
   entryOffsetPips: 0,
+  maxHoldSec: 0,
+  beLockFrac: 0,
+  partialFrac: 0,
   tradeHoursUtc: [],
   autoBlackoutHours: [],
 };
