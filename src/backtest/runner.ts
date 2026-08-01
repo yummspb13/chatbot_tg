@@ -460,6 +460,15 @@ export function gridFor(
         }
       }
     }
+  } else if (strategyType === 'vprofile') {
+    // учебниковый «профиль сессии»: порог = зона касания уровня (pips)
+    for (const thresholdPips of [3, 6]) {
+      for (const tpPips of [15, 25]) {
+        for (const slPips of [15, 25]) {
+          grid.push({ ...base, strategyType, entryMode, windowSec: 7200, thresholdPips: m(thresholdPips), tpPips: m(tpPips), slPips: m(slPips), cooldownSec: 1800, units });
+        }
+      }
+    }
   } else if (strategyType === 'matrend') {
     // учебниковая «тренд + откат к EMA»: порог = мин. глубина отката (pips)
     for (const windowSec of [7200, 14400]) {

@@ -568,6 +568,144 @@ export class MATrendStrategy implements TradingStrategy {
   }
 }
 
+/**
+ * УЧЕБНИКОВАЯ стратегия «Профиль сессии» (vprofile, Market Profile по времени).
+ *
+ * По минуткам ПРОШЛОЙ UTC-сессии строится профиль «сколько минут цена провела
+ * в каждом 2-пипсовом бине»: POC (самый населённый бин) и границы 70%-зоны
+ * (VAH/VAL). Сегодня торгуются ОТКАТЫ к этим уровням строго по направлению
+ * старшего тренда (EMA windowSec против 4×windowSec, как в matrend):
+ * аптренд + цена пришла сверху в зону уровня ±thresholdPips → BUY (зеркально
+ * в даунтренде). Один вход на уровень в день. Объём не нужен — оригинальный
+ * Market Profile временной, что честно для FX, где объёма не существует.
+ */
+export class SessionProfileStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private recent: { t: number; mid: number }[] = [];
+  private emaMid = NaN;
+  private emaSlow = NaN;
+  private dayKey = '';
+  private bins = new Map<number, number>(); // бин → минут (текущая сессия)
+  private levels: { name: string; price: number }[] = []; // POC/VAH/VAL прошлой сессии
+  private usedLevels = new Set<string>();
+  private prevMid = NaN;
+  private cooldownUntil = 0;
+
+  private static BIN_PIPS = 2;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.recent = [];
+    this.emaMid = NaN;
+    this.emaSlow = NaN;
+    this.dayKey = '';
+    this.bins = new Map();
+    this.levels = [];
+    this.usedLevels = new Set();
+    this.prevMid = NaN;
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.recent.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.recent) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  /** POC и границы зоны, накрывающей 70% минут сессии. */
+  private computeLevels(): { name: string; price: number }[] {
+    if (this.bins.size < 30) return []; // куцая сессия — уровней нет
+    const entries = [...this.bins.entries()].sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    const binPrice = (b: number) => b * SessionProfileStrategy.BIN_PIPS * PIP;
+    let acc = 0;
+    const inVa: number[] = [];
+    for (const [bin, n] of entries) {
+      inVa.push(bin);
+      acc += n;
+      if (acc >= total * 0.7) break;
+    }
+    return [
+      { name: 'POC', price: binPrice(entries[0][0]) },
+      { name: 'VAH', price: binPrice(Math.max(...inVa)) },
+      { name: 'VAL', price: binPrice(Math.min(...inVa)) },
+    ];
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+
+    this.recent.push(m);
+    const cutoff = m.t - 3600_000;
+    while (this.recent.length && this.recent[0].t < cutoff) this.recent.shift();
+
+    const nMid = Math.max(2, this.params.windowSec / 60);
+    const aMid = 2 / (nMid + 1);
+    const aSlow = 2 / (nMid * 4 + 1);
+    this.emaMid = Number.isFinite(this.emaMid) ? this.emaMid + aMid * (m.mid - this.emaMid) : m.mid;
+    this.emaSlow = Number.isFinite(this.emaSlow) ? this.emaSlow + aSlow * (m.mid - this.emaSlow) : m.mid;
+
+    // смена UTC-сессии: профиль дня уходит в уровни, счётчики обнуляются
+    const day = new Date(m.t).toISOString().slice(0, 10);
+    if (day !== this.dayKey) {
+      if (this.dayKey) this.levels = this.computeLevels();
+      this.dayKey = day;
+      this.bins = new Map();
+      this.usedLevels = new Set();
+    }
+    const bin = Math.round(m.mid / (SessionProfileStrategy.BIN_PIPS * PIP));
+    this.bins.set(bin, (this.bins.get(bin) ?? 0) + 1);
+
+    const prev = this.prevMid;
+    this.prevMid = m.mid;
+    if (!Number.isFinite(prev) || !this.levels.length || m.t < this.cooldownUntil) return null;
+
+    const upTrend = this.emaMid > this.emaSlow && m.mid > this.emaSlow;
+    const dnTrend = this.emaMid < this.emaSlow && m.mid < this.emaSlow;
+    if (!upTrend && !dnTrend) return null;
+
+    const tol = this.params.thresholdPips * PIP;
+    for (const lv of this.levels) {
+      if (this.usedLevels.has(lv.name)) continue;
+      const inZone = Math.abs(m.mid - lv.price) <= tol;
+      if (!inZone) continue;
+      // подход к уровню против хода тренда: сверху в аптренде, снизу в даунтренде
+      if (upTrend && prev > lv.price + tol) {
+        this.usedLevels.add(lv.name);
+        this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+        return {
+          side: 'BUY',
+          tpPips: this.params.tpPips,
+          slPips: this.params.slPips,
+          reason: `vprofile: откат к ${lv.name} прошлой сессии в аптренде`,
+        };
+      }
+      if (dnTrend && prev < lv.price - tol) {
+        this.usedLevels.add(lv.name);
+        this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+        return {
+          side: 'SELL',
+          tpPips: this.params.tpPips,
+          slPips: this.params.slPips,
+          reason: `vprofile: откат к ${lv.name} прошлой сессии в даунтренде`,
+        };
+      }
+    }
+    return null;
+  }
+}
+
 export function buildStrategy(params: AgentParams): TradingStrategy {
   switch (params.strategyType) {
     case 'meanrev': return new MeanReversionStrategy(params);
@@ -576,6 +714,7 @@ export function buildStrategy(params: AgentParams): TradingStrategy {
     case 'straddle': return new StraddleStrategy(params);
     case 'spreadweather': return new SpreadWeatherStrategy(params);
     case 'matrend': return new MATrendStrategy(params);
+    case 'vprofile': return new SessionProfileStrategy(params);
     default: return new MomentumStrategy(params);
   }
 }
