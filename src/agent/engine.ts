@@ -8,6 +8,7 @@ import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
 import { EnsembleLeg } from './ensemble';
 import { MakerLeg } from './makerleg';
+import { MarketsLeg } from './marketsleg';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -69,6 +70,7 @@ export class AgentEngine {
   private makerLeg: MakerLeg | null = null;
   private ensembleLeg: EnsembleLeg | null = null;
   private btcEnsemble: EnsembleLeg | null = null;
+  private marketsLeg: MarketsLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -197,6 +199,19 @@ export class AgentEngine {
       }
     }
 
+    if (config.ensemble && config.markets && settings.mode === 'live'
+      && config.broker === 'metaapi' && config.metaapiToken && config.metaapiAccountId) {
+      try {
+        this.marketsLeg = new MarketsLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
+        await this.marketsLeg.start();
+        cryptoNote += '\n🌍 Мультирынок: золото, нефть, GBPJPY, S&P500 — 5 победителей свипа торгуют виртуально (/agent_ensemble).';
+      } catch (e) {
+        this.marketsLeg = null;
+        cryptoNote += `\n⚠️ Мультирыночная нога не запустилась: ${errMsg(e)}`;
+        log.error(`мультирыночная нога не запустилась: ${errMsg(e)}`, undefined, 'markets');
+      }
+    }
+
     if (config.makerTestnet) {
       if (config.binanceTestnetKey && config.binanceTestnetSecret) {
         try {
@@ -261,6 +276,10 @@ export class AgentEngine {
     if (this.btcEnsemble) {
       this.btcEnsemble.stop();
       this.btcEnsemble = null;
+    }
+    if (this.marketsLeg) {
+      await this.marketsLeg.stop().catch(e => log.warn(`остановка мультирыночной ноги: ${errMsg(e)}`, undefined, 'markets'));
+      this.marketsLeg = null;
     }
   }
 
@@ -704,19 +723,23 @@ export class AgentEngine {
         ? this.makerLeg.status()
         : { enabled: config.makerTestnet, running: false },
       ensemble: { enabled: config.ensemble, running: this.ensembleLeg?.isRunning() ?? false },
+      markets: this.marketsLeg
+        ? this.marketsLeg.summary()
+        : { enabled: config.ensemble && config.markets, running: false },
     };
   }
 
-  /** Сводка ансамблей — FX и крипто вместе (null — если выключены/не запущены). */
+  /** Сводка ансамблей — FX, крипто и мультирынок вместе (null — если выключены/не запущены). */
   async ensembleStats() {
     const fx = this.ensembleLeg ? await this.ensembleLeg.stats() : null;
     const btc = this.btcEnsemble ? await this.btcEnsemble.stats() : null;
-    if (!fx && !btc) return null;
-    const ages = [fx?.lastQuoteAgoSec, btc?.lastQuoteAgoSec].filter((x): x is number => typeof x === 'number');
+    const mkt = this.marketsLeg ? await this.marketsLeg.stats() : null;
+    if (!fx && !btc && !mkt) return null;
+    const ages = [fx?.lastQuoteAgoSec, btc?.lastQuoteAgoSec, mkt?.lastQuoteAgoSec].filter((x): x is number => typeof x === 'number');
     return {
-      running: (fx?.running ?? false) || (btc?.running ?? false),
+      running: (fx?.running ?? false) || (btc?.running ?? false) || (mkt?.running ?? false),
       lastQuoteAgoSec: ages.length ? Math.min(...ages) : null,
-      members: [...(fx?.members ?? []), ...(btc?.members ?? [])],
+      members: [...(fx?.members ?? []), ...(btc?.members ?? []), ...(mkt?.members ?? [])],
     };
   }
 }

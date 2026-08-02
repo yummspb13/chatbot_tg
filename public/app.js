@@ -74,6 +74,10 @@ async function refreshStatus() {
     if (mk && mk.running) {
       notes.push(`⚗️ мейкер-тестнет: ${mk.haltedToday ? 'пауза (лимит дня)' : mk.quiet ? 'котирует' : 'ждёт тишины'} · день ${fmtUsd(mk.realizedToday)} (${mk.tradesToday} кругов)`);
     }
+    const mmk = engine.markets;
+    if (mmk && mmk.running && mmk.markets) {
+      notes.push(`🌍 мультирынок: ${mmk.markets.join(', ')}${mmk.lastQuoteAgoSec === null ? ' (рынки закрыты)' : ''}`);
+    }
     if (engine.killSwitchAt) notes.push(`kill-switch: ${engine.killSwitchAt}`);
     if (engine.lastError) notes.push(`ошибка: ${engine.lastError}`);
     if (news.degraded) notes.push('календарь новостей недоступен');

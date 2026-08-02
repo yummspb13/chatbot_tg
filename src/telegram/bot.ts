@@ -151,6 +151,13 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
     } else if (m && m.enabled && !m.running) {
       lines.push('⚗️ Мейкер-тестнет: включён, но не запущен (нужны BINANCE_TESTNET_KEY/SECRET)');
     }
+    const mk = s.markets;
+    if (mk && mk.running && 'markets' in mk) {
+      lines.push(
+        `🌍 Мультирынок (виртуально): ${mk.markets.join(', ')}`
+        + (mk.lastQuoteAgoSec !== null ? ` · котировка ${mk.lastQuoteAgoSec}с назад` : ' · рынки закрыты — котировок нет'),
+      );
+    }
     lines.push(`Новости: ${news.degraded ? '⚠️ фид недоступен' : `${news.events} high-impact на неделе`}`);
     for (const n of next3) lines.push(`  · ${n.date.toISOString().slice(5, 16).replace('T', ' ')} UTC ${n.country}: ${n.title}`);
     await ctx.reply(lines.join('\n'));

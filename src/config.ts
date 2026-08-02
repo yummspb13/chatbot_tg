@@ -52,6 +52,10 @@ export const config = {
   // Включён по умолчанию в live-режиме; ENSEMBLE=0 — выключить.
   ensemble: process.env.ENSEMBLE !== '0',
 
+  // Мультирыночная виртуальная нога: золото/нефть/GBPJPY/S&P500 (победители
+  // свипа 01.08) на том же MT5-счёте. Требует ансамбль; MARKETS=0 — выключить.
+  markets: process.env.MARKETS !== '0',
+
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
   simStartBalance: num(process.env.SIM_START_BALANCE, 50),

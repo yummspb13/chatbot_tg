@@ -229,6 +229,72 @@ export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
   },
 ];
 
+// ------------------------------------------------------------------
+// Мультирыночная виртуальная нога (включается вместе с ансамблем, MARKETS=0 —
+// выключить): пять победителей свипа пяти рынков 01.08.2026
+// (docs/PORTFOLIO-SWEEP-2026-08-01.md) торгуют виртуально на живых котировках
+// своих рынков с того же MT5-счёта. Параметры = победившие walk-forward-ячейки,
+// без изменений; pips — в масштабе priceScale рынка, $0.10/пип при units=1000.
+// newsBufferMin оставлен дефолтный (15), как у FX-ансамбля: бэктест новости не
+// фильтровал, но виртуальному форварду консервативность не вредит.
+
+export const ENSEMBLE_MEMBERS_GOLD: EnsembleMember[] = [
+  // XAUUSD impulse/limit: train +34$ / test +60$, DD 46$ — лучший по издержкам рынок
+  {
+    key: 'gold-impulse',
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 4, tpPips: 20, slPips: 40, cooldownSec: 900, spreadGuardPips: 1.5, maxDailyLossUsd: 10 },
+  },
+];
+
+export const ENSEMBLE_MEMBERS_OIL: EnsembleMember[] = [
+  // WTI impulse/limit: train +43$ / test +344$, но DD 342$ — главный кандидат на
+  // то, что форвард его съест; наблюдаем именно поэтому
+  {
+    key: 'oil-impulse',
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20 },
+  },
+];
+
+export const ENSEMBLE_MEMBERS_GBPJPY: EnsembleMember[] = [
+  // GBPJPY meanrev/limit: train +26$ / test +69$, wr 78%
+  {
+    key: 'gj-meanrev',
+    params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 16, tpPips: 12, slPips: 40, cooldownSec: 900, spreadGuardPips: 6, maxDailyLossUsd: 10 },
+  },
+  // GBPJPY vprofile/limit: train +75$ / test +49$ — лучшее ожидание портфеля (+0.24$/сд)
+  {
+    key: 'gj-vprofile',
+    params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 6, tpPips: 30, slPips: 50, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 10 },
+  },
+];
+
+export const ENSEMBLE_MEMBERS_SP500: EnsembleMember[] = [
+  // S&P500 matrend/limit: train +8$ / test +26$ — выборка маленькая (165 сд),
+  // но это часть трендового кластера S&P, ради которого рынок и взят
+  {
+    key: 'sp-matrend',
+    params: { ...DEFAULT_PARAMS, strategyType: 'matrend', windowSec: 14400, thresholdPips: 12, tpPips: 30, slPips: 40, cooldownSec: 1800, spreadGuardPips: 2, maxDailyLossUsd: 10 },
+  },
+];
+
+export interface MarketLegSpec {
+  key: string;              // короткое имя рынка в логах/статусе
+  baseSymbol: string;       // символ в БД: виртуальные сделки пишутся как BASE~member
+  mt5Symbol: string;        // имя символа у Exness Standard
+  priceScale: number;       // делитель цены → пипс-пространство бэктеста
+  warmupInstrument: string; // история Dukascopy для прогрева (vprofile/matrend/спред)
+  roster: EnsembleMember[];
+}
+
+// Имена и digits проверены по спецификациям счёта 02.08.2026:
+// XAUUSDm/USOILm/GBPJPYm digits 3, US500m digits 2. priceScale — как в бэктесте.
+export const MARKET_LEGS: MarketLegSpec[] = [
+  { key: 'gold', baseSymbol: 'XAU_USD', mt5Symbol: 'XAUUSDm', priceScale: 10_000, warmupInstrument: 'xauusd', roster: ENSEMBLE_MEMBERS_GOLD },
+  { key: 'oil', baseSymbol: 'WTICO_USD', mt5Symbol: 'USOILm', priceScale: 100, warmupInstrument: 'lightcmdusd', roster: ENSEMBLE_MEMBERS_OIL },
+  { key: 'gbpjpy', baseSymbol: 'GBP_JPY', mt5Symbol: 'GBPJPYm', priceScale: 100, warmupInstrument: 'gbpjpy', roster: ENSEMBLE_MEMBERS_GBPJPY },
+  { key: 'sp500', baseSymbol: 'SPX500_USD', mt5Symbol: 'US500m', priceScale: 10_000, warmupInstrument: 'usa500idxusd', roster: ENSEMBLE_MEMBERS_SP500 },
+];
+
 export interface CryptoPreset {
   key: 'btc' | 'eth';
   symbol: string;      // внутреннее имя в БД/отчётах
