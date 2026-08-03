@@ -92,6 +92,47 @@ export const MARKETS: Record<string, MarketSpec> = {
     paramsBase: { spreadGuardPips: 6, maxDailyLossUsd: 10 },
     beSlipPips: 3,
   },
+  // Волна калибровки 03.08.2026 (docs/CALIBRATION-2026-08-03.md, живые спреды
+  // Exness с нашего счёта): шестёрка на свип — два лучших индекса в истории
+  // проекта (Nikkei ratio 0.018, DAX 0.024), два JPY-кросса, комодо-кросс и
+  // сюрприз калибровки USDZAR. Спреды заложены ×1.5 от снятого снапшота —
+  // консервативный запас на расширение в нерабочие часы.
+  jp225: {
+    instrument: 'jpnidxjpy', symbol: 'JP225_JPY',
+    spreadBase: 1.0, spreadRollover: 2.0, spreadSundayOpen: 1.5,
+    priceScale: 100_000, pipsMult: 10, beSlipPips: 0.5, // пип = 10 пунктов индекса
+    paramsBase: { spreadGuardPips: 3, maxDailyLossUsd: 15 },
+  },
+  de30: {
+    instrument: 'deuidxeur', symbol: 'DE30_EUR',
+    spreadBase: 0.25, spreadRollover: 0.6, spreadSundayOpen: 0.4,
+    priceScale: 100_000, pipsMult: 2, beSlipPips: 0.3, // пип = 10 пунктов индекса
+    paramsBase: { spreadGuardPips: 1, maxDailyLossUsd: 10 },
+  },
+  audjpy: {
+    instrument: 'audjpy', symbol: 'AUD_JPY',
+    spreadBase: 1.7, spreadRollover: 3.5, spreadSundayOpen: 2.5,
+    priceScale: 100, pipsMult: 3, beSlipPips: 0.5,
+    paramsBase: { spreadGuardPips: 4, maxDailyLossUsd: 10 },
+  },
+  eurjpy: {
+    instrument: 'eurjpy', symbol: 'EUR_JPY',
+    spreadBase: 2.4, spreadRollover: 4.5, spreadSundayOpen: 3.5,
+    priceScale: 100, pipsMult: 4, beSlipPips: 0.5,
+    paramsBase: { spreadGuardPips: 5, maxDailyLossUsd: 10 },
+  },
+  gbpnzd: {
+    instrument: 'gbpnzd', symbol: 'GBP_NZD',
+    spreadBase: 3.6, spreadRollover: 7.0, spreadSundayOpen: 5.5,
+    priceScale: 1, pipsMult: 6, beSlipPips: 0.8,
+    paramsBase: { spreadGuardPips: 8, maxDailyLossUsd: 15 },
+  },
+  usdzar: {
+    instrument: 'usdzar', symbol: 'USD_ZAR',
+    priceScale: 10, pipsMult: 7, beSlipPips: 1, // пип = 0.001 ранда
+    spreadBase: 6.0, spreadRollover: 12.0, spreadSundayOpen: 9.0,
+    paramsBase: { spreadGuardPips: 12, maxDailyLossUsd: 15 },
+  },
 };
 
 /** Приведение сырых цен рынка к масштабу, где пип 0.0001 осмыслен (крипта). */
