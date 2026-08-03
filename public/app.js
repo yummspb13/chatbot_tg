@@ -43,6 +43,11 @@ function showApp() {
   clearInterval(dataTimer);
   statusTimer = setInterval(refreshStatus, 5000);
   dataTimer = setInterval(refreshData, 30000);
+  const tm = $('tradesMode');
+  if (tm && !tm.dataset.wired) {
+    tm.dataset.wired = '1';
+    tm.addEventListener('change', refreshData);
+  }
 }
 
 async function refreshStatus() {
@@ -92,17 +97,20 @@ async function refreshStatus() {
 
 async function refreshData() {
   try {
-    const [{ points }, { trades }, { report, text }, { proposals }, { buckets }, { logs }, { ensemble }] = await Promise.all([
+    const tradesMode = ($('tradesMode') && $('tradesMode').value) || 'live';
+    const [{ points }, { trades }, { report, text }, { proposals }, { buckets }, { logs }, { ensemble }, virt] = await Promise.all([
       api('/equity?hours=48'),
-      api('/trades?limit=60'),
+      api('/trades?limit=60' + (tradesMode === 'virtual' ? '&mode=virtual' : '')),
       api('/report'),
       api('/proposals'),
       api('/hour-stats'),
       api('/logs?limit=60'),
       api('/ensemble'),
+      api('/virtual/pnl?hours=168'),
     ]);
     drawEquity(points);
-    drawTrades(trades);
+    drawVirtualCurve(virt.points);
+    drawTrades(trades, tradesMode);
     $('reportWindowLabel').textContent = `(${report.windowMin} мин)`;
     $('reportText').textContent = text;
     drawProposals(proposals);
@@ -166,21 +174,55 @@ function drawEquity(points) {
   }, data, el);
 }
 
-function drawTrades(trades) {
+function drawTrades(trades, mode) {
   const tbody = $('tradesTable').querySelector('tbody');
   tbody.innerHTML = trades.map((t) => {
     const exit = t.exitPrice ? t.exitPrice.toFixed(5) : '…';
     const pnl = t.pnl === null ? '<span class="muted">открыта</span>' : fmtUsd(t.pnl);
     const cost = ((t.costSpread || 0) + (t.costCommission || 0)).toFixed(2) + '$';
+    // для виртуалов вместо объёма показываем участника (symbol = BASE~ключ)
+    const who = mode === 'virtual'
+      ? `<span class="muted">${(t.symbol || '').split('~')[1] || t.symbol}</span>`
+      : t.units;
     return `<tr>
       <td>${t.id}</td>
-      <td>${t.side === 'BUY' ? '🟢 BUY' : '🔴 SELL'} ${t.units}</td>
+      <td>${t.side === 'BUY' ? '🟢 BUY' : '🔴 SELL'} ${who}</td>
       <td>${t.entryPrice.toFixed(5)} → ${exit}</td>
       <td>${pnl}</td>
       <td class="muted">${cost}</td>
       <td class="muted">${t.closeReason || ''}</td>
     </tr>`;
   }).join('');
+}
+
+let virtualPlot = null;
+function drawVirtualCurve(points) {
+  const el = $('virtualChart');
+  if (!el) return;
+  if (!points || !points.length) {
+    el.textContent = 'Пока нет закрытых виртуальных сделок';
+    return;
+  }
+  const xs = points.map((p) => new Date(p.ts).getTime() / 1000);
+  const cum = points.map((p) => p.cum);
+  const data = [xs, cum];
+  if (virtualPlot) {
+    virtualPlot.setData(data);
+    return;
+  }
+  el.textContent = '';
+  virtualPlot = new uPlot({
+    width: Math.min(el.clientWidth || 320, 660),
+    height: 140,
+    series: [
+      {},
+      { label: 'PnL виртуалов', stroke: '#c9a227', width: 2 },
+    ],
+    axes: [
+      { stroke: '#8899b4', grid: { stroke: '#22304d' } },
+      { stroke: '#8899b4', grid: { stroke: '#22304d' } },
+    ],
+  }, data, el);
 }
 
 function drawProposals(proposals) {

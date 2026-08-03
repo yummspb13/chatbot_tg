@@ -58,6 +58,8 @@
     <section class="card">
       <h2>Кривая капитала <span class="muted small">(48ч)</span></h2>
       <div id="equityChart"></div>
+      <h2 style="margin-top:14px">Виртуальный портфель <span class="muted small">(PnL нарастающим, 7д — бумага, не деньги)</span></h2>
+      <div id="virtualChart"></div>
     </section>
 
     <section class="card">
@@ -66,10 +68,15 @@
     </section>
 
     <section class="card">
-      <h2>Сделки <span class="muted small">(последние)</span></h2>
+      <h2>Сделки <span class="muted small">(последние)</span>
+        <select id="tradesMode" class="small" style="float:right">
+          <option value="live">живые</option>
+          <option value="virtual">виртуальные</option>
+        </select>
+      </h2>
       <div class="tableWrap">
         <table id="tradesTable">
-          <thead><tr><th>#</th><th>Сторона</th><th>Вход→Выход</th><th>PnL</th><th>Издержки</th><th>Закрытие</th></tr></thead>
+          <thead><tr><th>#</th><th>Кто/Сторона</th><th>Вход→Выход</th><th>PnL</th><th>Издержки</th><th>Закрытие</th></tr></thead>
           <tbody></tbody>
         </table>
       </div>

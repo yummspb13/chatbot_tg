@@ -67,7 +67,9 @@ export function buildApiRouter(deps: ApiDeps): Router {
     try {
       const settings = await deps.store.getSettings();
       const limit = Math.min(Number(req.query.limit) || 100, 500);
-      res.json({ trades: await deps.store.listTrades(settings.mode, limit) });
+      // ?mode=virtual — сделки виртуальных участников (бумага); иначе режим агента
+      const mode = req.query.mode === 'virtual' ? 'virtual' : settings.mode;
+      res.json({ trades: await deps.store.listTrades(mode, limit) });
     } catch (e) {
       res.status(500).json({ error: errMsg(e) });
     }
@@ -78,6 +80,25 @@ export function buildApiRouter(deps: ApiDeps): Router {
       const settings = await deps.store.getSettings();
       const hours = Math.min(Number(req.query.hours) || 48, 24 * 14);
       res.json({ points: await deps.store.equitySeries(settings.mode, hours) });
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
+  });
+
+  // Кумулятивная PnL-кривая виртуального портфеля: у бумаги нет equity-снапшотов,
+  // кривая строится из закрытых виртуальных сделок (сумма нарастающим итогом).
+  r.get('/virtual/pnl', async (req, res) => {
+    try {
+      const hours = Math.min(Number(req.query.hours) || 168, 24 * 30);
+      const since = new Date(Date.now() - hours * 3600_000);
+      const closed = await deps.store.closedTradesSince('virtual', since);
+      closed.sort((a, b) => (a.closedAt?.getTime() ?? 0) - (b.closedAt?.getTime() ?? 0));
+      let cum = 0;
+      const points = closed.map(t => {
+        cum += t.pnl ?? 0;
+        return { ts: t.closedAt, cum: +cum.toFixed(2) };
+      });
+      res.json({ points });
     } catch (e) {
       res.status(500).json({ error: errMsg(e) });
     }
