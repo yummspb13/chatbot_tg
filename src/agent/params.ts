@@ -1,7 +1,8 @@
 // Параметры стратегии и риска. Хранятся в AgentSettings.params (JSON),
 // правятся из Telegram (/agent_params set ...) и PWA — но только в пределах HARD_LIMITS.
 
-export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather' | 'matrend' | 'vprofile' | 'btc21h';
+export type StrategyType = 'momentum' | 'meanrev' | 'impulse' | 'echo' | 'straddle' | 'spreadweather' | 'matrend' | 'vprofile' | 'btc21h'
+  | 'gjh20' | 'gjsun' | 'goldh20'; // намайненные временные правила 03.08 (MinedTimeRuleStrategy)
 // ladder — лимитная «лестница»: сигнал разбивается на 3 ступени (цена, −шаг, −2·шаг)
 // с ОБЩИМИ TP/SL от якорной цены; суммарный объём = units, риск не превышает
 // одиночного входа (это НЕ мартингейл: объём зафиксирован до входа).
@@ -90,7 +91,7 @@ function hourList(v: unknown, maxLen: number): number[] {
     : [];
 }
 
-const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile', 'btc21h'];
+const STRATEGY_TYPES: StrategyType[] = ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile', 'btc21h', 'gjh20', 'gjsun', 'goldh20'];
 
 export function clampParams(input: unknown): AgentParams {
   const p = (input && typeof input === 'object' ? input : {}) as Partial<AgentParams>;
@@ -130,7 +131,7 @@ export const EDITABLE_KEYS: (keyof AgentParams)[] = [
 
 // Строковые ключи с перечислимыми значениями
 export const ENUM_KEYS: Record<string, string[]> = {
-  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile', 'btc21h'],
+  strategyType: ['momentum', 'meanrev', 'impulse', 'echo', 'straddle', 'spreadweather', 'matrend', 'vprofile', 'btc21h', 'gjh20', 'gjsun', 'goldh20'],
   entryMode: ['market', 'limit', 'ladder'],
 };
 
@@ -244,6 +245,12 @@ export const ENSEMBLE_MEMBERS_GOLD: EnsembleMember[] = [
     key: 'gold-impulse',
     params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 4, tpPips: 20, slPips: 40, cooldownSec: 900, spreadGuardPips: 1.5, maxDailyLossUsd: 10 },
   },
+  // намайненное 03.08: час 20 UTC в EMA-аптренде → LONG, сейф +7.39$/24 сд —
+  // слабое, но парное к gj-h20 (одна история EOD risk-off, считать одной ставкой)
+  {
+    key: 'gold-h20',
+    params: { ...DEFAULT_PARAMS, strategyType: 'goldh20', entryMode: 'market', tpPips: 40, slPips: 40, cooldownSec: 3600, maxHoldSec: 3600, spreadGuardPips: 1.5, maxDailyLossUsd: 10 },
+  },
 ];
 
 export const ENSEMBLE_MEMBERS_OIL: EnsembleMember[] = [
@@ -266,6 +273,18 @@ export const ENSEMBLE_MEMBERS_GBPJPY: EnsembleMember[] = [
     key: 'gj-vprofile',
     params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 6, tpPips: 30, slPips: 50, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 10 },
   },
+  // намайненное 03.08 (docs/MINER-4MARKETS-2026-08-03.md): час 20 UTC → SHORT,
+  // t=−13.4, сейф +87.98$/64 сд — скворинг перед ролловером; выход ≤1ч
+  {
+    key: 'gj-h20',
+    params: { ...DEFAULT_PARAMS, strategyType: 'gjh20', entryMode: 'market', tpPips: 40, slPips: 40, cooldownSec: 3600, maxHoldSec: 3600, spreadGuardPips: 6, maxDailyLossUsd: 10 },
+  },
+  // намайненное 03.08: воскресный вечер → LONG, сейф +21.68$/39 сд; согласуется
+  // с гэп-стади (эффект жив ПОСЛЕ нормализации спреда, входы по рынку в течение часа)
+  {
+    key: 'gj-sun',
+    params: { ...DEFAULT_PARAMS, strategyType: 'gjsun', entryMode: 'market', tpPips: 40, slPips: 40, cooldownSec: 3600, maxHoldSec: 3600, spreadGuardPips: 6, maxDailyLossUsd: 10 },
+  },
 ];
 
 export const ENSEMBLE_MEMBERS_SP500: EnsembleMember[] = [
@@ -274,6 +293,46 @@ export const ENSEMBLE_MEMBERS_SP500: EnsembleMember[] = [
   {
     key: 'sp-matrend',
     params: { ...DEFAULT_PARAMS, strategyType: 'matrend', windowSec: 14400, thresholdPips: 12, tpPips: 30, slPips: 40, cooldownSec: 1800, spreadGuardPips: 2, maxDailyLossUsd: 10 },
+  },
+];
+
+// Волна свипа 03.08 (docs/SWEEP6-2026-08-03.md): echo-кластер на недолларовых
+// рынках + GBPNZD-двойник + Nikkei. Параметры = победившие ячейки без изменений.
+export const ENSEMBLE_MEMBERS_GBPNZD: EnsembleMember[] = [
+  // echo/limit: train +193.81$ / test +106.02$ — флагман волны
+  {
+    key: 'gn-echo',
+    params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 60, tpPips: 72, slPips: 120, cooldownSec: 1800, spreadGuardPips: 8, maxDailyLossUsd: 15 },
+  },
+  // meanrev/limit: train +48$ / test +96$, ожидание +3.43$/сд при wr 86%
+  {
+    key: 'gn-meanrev',
+    params: { ...DEFAULT_PARAMS, windowSec: 3600, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15 },
+  },
+];
+
+export const ENSEMBLE_MEMBERS_EURJPY: EnsembleMember[] = [
+  // echo/limit: train +97.60$ / test +57.60$ — echo на ликвиднейшем кроссе
+  {
+    key: 'ej-echo',
+    params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 80, tpPips: 48, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 10 },
+  },
+];
+
+export const ENSEMBLE_MEMBERS_AUDJPY: EnsembleMember[] = [
+  // momentum/limit: train +108$ / test +43.02$ — самая большая выборка свипа (144 сд)
+  {
+    key: 'aj-momentum',
+    params: { ...DEFAULT_PARAMS, strategyType: 'momentum', windowSec: 300, thresholdPips: 15, tpPips: 60, slPips: 60, cooldownSec: 300, spreadGuardPips: 4, maxDailyLossUsd: 10 },
+  },
+];
+
+export const ENSEMBLE_MEMBERS_JP225: EnsembleMember[] = [
+  // vprofile/limit: train +70.98$ / test +60.17$ — рекордный по издержкам рынок
+  // (ratio 0.018), НО DD 120$ — под особым наблюдением
+  {
+    key: 'jp-vprofile',
+    params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 60, tpPips: 150, slPips: 150, cooldownSec: 1800, spreadGuardPips: 3, maxDailyLossUsd: 15 },
   },
 ];
 
@@ -288,11 +347,17 @@ export interface MarketLegSpec {
 
 // Имена и digits проверены по спецификациям счёта 02.08.2026:
 // XAUUSDm/USOILm/GBPJPYm digits 3, US500m digits 2. priceScale — как в бэктесте.
+// 03.08 добавлена волна свипа шестёрки: GBPNZDm/EURJPYm/AUDJPYm/JP225m
+// (символы из списка счёта, масштабы — как в MARKETS бэктеста).
 export const MARKET_LEGS: MarketLegSpec[] = [
   { key: 'gold', baseSymbol: 'XAU_USD', mt5Symbol: 'XAUUSDm', priceScale: 10_000, warmupInstrument: 'xauusd', roster: ENSEMBLE_MEMBERS_GOLD },
   { key: 'oil', baseSymbol: 'WTICO_USD', mt5Symbol: 'USOILm', priceScale: 100, warmupInstrument: 'lightcmdusd', roster: ENSEMBLE_MEMBERS_OIL },
   { key: 'gbpjpy', baseSymbol: 'GBP_JPY', mt5Symbol: 'GBPJPYm', priceScale: 100, warmupInstrument: 'gbpjpy', roster: ENSEMBLE_MEMBERS_GBPJPY },
   { key: 'sp500', baseSymbol: 'SPX500_USD', mt5Symbol: 'US500m', priceScale: 10_000, warmupInstrument: 'usa500idxusd', roster: ENSEMBLE_MEMBERS_SP500 },
+  { key: 'gbpnzd', baseSymbol: 'GBP_NZD', mt5Symbol: 'GBPNZDm', priceScale: 1, warmupInstrument: 'gbpnzd', roster: ENSEMBLE_MEMBERS_GBPNZD },
+  { key: 'eurjpy', baseSymbol: 'EUR_JPY', mt5Symbol: 'EURJPYm', priceScale: 100, warmupInstrument: 'eurjpy', roster: ENSEMBLE_MEMBERS_EURJPY },
+  { key: 'audjpy', baseSymbol: 'AUD_JPY', mt5Symbol: 'AUDJPYm', priceScale: 100, warmupInstrument: 'audjpy', roster: ENSEMBLE_MEMBERS_AUDJPY },
+  { key: 'jp225', baseSymbol: 'JP225_JPY', mt5Symbol: 'JP225m', priceScale: 100_000, warmupInstrument: 'jpnidxjpy', roster: ENSEMBLE_MEMBERS_JP225 },
 ];
 
 export interface CryptoPreset {

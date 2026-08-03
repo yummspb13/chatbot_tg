@@ -771,6 +771,90 @@ export class Btc21hRuleStrategy implements TradingStrategy {
   }
 }
 
+/**
+ * НАМАЙНЕННЫЕ временные правила волны 03.08 (docs/MINER-4MARKETS-2026-08-03.md),
+ * прошедшие сейф. Механика Btc21hRuleStrategy: минутный сэмплер, EMA 2ч/8ч,
+ * cooldown; какое правило активно — решает params.strategyType:
+ *   gjh20   — GBPJPY час 20 UTC → SELL (t=−13.4; скворинг перед ролловером);
+ *   gjsun   — GBPJPY воскресенье → BUY (эффект открытия недели, вход по рынку
+ *             в течение вечера — гэп-стади объяснила, почему не первой минутой);
+ *   goldh20 — золото час 20 в EMA-аптренде → LONG (risk-off-пара к gjh20).
+ */
+export class MinedTimeRuleStrategy implements TradingStrategy {
+  private sampler = new MinuteSampler();
+  private recent: { t: number; mid: number }[] = [];
+  private emaMid = NaN;
+  private emaSlow = NaN;
+  private cooldownUntil = 0;
+
+  constructor(private params: AgentParams) {}
+
+  updateParams(p: AgentParams): void {
+    this.params = p;
+  }
+
+  reset(): void {
+    this.sampler.reset();
+    this.recent = [];
+    this.emaMid = NaN;
+    this.emaSlow = NaN;
+    this.cooldownUntil = 0;
+  }
+
+  windowRangePips(): number {
+    if (this.recent.length < 2) return 0;
+    let min = Infinity, max = -Infinity;
+    for (const m of this.recent) {
+      if (m.mid < min) min = m.mid;
+      if (m.mid > max) max = m.mid;
+    }
+    return (max - min) / PIP;
+  }
+
+  onQuote(q: Quote): Signal | null {
+    const m = this.sampler.push(q.time.getTime(), (q.bid + q.ask) / 2);
+    if (!m) return null;
+    this.recent.push(m);
+    const cutoff = m.t - 3600_000;
+    while (this.recent.length && this.recent[0].t < cutoff) this.recent.shift();
+
+    const aMid = 2 / (120 + 1);  // EMA 2ч по минутам — как в майнере
+    const aSlow = 2 / (480 + 1); // EMA 8ч
+    this.emaMid = Number.isFinite(this.emaMid) ? this.emaMid + aMid * (m.mid - this.emaMid) : m.mid;
+    this.emaSlow = Number.isFinite(this.emaSlow) ? this.emaSlow + aSlow * (m.mid - this.emaSlow) : m.mid;
+
+    if (m.t < this.cooldownUntil) return null;
+    const d = new Date(m.t);
+    let side: Side | null = null;
+    let reason = '';
+    switch (this.params.strategyType) {
+      case 'gjh20':
+        if (d.getUTCHours() === 20) {
+          side = 'SELL';
+          reason = 'gj-h20: час 20 UTC — EOD-скворинг (намайненное правило, сейф +88$)';
+        }
+        break;
+      case 'gjsun':
+        if (d.getUTCDay() === 0) {
+          side = 'BUY';
+          reason = 'gj-sun: воскресный вечер — открытие недели (намайненное правило)';
+        }
+        break;
+      case 'goldh20':
+        if (d.getUTCHours() === 20 && this.emaMid > this.emaSlow && m.mid > this.emaSlow) {
+          side = 'BUY';
+          reason = 'gold-h20: час 20 UTC в EMA-аптренде — risk-off-пара к gj-h20';
+        }
+        break;
+      default:
+        return null;
+    }
+    if (!side) return null;
+    this.cooldownUntil = m.t + this.params.cooldownSec * 1000;
+    return { side, tpPips: this.params.tpPips, slPips: this.params.slPips, reason };
+  }
+}
+
 export function buildStrategy(params: AgentParams): TradingStrategy {
   switch (params.strategyType) {
     case 'meanrev': return new MeanReversionStrategy(params);
@@ -781,6 +865,9 @@ export function buildStrategy(params: AgentParams): TradingStrategy {
     case 'matrend': return new MATrendStrategy(params);
     case 'vprofile': return new SessionProfileStrategy(params);
     case 'btc21h': return new Btc21hRuleStrategy(params);
+    case 'gjh20':
+    case 'gjsun':
+    case 'goldh20': return new MinedTimeRuleStrategy(params);
     default: return new MomentumStrategy(params);
   }
 }
