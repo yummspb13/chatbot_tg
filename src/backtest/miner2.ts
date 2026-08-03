@@ -414,11 +414,37 @@ if (isMain) {
       n: number;
     }
     const lockMs = lockboxFrom.getTime();
+
+    // ДЕТРЕНД (урок батча №1: 9 «находок» оказались переодетой ставкой «золото
+    // растёт»): гипотеза судится по ПРЕВЫШЕНИЮ над безусловным дрейфом своего
+    // рынка/ТФ/горизонта, а не по сырому ходу. Дрейф-костюмы больше не проходят.
+    const uncond = new Map<string, number>();
+    for (const [mk, rec] of frames) {
+      for (const tf of tfs) {
+        for (const h of horizons) {
+          const fwd = rec[tf].fwd[h];
+          const bars = rec[tf].bars;
+          let s = 0;
+          let n = 0;
+          for (let i = 0; i < bars.length; i++) {
+            if (bars[i].t >= lockMs) break;
+            const x = fwd[i];
+            if (!Number.isNaN(x)) {
+              s += x;
+              n += 1;
+            }
+          }
+          uncond.set(`${mk}|${tf}|${h}`, n ? s / n : 0);
+        }
+      }
+    }
+
     const survivors: S1[] = [];
     let evaluated = 0;
     for (const hyp of hyps) {
       const frame = frames.get(hyp.market)![hyp.tf];
       const fwd = frame.fwd[hyp.h];
+      const drift = uncond.get(`${hyp.market}|${hyp.tf}|${hyp.h}`) ?? 0;
       const conds = Object.entries(hyp.conds) as Array<[Feat, number]>;
       let sum = 0;
       let sumSq = 0;
@@ -444,8 +470,9 @@ if (isMain) {
       if (n < 300) continue;
       const mean = sum / n;
       const sd = Math.sqrt(Math.max(0, (sumSq - n * mean * mean) / (n - 1)));
-      const t = sd > 0 ? mean / (sd / Math.sqrt(n)) : 0;
-      if (Math.abs(t) >= zBonf) survivors.push({ hyp, mean, t, n });
+      const excess = mean - drift; // сдвиг константой sd не меняет
+      const t = sd > 0 ? excess / (sd / Math.sqrt(n)) : 0;
+      if (Math.abs(t) >= zBonf) survivors.push({ hyp, mean: excess, t, n });
     }
     survivors.sort((x, y) => Math.abs(y.t) - Math.abs(x.t));
     console.log(`Этап 1: оценено ${evaluated}, выжило ${survivors.length}`);
