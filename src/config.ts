@@ -38,8 +38,11 @@ export const config = {
   mt5SymbolCrypto: process.env.MT5_SYMBOL_CRYPTO || null, // дефолт берётся из пресета
 
   // Мейкер-эксперимент на Binance Futures TESTNET (фейковые деньги, реальный стакан):
-  // post-only страддл — там, где пассивной стороне не нужен спред, а комиссия известна
-  makerTestnet: process.env.MAKER_TESTNET === '1',
+  // post-only страддл — там, где пассивной стороне не нужен спред, а комиссия известна.
+  // ЖАНР ЗАКРЫТ 03.08.2026 по команде владельца (вердикт по заранее зафиксированному
+  // правилу: 323 круга, −45.39$, ни одного плюсового дня — docs/MAKER-CLOSURE-2026-08-03.md).
+  // MAKER_TESTNET больше не читается; ключи оставлены для подчистки хвостов на старте.
+  makerTestnet: false as boolean,
   binanceTestnetKey: process.env.BINANCE_TESTNET_KEY || null,
   binanceTestnetSecret: process.env.BINANCE_TESTNET_SECRET || null,
   binanceSymbol: process.env.BINANCE_SYMBOL || 'BTCUSDT',

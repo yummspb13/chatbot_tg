@@ -227,6 +227,22 @@ export class AgentEngine {
       } else {
         cryptoNote += '\nℹ️ MAKER_TESTNET=1 задан, но нет BINANCE_TESTNET_KEY/BINANCE_TESTNET_SECRET.';
       }
+    } else if (config.binanceTestnetKey && config.binanceTestnetSecret) {
+      // жанр закрыт (03.08.2026) — одноразовая подчистка хвостов на тестнете:
+      // снять висящие котировки, закрыть остаточный инвентарь. Идемпотентно.
+      try {
+        const { BinanceFuturesClient } = await import('../broker/binancef');
+        const client = new BinanceFuturesClient(config.binanceTestnetKey, config.binanceTestnetSecret);
+        await client.cancelAll(config.binanceSymbol);
+        const pos = await client.position(config.binanceSymbol);
+        if (pos.amt !== 0) {
+          await client.marketClose(config.binanceSymbol, pos.amt);
+          cryptoNote += `\n⚗️ Мейкер выключен (жанр закрыт): остаточный инвентарь ${pos.amt} BTC закрыт по рынку, котировки сняты.`;
+          log.warn(`мейкер-ликвидатор: закрыт остаточный инвентарь ${pos.amt} BTC`, undefined, 'maker');
+        }
+      } catch (e) {
+        log.warn(`мейкер-ликвидатор: ${errMsg(e)}`, undefined, 'maker');
+      }
     }
 
     if (isFxWeekend(new Date())) {
