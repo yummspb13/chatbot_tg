@@ -22,8 +22,15 @@ export interface MoexCandle extends Candle {
 
 async function fetchPage(secid: string, fromDay: string, tillDay: string, start: number): Promise<MoexCandle[]> {
   const url = `${BASE}/${secid}/candles.json?interval=1&from=${fromDay}&till=${tillDay}&start=${start}`;
-  const res = await request(url, { headersTimeout: 20_000, bodyTimeout: 30_000 });
-  const text = await res.body.text();
+  // ISS периодически отдаёт разовые 5xx — ретраи с бэкоффом
+  let res!: Awaited<ReturnType<typeof request>>;
+  let text = '';
+  for (let attempt = 0; ; attempt++) {
+    res = await request(url, { headersTimeout: 20_000, bodyTimeout: 30_000 });
+    text = await res.body.text();
+    if (res.statusCode < 500 || attempt >= 4) break;
+    await new Promise(r => setTimeout(r, 2000 * 2 ** attempt));
+  }
   if (res.statusCode !== 200) throw new Error(`ISS ${secid}: HTTP ${res.statusCode} ${text.slice(0, 80)}`);
   const j = JSON.parse(text);
   const cols: string[] = j.candles.columns;
