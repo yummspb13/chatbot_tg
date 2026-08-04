@@ -97,7 +97,8 @@ function toBars(m1: Candle[], barMs: number): Bar[] {
 // бакетов; гипотеза = требование конкретных бакетов у 1-2 признаков.
 type Feat =
   | 'hour' | 'dow' | 'domSeg' | 'sign' | 'streak' | 'big' | 'body' | 'wick'
-  | 'nr' | 'atrPct' | 'ema' | 'dPrev' | 'round' | 'spreadPct' | 'session';
+  | 'nr' | 'atrPct' | 'ema' | 'dPrev' | 'round' | 'spreadPct' | 'session'
+  | 'volPct'; // РЕАЛЬНЫЙ биржевой объём (батч-2, только btcusd из Binance-минуток)
 
 interface Frame {
   bars: Bar[];
@@ -109,14 +110,33 @@ const ROUND_GRID_PIPS: Record<string, number> = {
   eurusd: 100, gbpjpy: 100, xauusd: 50, btcusd: 100, usa500idxusd: 50, lightcmdusd: 100,
 };
 
-function buildFrame(mkKey: string, m1: Candle[], barMs: number, mult: number, horizons: number[]): Frame {
+function buildFrame(mkKey: string, m1: Candle[], barMs: number, mult: number, horizons: number[], volByMinute?: Map<number, number>): Frame {
   const bars = toBars(m1, barMs);
   const n = bars.length;
   const mk = (): Int32Array => new Int32Array(n).fill(-1);
   const f: Record<Feat, Int32Array> = {
     hour: mk(), dow: mk(), domSeg: mk(), sign: mk(), streak: mk(), big: mk(), body: mk(),
     wick: mk(), nr: mk(), atrPct: mk(), ema: mk(), dPrev: mk(), round: mk(), spreadPct: mk(), session: mk(),
+    volPct: mk(),
   };
+  // объём бара = сумма Binance-минуток внутри окна (нет данных → признак не ставится)
+  const barVol = new Float64Array(n).fill(NaN);
+  if (volByMinute) {
+    for (let i = 0; i < n; i++) {
+      let v = 0;
+      let got = false;
+      for (let t = bars[i].t; t < bars[i].t + barMs; t += 60_000) {
+        const x = volByMinute.get(t);
+        if (x !== undefined) {
+          v += x;
+          got = true;
+        }
+      }
+      if (got) barVol[i] = v;
+    }
+  }
+  const vols: number[] = [];
+  let vq = { v25: NaN, v75: NaN, v95: NaN };
 
   const emaN = barMs === 3600_000 ? { mid: 8, slow: 32 } : { mid: 32, slow: 128 }; // ≈8ч/32ч и 8ч/32ч
   const aMid = 2 / (emaN.mid + 1);
@@ -197,6 +217,10 @@ function buildFrame(mkKey: string, m1: Candle[], barMs: number, mult: number, ho
         atr25: rs[Math.floor(rs.length * 0.25)], atr75: rs[Math.floor(rs.length * 0.75)],
         sp33: ss[Math.floor(ss.length * 0.33)], sp66: ss[Math.floor(ss.length * 0.66)],
       };
+      const vs = tail(vols).filter(Number.isFinite).slice().sort((x, y) => x - y);
+      if (vs.length > 200) vq = {
+        v25: vs[Math.floor(vs.length * 0.25)], v75: vs[Math.floor(vs.length * 0.75)], v95: vs[Math.floor(vs.length * 0.95)],
+      };
       // смена сессии: текущие экстремумы уходят в «прошлые»
       if (dayKey && Number.isFinite(dHi)) {
         pHi = dHi; pLo = dLo; pCl = dCl;
@@ -212,6 +236,11 @@ function buildFrame(mkKey: string, m1: Candle[], barMs: number, mult: number, ho
     spreads.push(b.sp);
     if (Number.isFinite(q.atr25)) f.atrPct[i] = range < q.atr25 ? 0 : range > q.atr75 ? 2 : 1;
     if (Number.isFinite(q.sp33)) f.spreadPct[i] = b.sp < q.sp33 ? 0 : b.sp > q.sp66 ? 2 : 1;
+    vols.push(barVol[i]);
+    if (Number.isFinite(barVol[i]) && Number.isFinite(vq.v25)) {
+      const v = barVol[i];
+      f.volPct[i] = v > vq.v95 ? 3 : v > vq.v75 ? 2 : v < vq.v25 ? 0 : 1;
+    }
 
     // позиция против экстремумов прошлой сессии
     if (Number.isFinite(pHi)) {
@@ -251,6 +280,7 @@ interface Hyp {
 const FEAT_BUCKETS: Record<Feat, number> = {
   hour: 24, dow: 7, domSeg: 3, sign: 2, streak: 8, big: 3, body: 3, wick: 3,
   nr: 3, atrPct: 3, ema: 4, dPrev: 5, round: 2, spreadPct: 3, session: 4,
+  volPct: 4, // low / mid / high / climax (>95перц)
 };
 
 // Курируемые пары: не все C(15,2), а осмысленные сочетания «когда × что»
@@ -292,8 +322,8 @@ function* genHypotheses(markets: string[], tfs: Array<15 | 60>, horizons: number
   for (const market of markets) {
     for (const tf of tfs) {
       for (const h of horizons) {
-        // синглы
-        for (const feat of Object.keys(FEAT_BUCKETS) as Feat[]) {
+        // синглы (volPct — только в объёмном генераторе батча-2)
+        for (const feat of (Object.keys(FEAT_BUCKETS) as Feat[]).filter(x => x !== 'volPct')) {
           for (let bkt = 0; bkt < FEAT_BUCKETS[feat]; bkt++) {
             yield { market, tf, h, conds: { [feat]: bkt } };
           }
@@ -312,6 +342,41 @@ function* genHypotheses(markets: string[], tfs: Array<15 | 60>, horizons: number
           yield { market, tf, h, conds: a.conds, author: a.why };
         }
       }
+    }
+  }
+}
+
+// Батч-2: объём BTC как признак. Гипотезы только про volPct (сингл, пары,
+// глубина-3, авторские) — остальное пространство уже сожжено батчами 1/1b.
+const VOL_PAIRS: Feat[] = ['sign', 'streak', 'big', 'hour', 'session', 'ema', 'atrPct'];
+const VOL_AUTHOR: Array<{ conds: Partial<Record<Feat, number>>; why: string }> = [
+  { conds: { volPct: 3, sign: 0 }, why: 'климакс объёма на падении — капитуляция, ждём отскок' },
+  { conds: { volPct: 3, big: 2 }, why: 'климакс с big-down — кульминация распродажи' },
+  { conds: { volPct: 0, nr: 0 }, why: 'сухой объём в NR7 — пружина без топлива у продавцов' },
+  { conds: { volPct: 3, ema: 0 }, why: 'климакс в даунтренде под slow — финальный вынос' },
+  { conds: { volPct: 0, streak: 7 }, why: '4 плюса на сухом объёме — рост без топлива, фейд' },
+];
+
+function* genVolumeHypotheses(tfs: Array<15 | 60>, horizons: number[]): Generator<Hyp> {
+  const market = 'btcusd';
+  for (const tf of tfs) {
+    for (const h of horizons) {
+      for (let v = 0; v < FEAT_BUCKETS.volPct; v++) {
+        yield { market, tf, h, conds: { volPct: v } };
+        for (const f2 of VOL_PAIRS) {
+          for (let b2 = 0; b2 < FEAT_BUCKETS[f2]; b2++) {
+            yield { market, tf, h, conds: { volPct: v, [f2]: b2 } };
+          }
+        }
+        // глубина-3: объём × час × знак и объём × EMA × серия
+        for (let hr = 0; hr < 24; hr++) {
+          for (let s = 0; s < 2; s++) yield { market, tf, h, conds: { volPct: v, hour: hr, sign: s } };
+        }
+        for (let e = 0; e < 4; e++) {
+          for (let st = 0; st < 8; st++) yield { market, tf, h, conds: { volPct: v, ema: e, streak: st } };
+        }
+      }
+      for (const a of VOL_AUTHOR) yield { market, tf, h, conds: a.conds, author: a.why };
     }
   }
 }
@@ -377,12 +442,23 @@ const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv
 if (isMain) {
   (async () => {
     const batchId = parseArg('batch') ?? '1';
-    const marketKeys = (parseArg('markets') ?? 'eurusd,btcusd,xauusd,gbpjpy,usa500idxusd,lightcmdusd').split(',');
+    const volumeMode = batchId.startsWith('2'); // батч-2: только btcusd + объёмные гипотезы
+    const marketKeys = volumeMode
+      ? ['btcusd']
+      : (parseArg('markets') ?? 'eurusd,btcusd,xauusd,gbpjpy,usa500idxusd,lightcmdusd').split(',');
     const from = new Date(parseArg('from') ?? '2024-01-01');
     const lockboxFrom = new Date(parseArg('lockbox') ?? '2026-05-01');
     const to = new Date(parseArg('to') ?? '2026-07-30');
     const tfs: Array<15 | 60> = [15, 60];
     const horizons = [1, 4];
+
+    let volByMinute: Map<number, number> | undefined;
+    if (volumeMode) {
+      const { loadBinanceM1 } = await import('./binance-data');
+      const bn = await loadBinanceM1('BTCUSDT', from, to);
+      volByMinute = new Map(bn.map(c => [c.t, c.v]));
+      console.log(`Объём BTCUSDT: ${volByMinute.size} минуток из Binance-кэша`);
+    }
 
     // фреймы
     const frames = new Map<string, Record<number, Frame>>();
@@ -393,13 +469,13 @@ if (isMain) {
       const m1 = prepCandles(await loadM1WithSpread(spec.instrument, from, to), spec);
       m1byMarket.set(mk, m1);
       const rec: Record<number, Frame> = {};
-      for (const tf of tfs) rec[tf] = buildFrame(mk, m1, tf * 60_000, mult, horizons);
+      for (const tf of tfs) rec[tf] = buildFrame(mk, m1, tf * 60_000, mult, horizons, mk === 'btcusd' ? volByMinute : undefined);
       frames.set(mk, rec);
       console.log(`${mk}: M15 ${rec[15].bars.length} баров, H60 ${rec[60].bars.length}`);
     }
 
     // батч
-    const hyps = [...genHypotheses(marketKeys, tfs, horizons)];
+    const hyps = volumeMode ? [...genVolumeHypotheses(tfs, horizons)] : [...genHypotheses(marketKeys, tfs, horizons)];
     const ledger = loadLedger();
     const cumTotal = ledger.totalTested + hyps.length;
     const zBonf = normalQuantile(1 - (0.05 / cumTotal) / 2);
