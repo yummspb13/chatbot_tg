@@ -155,6 +155,7 @@ export interface BtTrade {
   closedAt: number;
   reason: string;
   hourUtc: number;
+  maePips?: number; // худший плавающий минус позиции (max adverse excursion), pips
 }
 
 export interface BtReport {
@@ -199,6 +200,7 @@ interface OpenPos {
   openedAt: number;
   spreadCost: number;
   beLocked?: boolean; // брейк-ивен-лок уже сработал
+  maePips?: number;   // худший плавающий минус за жизнь позиции
 }
 
 /** Открытие позиции с учётом partialFrac: одна цель или две (ближняя + полная). */
@@ -234,9 +236,13 @@ export function runBacktest(
   candles: Candle[],
   paramsIn: Partial<AgentParams>,
   market: MarketSpec = MARKETS.eurusd,
-  opts?: { keepTrades?: boolean },
+  opts?: { keepTrades?: boolean; rawParams?: boolean },
 ): BtReport {
-  const params = clampParams({ ...DEFAULT_PARAMS, ...paramsIn });
+  // rawParams — ТОЛЬКО для исследований (напр., тест «без стопов» с SL за
+  // пределами боевых клампов); боевые контуры всегда идут через clampParams
+  const params = opts?.rawParams
+    ? { ...DEFAULT_PARAMS, ...paramsIn } as AgentParams
+    : clampParams({ ...DEFAULT_PARAMS, ...paramsIn });
   const strategy = buildStrategy(params);
   const risk = new RiskManager(params);
 
@@ -257,6 +263,7 @@ export function runBacktest(
     trades.push({
       side: p.side, entry: p.entry, exit, pnl, spreadCost: p.spreadCost,
       openedAt: p.openedAt, closedAt: at, reason, hourUtc: new Date(p.openedAt).getUTCHours(),
+      maePips: p.maePips !== undefined ? +p.maePips.toFixed(1) : undefined,
     });
   };
 
@@ -311,6 +318,9 @@ export function runBacktest(
     // со СЛЕДУЮЩЕЙ свечи — консервативно занижает пользу лока, не завышает).
     const still: OpenPos[] = [];
     for (const p of open) {
+      // худший плавающий минус позиции (для честности вариантов «без стопа»)
+      const adverse = p.side === 'BUY' ? (p.entry - (c.l - half)) / PIP : ((c.h + half) - p.entry) / PIP;
+      if (adverse > (p.maePips ?? 0)) p.maePips = adverse;
       if (p.openedAt === c.t) { still.push(p); continue; }
       let exit: number | null = null;
       let reason = '';
