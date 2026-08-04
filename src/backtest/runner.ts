@@ -178,6 +178,7 @@ export interface BtReport {
   killDays: number;
   byHour: { hour: number; n: number; netUsd: number }[];
   byDow: { dow: number; n: number; netUsd: number }[]; // день недели UTC (0=вс, 6=сб)
+  tradeList?: BtTrade[]; // полный список сделок (только по запросу keepTrades — для оверлеев)
 }
 
 function spreadPipsAt(t: Date, m: MarketSpec): number {
@@ -233,6 +234,7 @@ export function runBacktest(
   candles: Candle[],
   paramsIn: Partial<AgentParams>,
   market: MarketSpec = MARKETS.eurusd,
+  opts?: { keepTrades?: boolean },
 ): BtReport {
   const params = clampParams({ ...DEFAULT_PARAMS, ...paramsIn });
   const strategy = buildStrategy(params);
@@ -473,6 +475,7 @@ export function runBacktest(
     killDays,
     byHour: [...byHourMap.entries()].map(([hour, b]) => ({ hour, ...b })).sort((a, b) => a.hour - b.hour),
     byDow: [...byDowMap.entries()].map(([dow, b]) => ({ dow, ...b })).sort((a, b) => a.dow - b.dow),
+    ...(opts?.keepTrades ? { tradeList: trades } : {}),
   };
 }
 
