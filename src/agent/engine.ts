@@ -9,6 +9,7 @@ import { CryptoLeg } from './cryptoleg';
 import { EnsembleLeg } from './ensemble';
 import { MakerLeg } from './makerleg';
 import { MarketsLeg } from './marketsleg';
+import { MoexLeg } from './moexleg';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -71,6 +72,7 @@ export class AgentEngine {
   private ensembleLeg: EnsembleLeg | null = null;
   private btcEnsemble: EnsembleLeg | null = null;
   private marketsLeg: MarketsLeg | null = null;
+  private moexLeg: MoexLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -245,6 +247,18 @@ export class AgentEngine {
       }
     }
 
+    if (config.tinkoffToken && settings.mode === 'live') {
+      try {
+        this.moexLeg = new MoexLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
+        await this.moexLeg.start();
+        cryptoNote += '\n🇷🇺 MOEX-нога: TATN, GAZP, ROSN — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).';
+      } catch (e) {
+        this.moexLeg = null;
+        cryptoNote += `\n⚠️ MOEX-нога не запустилась: ${errMsg(e)}`;
+        log.error(`MOEX-нога не запустилась: ${errMsg(e)}`, undefined, 'moex');
+      }
+    }
+
     if (isFxWeekend(new Date())) {
       return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.${cryptoNote}`;
     }
@@ -296,6 +310,10 @@ export class AgentEngine {
     if (this.marketsLeg) {
       await this.marketsLeg.stop().catch(e => log.warn(`остановка мультирыночной ноги: ${errMsg(e)}`, undefined, 'markets'));
       this.marketsLeg = null;
+    }
+    if (this.moexLeg) {
+      await this.moexLeg.stop().catch(e => log.warn(`остановка MOEX-ноги: ${errMsg(e)}`, undefined, 'moex'));
+      this.moexLeg = null;
     }
   }
 
@@ -742,20 +760,24 @@ export class AgentEngine {
       markets: this.marketsLeg
         ? this.marketsLeg.summary()
         : { enabled: config.ensemble && config.markets, running: false },
+      moex: this.moexLeg
+        ? this.moexLeg.summary()
+        : { enabled: Boolean(config.tinkoffToken), running: false },
     };
   }
 
-  /** Сводка ансамблей — FX, крипто и мультирынок вместе (null — если выключены/не запущены). */
+  /** Сводка ансамблей — FX, крипто, мультирынок и MOEX вместе (null — если выключены). */
   async ensembleStats() {
     const fx = this.ensembleLeg ? await this.ensembleLeg.stats() : null;
     const btc = this.btcEnsemble ? await this.btcEnsemble.stats() : null;
     const mkt = this.marketsLeg ? await this.marketsLeg.stats() : null;
-    if (!fx && !btc && !mkt) return null;
-    const ages = [fx?.lastQuoteAgoSec, btc?.lastQuoteAgoSec, mkt?.lastQuoteAgoSec].filter((x): x is number => typeof x === 'number');
+    const moex = this.moexLeg ? await this.moexLeg.stats() : null;
+    if (!fx && !btc && !mkt && !moex) return null;
+    const ages = [fx?.lastQuoteAgoSec, btc?.lastQuoteAgoSec, mkt?.lastQuoteAgoSec, moex?.lastQuoteAgoSec].filter((x): x is number => typeof x === 'number');
     return {
-      running: (fx?.running ?? false) || (btc?.running ?? false) || (mkt?.running ?? false),
+      running: (fx?.running ?? false) || (btc?.running ?? false) || (mkt?.running ?? false) || (moex?.running ?? false),
       lastQuoteAgoSec: ages.length ? Math.min(...ages) : null,
-      members: [...(fx?.members ?? []), ...(btc?.members ?? []), ...(mkt?.members ?? [])],
+      members: [...(fx?.members ?? []), ...(btc?.members ?? []), ...(mkt?.members ?? []), ...(moex?.members ?? [])],
     };
   }
 }

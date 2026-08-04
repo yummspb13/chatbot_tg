@@ -158,6 +158,13 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
         + (mk.lastQuoteAgoSec !== null ? ` · котировка ${mk.lastQuoteAgoSec}с назад` : ' · рынки закрыты — котировок нет'),
       );
     }
+    const mx = s.moex;
+    if (mx && mx.running && 'tickers' in mx) {
+      lines.push(
+        `🇷🇺 MOEX (виртуально): ${mx.tickers.join(', ')} — `
+        + (mx.inSession ? `сессия идёт${mx.lastQuoteAgoSec !== null ? `, котировка ${mx.lastQuoteAgoSec}с назад` : ''}` : 'сессия закрыта'),
+      );
+    }
     lines.push(`Новости: ${news.degraded ? '⚠️ фид недоступен' : `${news.events} high-impact на неделе`}`);
     for (const n of next3) lines.push(`  · ${n.date.toISOString().slice(5, 16).replace('T', ' ')} UTC ${n.country}: ${n.title}`);
     await ctx.reply(lines.join('\n'));

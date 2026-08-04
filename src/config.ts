@@ -59,6 +59,10 @@ export const config = {
   // свипа 01.08) на том же MT5-счёте. Требует ансамбль; MARKETS=0 — выключить.
   markets: process.env.MARKETS !== '0',
 
+  // РФ-ветка: виртуальная MOEX-нога на маркетдате T-Invest API.
+  // Токен ТОЛЬКО ДЛЯ ЧТЕНИЯ — торговых вызовов в коде нет (docs/RF-BROKER-PLAN.md).
+  tinkoffToken: process.env.TINKOFF_TOKEN || null,
+
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
   simStartBalance: num(process.env.SIM_START_BALANCE, 50),

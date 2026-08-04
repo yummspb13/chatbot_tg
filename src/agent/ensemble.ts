@@ -32,6 +32,7 @@ export interface EnsembleConfig {
   baseSymbol: string; // EUR_USD | BTC_USD — префикс виртуальных символов в БД
   crypto: boolean;    // true → риск-модуль не применяет блок FX-выходных (24/7)
   warmup: { instrument: string; scale: number } | null; // история для прогрева
+  commissionFrac?: number; // доля нотионала за круг (MOEX 0.001) — вычитается из pnl при закрытии
 }
 
 const MODE = 'virtual';
@@ -233,7 +234,8 @@ export class EnsembleLeg {
           keep.push(o);
           continue;
         }
-        const pnl = (o.side === 'BUY' ? exit - o.entry : o.entry - exit) * m.member.params.units;
+        const commission = (this.cfg.commissionFrac ?? 0) * o.entry * m.member.params.units;
+        const pnl = (o.side === 'BUY' ? exit - o.entry : o.entry - exit) * m.member.params.units - commission;
         await this.deps.store.closeTradeById(o.rowId, {
           exitPrice: exit,
           closedAt: q.time,
