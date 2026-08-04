@@ -24,6 +24,17 @@ import { buildStrategy } from '../agent/strategy';
 import { loadMoexM1, MoexCandle } from './moex-data';
 
 const TICKERS = ['SBER', 'GAZP', 'LKOH', 'ROSN', 'TATN', 'MGNT'];
+
+/** Сплиты/редомициляции рвут ценовой ряд (ВТБ 2024: ×5000). Оставляем только
+ *  последний непрерывный сегмент: любой межминутный скачок >30% режет историю. */
+function lastContinuousSegment(candles: MoexCandle[]): MoexCandle[] {
+  let start = 0;
+  for (let i = 1; i < candles.length; i++) {
+    const jump = Math.abs(candles[i].o / candles[i - 1].c - 1);
+    if (jump > 0.3) start = i;
+  }
+  return start > 0 ? candles.slice(start) : candles;
+}
 const SPREAD_FRAC = 0.0002; // 0.02% — консервативно для голубых фишек TQBR
 const FEE_ROUND_FRAC = 0.001; // 0.1% нотионала за круг (две стороны по 0.05%)
 const UNITS = 1000;
@@ -146,10 +157,15 @@ if (isMain) {
   (async () => {
     const from = new Date(parseArg('from') ?? '2024-01-01');
     const to = new Date(parseArg('to') ?? '2026-07-30');
+    const tickers = (parseArg('tickers') ?? TICKERS.join(',')).split(',').map(s => s.trim()).filter(Boolean);
     const cells: Cell[] = [];
 
-    for (const ticker of TICKERS) {
-      const candles = await loadMoexM1(ticker, from, to);
+    for (const ticker of tickers) {
+      const raw = await loadMoexM1(ticker, from, to);
+      const candles = lastContinuousSegment(raw);
+      if (candles.length < raw.length) {
+        console.log(`  ${ticker}: ряд порван сплитом/редомициляцией — используем последние ${candles.length} из ${raw.length} минуток`);
+      }
       if (candles.length < 50_000) {
         console.log(`===== ${ticker}: мало данных (${candles.length}) — пропуск`);
         continue;
