@@ -19,14 +19,14 @@ import { AgentParams } from '../agent/params';
 import { loadM1WithSpread } from './data';
 import { BtTrade, MARKETS, prepCandles, runBacktest } from './runner';
 
-interface Cell {
+export interface Cell {
   key: string;
   market: string;
   params: Partial<AgentParams>;
 }
 
 // 13 выживших walk-forward ячеек — параметры из виртуальных ростеров
-const CELLS: Cell[] = [
+export const CELLS: Cell[] = [
   { key: 'eur-meanrev', market: 'eurusd', params: {} }, // live-пресет = DEFAULT_PARAMS
   { key: 'gj-meanrev', market: 'gbpjpy', params: { windowSec: 1800, thresholdPips: 16, tpPips: 12, slPips: 40, cooldownSec: 900, spreadGuardPips: 6, maxDailyLossUsd: 10 } },
   { key: 'gj-vprofile', market: 'gbpjpy', params: { strategyType: 'vprofile', windowSec: 7200, thresholdPips: 6, tpPips: 30, slPips: 50, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 10 } },
