@@ -74,6 +74,14 @@ export class TinkoffClient {
     }
   }
 
+  /** uid инструмента по тикеру (класс TQBR). */
+  async shareUid(ticker: string): Promise<string> {
+    const d = await this.call<any>('InstrumentsService', 'ShareBy', {
+      idType: 'INSTRUMENT_ID_TYPE_TICKER', classCode: 'TQBR', id: ticker,
+    });
+    return d.instrument.uid as string;
+  }
+
   /** Верх стакана: bid/ask (null — на аукционе/вне сессии) + последняя цена. */
   async orderBookTop(uid: string): Promise<{ bid: number | null; ask: number | null; last: number | null }> {
     const d = await this.call<any>('MarketDataService', 'GetOrderBook', { instrumentId: uid, depth: 1 });
