@@ -18,6 +18,16 @@ export interface ApiDeps {
   buildHourlyReport: (windowMin: number) => Promise<string>;
 }
 
+// Прореживание кривых до ≤max точек (каждая n-я + последняя): панель рисует
+// график шириной ~660px — тысячи точек не видны глазу, но оплачиваются трафиком
+function thin<T>(points: T[], max = 400): T[] {
+  if (points.length <= max) return points;
+  const step = Math.ceil(points.length / max);
+  const out = points.filter((_, i) => i % step === 0);
+  if (out[out.length - 1] !== points[points.length - 1]) out.push(points[points.length - 1]);
+  return out;
+}
+
 export function buildApiRouter(deps: ApiDeps): Router {
   const r = Router();
   r.use(json({ limit: '100kb' }));
@@ -79,7 +89,7 @@ export function buildApiRouter(deps: ApiDeps): Router {
     try {
       const settings = await deps.store.getSettings();
       const hours = Math.min(Number(req.query.hours) || 48, 24 * 14);
-      res.json({ points: await deps.store.equitySeries(settings.mode, hours) });
+      res.json({ points: thin(await deps.store.equitySeries(settings.mode, hours)) });
     } catch (e) {
       res.status(500).json({ error: errMsg(e) });
     }
@@ -98,7 +108,7 @@ export function buildApiRouter(deps: ApiDeps): Router {
         cum += t.pnl ?? 0;
         return { ts: t.closedAt, cum: +cum.toFixed(2) };
       });
-      res.json({ points });
+      res.json({ points: thin(points) });
     } catch (e) {
       res.status(500).json({ error: errMsg(e) });
     }

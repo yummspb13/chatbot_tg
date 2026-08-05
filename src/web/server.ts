@@ -2,6 +2,7 @@
 
 import { createServer, Server } from 'node:http';
 import path from 'node:path';
+import compression from 'compression';
 import express from 'express';
 import { config } from '../config';
 import { log } from '../logger';
@@ -11,6 +12,9 @@ export function startWebServer(deps: ApiDeps): Server {
   const app = express();
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+  // gzip всех ответов: JSON панели жмётся ~в 10 раз — экономия трафика Render,
+  // лимит которого мы уже однажды сожгли (05.08, суспенд воркспейса)
+  app.use(compression());
 
   app.get('/health', (_req, res) => {
     const s = deps.engine.status();

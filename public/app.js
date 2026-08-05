@@ -34,19 +34,44 @@ function showLogin() {
   $('login').classList.remove('hidden');
 }
 
+// Интервалы экономные: 5ГБ/мес исходящего трафика Render однажды кончились
+// (05.08) ровно из-за жадного поллинга открытой панели
+function startTimers() {
+  clearInterval(statusTimer);
+  clearInterval(dataTimer);
+  statusTimer = setInterval(refreshStatus, 15000);
+  dataTimer = setInterval(refreshData, 60000);
+}
+
+function stopTimers() {
+  clearInterval(statusTimer);
+  clearInterval(dataTimer);
+}
+
 function showApp() {
   $('login').classList.add('hidden');
   $('app').classList.remove('hidden');
   refreshStatus();
   refreshData();
-  clearInterval(statusTimer);
-  clearInterval(dataTimer);
-  statusTimer = setInterval(refreshStatus, 5000);
-  dataTimer = setInterval(refreshData, 30000);
+  startTimers();
   const tm = $('tradesMode');
   if (tm && !tm.dataset.wired) {
     tm.dataset.wired = '1';
     tm.addEventListener('change', refreshData);
+  }
+  if (!document.body.dataset.visWired) {
+    document.body.dataset.visWired = '1';
+    // свёрнутая вкладка не поллит вообще; при возврате — мгновенное обновление
+    document.addEventListener('visibilitychange', () => {
+      if ($('app').classList.contains('hidden')) return;
+      if (document.visibilityState === 'visible') {
+        refreshStatus();
+        refreshData();
+        startTimers();
+      } else {
+        stopTimers();
+      }
+    });
   }
 }
 
