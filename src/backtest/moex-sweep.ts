@@ -70,7 +70,7 @@ function medianHourlyMovePips(candles: MoexCandle[], scale: number): number {
 }
 
 function runCell(
-  candles: MoexCandle[], scale: number, params: AgentParams,
+  candles: MoexCandle[], scale: number, params: AgentParams, spreadFrac: number,
 ): { pnls: Array<{ gross: number; fee: number }>; } {
   const strategy = buildStrategy(params);
   const pnls: Array<{ gross: number; fee: number }> = [];
@@ -89,7 +89,7 @@ function runCell(
 
   for (const c of candles) {
     const mid = c.c / scale;
-    const half = (mid * SPREAD_FRAC * scale) / scale / 2; // половина спреда 0.02%
+    const half = (mid * spreadFrac * scale) / scale / 2; // половина спреда 0.02%
     const hi = c.h / scale;
     const lo = c.l / scale;
 
@@ -158,6 +158,12 @@ if (isMain) {
     const from = new Date(parseArg('from') ?? '2024-01-01');
     const to = new Date(parseArg('to') ?? '2026-07-30');
     const tickers = (parseArg('tickers') ?? TICKERS.join(',')).split(',').map(s => s.trim()).filter(Boolean);
+    // --spread-map SVCB:0.00048,SNGS:0.00032 — замеренные живые спреды (доли цены)
+    const spreadMap = new Map<string, number>();
+    for (const kv of (parseArg('spread-map') ?? '').split(',').filter(Boolean)) {
+      const [k, v] = kv.split(':');
+      if (k && Number.isFinite(Number(v))) spreadMap.set(k.trim(), Number(v));
+    }
     const cells: Cell[] = [];
 
     for (const ticker of tickers) {
@@ -174,7 +180,8 @@ if (isMain) {
       const scale = Math.pow(10, Math.ceil(Math.log10(p0)));
       const movePips = medianHourlyMovePips(candles, scale);
       const mult = Math.max(1, Math.round(movePips / 3.7));
-      const spreadPips = (p0 / scale) * SPREAD_FRAC / PIP;
+      const spreadFrac = spreadMap.get(ticker) ?? SPREAD_FRAC;
+      const spreadPips = (p0 / scale) * spreadFrac / PIP;
       const feePips = FEE_ROUND_FRAC * (p0 / scale) / PIP;
       console.log(`===== ${ticker}: ${candles.length} минуток · цена ${p0}₽ · scale ${scale} · ход ${movePips.toFixed(1)}п/ч · mult ${mult} · спред ${spreadPips.toFixed(1)}п · комиссия/круг ~${feePips.toFixed(1)}п =====`);
 
@@ -202,7 +209,7 @@ if (isMain) {
                 tpPips: tp * mult, slPips: sl * mult,
                 cooldownSec: 900, entryTtlSec: 180,
               };
-              const { pnls } = runCell(candles, scale, params);
+              const { pnls } = runCell(candles, scale, params, spreadFrac);
               if (pnls.length < 30) continue;
               const cut = Math.floor(pnls.length * 0.7);
               const sum = (xs: typeof pnls, f: (x: typeof pnls[0]) => number) => xs.reduce((s, x) => s + f(x), 0);
