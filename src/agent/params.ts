@@ -42,6 +42,8 @@ export interface AgentParams {
   maxHoldSec: number;      // тайм-стоп: закрыть по рынку через N сек, если ни TP, ни SL (0 = выкл)
   beLockFrac: number;      // брейк-ивен-лок: пройдено frac пути к TP → SL переносится на вход (0 = выкл)
   partialFrac: number;     // частичная фиксация: половина объёма выходит на frac пути к TP (0 = выкл)
+  dailyProfitStopUsd: number; // дневная цель: достигнута → новых входов до следующего дня UTC (0 = выкл;
+                              // A/B-гипотеза профит-стопа 05.08 — пока читается только виртуальными книгами)
   tradeHoursUtc: number[]; // разрешённые часы UTC для входов (пусто = все)
   autoBlackoutHours: number[]; // часы UTC, отключённые модулем обучения
 }
@@ -68,6 +70,7 @@ export const DEFAULT_PARAMS: AgentParams = {
   maxHoldSec: 0,
   beLockFrac: 0,
   partialFrac: 0,
+  dailyProfitStopUsd: 0,
   tradeHoursUtc: [],
   autoBlackoutHours: [],
 };
@@ -117,6 +120,7 @@ export function clampParams(input: unknown): AgentParams {
     maxHoldSec: Math.round(clampNum(p.maxHoldSec, 0, 604800, DEFAULT_PARAMS.maxHoldSec)),
     beLockFrac: clampNum(p.beLockFrac, 0, 0.9, DEFAULT_PARAMS.beLockFrac),
     partialFrac: clampNum(p.partialFrac, 0, 0.75, DEFAULT_PARAMS.partialFrac),
+    dailyProfitStopUsd: clampNum(p.dailyProfitStopUsd, 0, 100, DEFAULT_PARAMS.dailyProfitStopUsd),
     tradeHoursUtc: hourList(p.tradeHoursUtc, 24),
     autoBlackoutHours: hourList(p.autoBlackoutHours, 8),
   };
@@ -273,6 +277,12 @@ export const ENSEMBLE_MEMBERS_GBPJPY: EnsembleMember[] = [
     key: 'gj-vprofile',
     params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 6, tpPips: 30, slPips: 50, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 10 },
   },
+  // A/B профит-стопа (docs/PROFIT-STOP-2026-08-05.md): точный клон gj-meanrev
+  // + дневная цель +2$ — в оверлее дал Δ+89$ и test 19→61$; судья — форвард
+  {
+    key: 'gj-meanrev-ps',
+    params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 16, tpPips: 12, slPips: 40, cooldownSec: 900, spreadGuardPips: 6, maxDailyLossUsd: 10, dailyProfitStopUsd: 2 },
+  },
   // намайненное 03.08 (docs/MINER-4MARKETS-2026-08-03.md): час 20 UTC → SHORT,
   // t=−13.4, сейф +87.98$/64 сд — скворинг перед ролловером; выход ≤1ч
   {
@@ -398,6 +408,7 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       maxHoldSec: 0,
       beLockFrac: 0,
       partialFrac: 0,
+      dailyProfitStopUsd: 0,
       tradeHoursUtc: [],
       autoBlackoutHours: [],
     },
@@ -429,6 +440,7 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       maxHoldSec: 0,
       beLockFrac: 0,
       partialFrac: 0,
+      dailyProfitStopUsd: 0,
       tradeHoursUtc: [],
       autoBlackoutHours: [],
     },

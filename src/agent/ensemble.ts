@@ -250,6 +250,8 @@ export class EnsembleLeg {
     // 3) новый сигнал → виртуальная лимитка (страддлов в ростере нет)
     const sig = m.strategy.onQuote(q);
     if (!sig || sig.both) return;
+    // дневной профит-стоп (A/B-гипотеза 05.08): цель достигнута → входов до завтра нет
+    if (p.dailyProfitStopUsd > 0 && m.realizedToday >= p.dailyProfitStopUsd) return;
     const verdict = m.risk.check({
       now: q.time,
       openCount: m.open.length + m.pending.length,
