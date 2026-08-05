@@ -111,6 +111,9 @@ export interface TradeStore {
   closedTradesSince(mode: string, since: Date): Promise<TradeRecord[]>;
   saveSnapshot(mode: string, balance: number, equity: number, openPositions: number): Promise<void>;
   equitySeries(mode: string, hours: number): Promise<EquityPoint[]>;
+  /** Последний equity-снапшот любого режима — вотермарк «когда сервис жил в
+   *  последний раз» для догонки виртуальных ног после простоя. */
+  latestSnapshotTs(): Promise<Date | null>;
   createProposal(params: AgentParams, report: unknown): Promise<ProposalRecord>;
   listProposals(status?: string): Promise<ProposalRecord[]>;
   getProposal(id: number): Promise<ProposalRecord | null>;
@@ -250,6 +253,11 @@ class PrismaStore implements TradeStore {
 
   async saveSnapshot(mode: string, balance: number, equity: number, openPositions: number): Promise<void> {
     await this.p.equitySnapshot.create({ data: { mode, balance, equity, openPositions } });
+  }
+
+  async latestSnapshotTs(): Promise<Date | null> {
+    const r = await this.p.equitySnapshot.findFirst({ orderBy: { ts: 'desc' }, select: { ts: true } });
+    return r?.ts ?? null;
   }
 
   async equitySeries(mode: string, hours: number): Promise<EquityPoint[]> {
@@ -410,6 +418,10 @@ class MemoryStore implements TradeStore {
     return this.snapshots
       .filter(s => s.mode === mode && s.ts.getTime() >= since)
       .map(s => ({ ts: s.ts, balance: s.balance, equity: s.equity }));
+  }
+
+  async latestSnapshotTs(): Promise<Date | null> {
+    return this.snapshots.length ? this.snapshots[this.snapshots.length - 1].ts : null;
   }
 
   async createProposal(params: AgentParams, report: unknown): Promise<ProposalRecord> {

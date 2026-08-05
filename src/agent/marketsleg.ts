@@ -40,7 +40,7 @@ export class MarketsLeg {
     return this.specs.map(s => s.mt5Symbol);
   }
 
-  async start(): Promise<void> {
+  async start(gapStart?: Date | null): Promise<void> {
     if (this.running) return;
     if (!config.metaapiToken || !config.metaapiAccountId) {
       throw new Error('мультирыночная нога требует METAAPI_TOKEN и METAAPI_ACCOUNT_ID');
@@ -54,7 +54,7 @@ export class MarketsLeg {
       ),
     }));
     // прогревы четырёх рынков параллельно: на холодном кэше Dukascopy это минуты
-    await Promise.all(this.legs.map(l => l.leg.start()));
+    await Promise.all(this.legs.map(l => l.leg.start(gapStart)));
     this.running = true;
     this.loopPromise = this.loop();
     this.watchdog = setInterval(() => this.checkWatchdog(), 60_000);

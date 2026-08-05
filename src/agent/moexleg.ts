@@ -117,6 +117,13 @@ export const MOEX_LEGS: MoexSpec[] = [
   },
 ];
 
+// Медианные спреды живых стаканов (замер 05.08, data/moex-spread-check.json) —
+// доля цены; используются ТОЛЬКО догонкой простоя (у ISS-минуток спреда нет)
+const MEDIAN_SPREAD_FRAC: Record<string, number> = {
+  TATN: 0.00019, GAZP: 0.00011, ROSN: 0.00014, AFKS: 0.00021, MOEX: 0.00025,
+  TRNFP: 0.00018, SVCB: 0.00048, SNGS: 0.00032, RAGR: 0.0004, SIBN: 0.00032, ALRS: 0.00044,
+};
+
 /** Будни, основная или вечерняя сессия Мосбиржи (UTC; MSK без DST). */
 export function moexInSession(now: Date): boolean {
   const dow = now.getUTCDay();
@@ -138,7 +145,7 @@ export class MoexLeg {
     return this.running;
   }
 
-  async start(): Promise<void> {
+  async start(gapStart?: Date | null): Promise<void> {
     if (this.running) return;
     if (!config.tinkoffToken) throw new Error('MOEX-нога требует TINKOFF_TOKEN (read-only) в env');
     this.client = new TinkoffClient(config.tinkoffToken);
@@ -167,6 +174,7 @@ export class MoexLeg {
     }
     for (const l of this.legs) await l.leg.start();
     this.running = true;
+    if (gapStart) await this.replayGap(gapStart);
     this.loopPromise = this.loop();
     log.success(
       `MOEX-нога запущена: ${this.legs.map(l => `${l.spec.ticker} (${l.spec.roster.map(r => r.key).join('+')})`).join(', ')} — виртуально, read-only, комиссия 0.1%/круг в модели`,
@@ -185,6 +193,24 @@ export class MoexLeg {
     this.client = null;
     for (const l of this.legs) l.leg.stop();
     log.info('MOEX-нога остановлена', undefined, 'moex');
+  }
+
+  /** Догонка простоя: ISS-минутки за [gapStart, сейчас] проигрываются через
+   *  полный торговый путь книг (сделки-BF). Спред — медиана живого замера. */
+  private async replayGap(gapStart: Date): Promise<void> {
+    const from = new Date(Math.max(gapStart.getTime(), Date.now() - 72 * 3600_000));
+    for (const l of this.legs) {
+      try {
+        const { loadMoexM1 } = await import('../backtest/moex-data');
+        const frac = MEDIAN_SPREAD_FRAC[l.spec.ticker] ?? 0.0002;
+        const candles = (await loadMoexM1(l.spec.ticker, from, new Date()))
+          .filter(c => c.t >= from.getTime())
+          .map(c => ({ ...c, sp: c.c * frac }));
+        await l.leg.replayCandles(candles, l.spec.priceScale, from);
+      } catch (e) {
+        log.warn(`MOEX догонка ${l.spec.ticker}: ${errMsg(e)} — пропуск останется дырой`, undefined, 'moex');
+      }
+    }
   }
 
   private async loop(): Promise<void> {

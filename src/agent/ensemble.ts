@@ -87,6 +87,12 @@ export class EnsembleLeg {
   private members: MemberState[];
   private running = false;
   private lastQuoteAt = 0;
+  // 'BF' во время догонки простоя: сделки из проигранной истории помечаются в
+  // brokerTradeId (у виртуальных он всё равно пуст) — лицензии их не считают
+  private backfillTag: string | null = null;
+  // пока идёт проигрыш истории, живые тики дропаются: смешение исторического и
+  // текущего времени в одном потоке ломало бы TP/SL и дневные счётчики
+  private replaying = false;
 
   constructor(
     private deps: EnsembleDeps,
@@ -100,7 +106,10 @@ export class EnsembleLeg {
     return this.running;
   }
 
-  async start(): Promise<void> {
+  /** gapStart — вотермарк простоя: прогрев истории обрезается на нём, а
+   *  [gapStart, сейчас] проигрывается ЧЕРЕЗ ПОЛНЫЙ торговый путь (филлы,
+   *  TP/SL, счётчики) со сделками-BF — понимание срабатываний без дыры. */
+  async start(gapStart?: Date | null): Promise<void> {
     if (this.running) return;
     const todayStart = new Date(new Date().toISOString().slice(0, 10));
     const closedToday = await this.deps.store.closedTradesSince(MODE, todayStart);
@@ -126,8 +135,9 @@ export class EnsembleLeg {
           mult: Math.max(1, Math.round(r.units / m.member.params.units)),
         }));
     }
-    await this.warmupFromHistory();
+    await this.warmupFromHistory(gapStart ?? undefined);
     this.running = true;
+    if (gapStart) await this.replayGap(gapStart);
     log.success(
       `ансамбль ${this.cfg.baseSymbol} запущен: ${this.members.map(m => m.member.key).join(', ')} — виртуально, на живых котировках`,
       undefined, 'ensemble',
@@ -142,14 +152,16 @@ export class EnsembleLeg {
   }
 
   /** Прогрев стратегий историей с реальным спредом (echo — 20-дневное расписание,
-   *  spreadweather — базовая линия). Сигналы прогрева отбрасываются. */
-  private async warmupFromHistory(): Promise<void> {
+   *  spreadweather — базовая линия). Сигналы прогрева отбрасываются.
+   *  cutoff задан → история обрезается на нём (дальше её проиграет replayGap,
+   *  чтобы стратегии не увидели один и тот же кусок дважды). */
+  private async warmupFromHistory(cutoff?: Date): Promise<void> {
     const w = this.cfg.warmup;
     if (!w) return;
     try {
       const { loadM1WithSpread } = await import('../backtest/data');
-      const to = new Date();
-      const from = new Date(Date.now() - 26 * 86400_000);
+      const to = cutoff ?? new Date();
+      const from = new Date(to.getTime() - 26 * 86400_000);
       const candles = await loadM1WithSpread(w.instrument, from, to);
       if (candles.length < 1440) {
         log.warn(`ансамбль ${this.cfg.baseSymbol}: мало истории для прогрева (${candles.length}) — холодный старт`, undefined, 'ensemble');
@@ -167,9 +179,68 @@ export class EnsembleLeg {
     }
   }
 
+  /** Догонка простоя по истории своего прогрев-инструмента (у ног без warmup —
+   *  MOEX — историю подаёт нога через replayCandles). Максимум 72 часа. */
+  private async replayGap(gapStart: Date): Promise<void> {
+    const w = this.cfg.warmup;
+    if (!w) return;
+    try {
+      const { loadM1WithSpread } = await import('../backtest/data');
+      const from = new Date(Math.max(gapStart.getTime(), Date.now() - 72 * 3600_000));
+      const candles = await loadM1WithSpread(w.instrument, from, new Date());
+      await this.replayCandles(candles.filter(c => c.t >= from.getTime()), w.scale, from);
+    } catch (e) {
+      log.warn(`догонка ${this.cfg.baseSymbol} не удалась (${errMsg(e)}) — пропуск останется дырой`, undefined, 'ensemble');
+    }
+  }
+
+  /** Проигрывает свечи через ПОЛНЫЙ торговый путь (o→h→l→c как 4 котировки);
+   *  открытые в проигрыше сделки помечаются brokerTradeId='BF'. Порядок h/l
+   *  внутри минуты неизвестен — модельная условность, потому и пометка:
+   *  лицензии считаются только по живым тикам, BF — картина срабатываний. */
+  async replayCandles(candles: Array<{ t: number; o: number; h: number; l: number; c: number; sp?: number }>, scale: number, from: Date): Promise<void> {
+    if (!candles.length) {
+      log.info(`догонка ${this.cfg.baseSymbol}: истории за простой нет (рынок закрыт или данные ещё не выложены)`, undefined, 'ensemble');
+      return;
+    }
+    // идемпотентность: рестарт-петля после уже выполненной догонки этого окна
+    // не должна проиграть его второй раз (задвоила бы сделки-BF)
+    const prior = await this.deps.store.closedTradesSince(MODE, from);
+    if (prior.some(t => t.brokerTradeId === 'BF' && t.symbol.startsWith(`${this.cfg.baseSymbol}~`))) {
+      log.info(`догонка ${this.cfg.baseSymbol}: окно уже проиграно ранее — пропускаю`, undefined, 'ensemble');
+      return;
+    }
+    this.backfillTag = 'BF';
+    this.replaying = true;
+    try {
+      for (const c of candles) {
+        const half = ((c.sp ?? PIP) / scale) / 2;
+        const legPrices: Array<[number, number]> = [[c.o, 0], [c.h, 15_000], [c.l, 30_000], [c.c, 45_000]];
+        for (const [price, dt] of legPrices) {
+          const mid = price / scale;
+          await this.processQuote({ symbol: this.cfg.baseSymbol, bid: mid - half, ask: mid + half, time: new Date(c.t + dt) });
+        }
+      }
+    } finally {
+      this.backfillTag = null;
+      this.replaying = false;
+    }
+    const closed = await this.deps.store.closedTradesSince(MODE, from);
+    const bf = closed.filter(t => t.brokerTradeId === 'BF' && t.symbol.startsWith(`${this.cfg.baseSymbol}~`));
+    const bfNet = bf.reduce((s, t) => s + (t.pnl ?? 0), 0);
+    log.success(
+      `догонка ${this.cfg.baseSymbol}: проиграно ${candles.length} минуток простоя → сделок-BF закрыто ${bf.length} (${bfNet >= 0 ? '+' : ''}${bfNet.toFixed(2)}$)`,
+      undefined, 'ensemble',
+    );
+  }
+
   /** Вызывается движком на каждом живом тике. Всё в памяти, БД — только на филлах/закрытиях. */
   async onQuote(q: Quote): Promise<void> {
-    if (!this.running) return;
+    if (!this.running || this.replaying) return;
+    await this.processQuote(q);
+  }
+
+  private async processQuote(q: Quote): Promise<void> {
     this.lastQuoteAt = Date.now();
     const spreadPips = (q.ask - q.bid) / PIP;
     const dayKey = q.time.toISOString().slice(0, 10);
@@ -217,7 +288,7 @@ export class EnsembleLeg {
           openedAt: q.time,
           costSpread: 0,
           costCommission: 0,
-          brokerTradeId: null,
+          brokerTradeId: this.backfillTag,
           spreadAtEntry: spreadPips,
           volAtEntry: m.strategy.windowRangePips(),
           hourUtc: q.time.getUTCHours(),
@@ -308,7 +379,7 @@ export class EnsembleLeg {
         openedAt: q.time,
         costSpread: (q.ask - q.bid) * p.units * mult,
         costCommission: 0,
-        brokerTradeId: null,
+        brokerTradeId: this.backfillTag,
         spreadAtEntry: spreadPips,
         volAtEntry: m.strategy.windowRangePips(),
         hourUtc: q.time.getUTCHours(),
@@ -345,6 +416,7 @@ export class EnsembleLeg {
       tradesToday: number;
       realizedToday: number;
       hotStreak: number | null; // подряд плюсов сегодня (только у hot-hand-клонов)
+      bf14: number; // сделок-догонок (BF) из 14-дневного окна — в лицензии не входят
       license: 'granted' | 'denied' | 'collecting';
     }>;
   }> {
@@ -357,7 +429,11 @@ export class EnsembleLeg {
         const mine = all.filter(t => t.symbol === m.symbol());
         const net = mine.reduce((s, t) => s + (t.pnl ?? 0), 0);
         const wins = mine.filter(t => (t.pnl ?? 0) > 0).length;
-        const license = mine.length >= 10 ? (net > 0 ? 'granted' as const : 'denied' as const) : 'collecting' as const;
+        // лицензия строго по ЖИВЫМ тикам: сделки-догонки (BF) — модельные филлы,
+        // они дают картину срабатываний, но допуск к деньгам не аргументируют
+        const live = mine.filter(t => t.brokerTradeId !== 'BF');
+        const liveNet = live.reduce((s, t) => s + (t.pnl ?? 0), 0);
+        const license = live.length >= 10 ? (liveNet > 0 ? 'granted' as const : 'denied' as const) : 'collecting' as const;
         return {
           key: m.member.key,
           strategy: `${m.member.params.strategyType}/${m.member.params.entryMode}`,
@@ -370,6 +446,7 @@ export class EnsembleLeg {
           tradesToday: m.tradesToday,
           realizedToday: +m.realizedToday.toFixed(2),
           hotStreak: m.member.params.hotHandLadder ? m.winStreakToday : null,
+          bf14: mine.length - live.length,
           license,
         };
       }),

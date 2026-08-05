@@ -151,6 +151,23 @@ export class AgentEngine {
       undefined, 'engine',
     );
 
+    // Вотермарк простоя: сервис лежал дольше 10 мин (суспенд/сбой) → виртуальные
+    // ноги проигрывают пропуск по истории (сделки-BF), чтобы срабатывания гипотез
+    // не терялись. Обычные деплои (<10 мин) догонки не заслуживают.
+    let gapStart: Date | null = null;
+    try {
+      const lastTs = await this.deps.store.latestSnapshotTs();
+      if (lastTs && Date.now() - lastTs.getTime() > 10 * 60_000) {
+        gapStart = lastTs;
+        log.warn(
+          `обнаружен простой с ${lastTs.toISOString()} (${Math.round((Date.now() - lastTs.getTime()) / 60_000)} мин) — виртуальные ноги догонят его по истории`,
+          undefined, 'engine',
+        );
+      }
+    } catch (e) {
+      log.warn(`вотермарк простоя: ${errMsg(e)}`, undefined, 'engine');
+    }
+
     let cryptoNote = '';
     if (config.cryptoWeekend) {
       if (settings.mode === 'live' && config.broker === 'metaapi') {
@@ -162,7 +179,7 @@ export class AgentEngine {
               { baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 } },
               ENSEMBLE_MEMBERS_BTC,
             );
-            await this.btcEnsemble.start();
+            await this.btcEnsemble.start(gapStart);
           }
           const btcEns = this.btcEnsemble;
           this.cryptoLeg = new CryptoLeg(
@@ -192,7 +209,7 @@ export class AgentEngine {
     if (config.ensemble && settings.mode === 'live') {
       try {
         this.ensembleLeg = new EnsembleLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
-        await this.ensembleLeg.start();
+        await this.ensembleLeg.start(gapStart);
         cryptoNote += '\n🎼 Ансамбль: 5 виртуальных стратегий на живых котировках (деньги не задействованы; /agent_ensemble).';
       } catch (e) {
         this.ensembleLeg = null;
@@ -205,7 +222,7 @@ export class AgentEngine {
       && config.broker === 'metaapi' && config.metaapiToken && config.metaapiAccountId) {
       try {
         this.marketsLeg = new MarketsLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
-        await this.marketsLeg.start();
+        await this.marketsLeg.start(gapStart);
         cryptoNote += '\n🌍 Мультирынок: золото, нефть, GBPJPY, S&P500 — 5 победителей свипа торгуют виртуально (/agent_ensemble).';
       } catch (e) {
         this.marketsLeg = null;
@@ -250,7 +267,7 @@ export class AgentEngine {
     if (config.tinkoffToken && settings.mode === 'live') {
       try {
         this.moexLeg = new MoexLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
-        await this.moexLeg.start();
+        await this.moexLeg.start(gapStart);
         cryptoNote += '\n🇷🇺 MOEX-нога: TATN, GAZP, ROSN — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).';
       } catch (e) {
         this.moexLeg = null;
