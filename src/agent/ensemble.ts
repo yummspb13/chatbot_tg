@@ -53,6 +53,7 @@ interface VOpen {
   sl: number;
   openedAt: number;   // для тайм-выхода (maxHoldSec)
   beLocked?: boolean; // BE-лок: SL уже перенесён на вход
+  mult?: number;      // hot-hand множитель размера, зафиксирован при открытии
 }
 
 class MemberState {
@@ -63,6 +64,7 @@ class MemberState {
   dayKey = '';
   tradesToday = 0;
   realizedToday = 0;
+  winStreakToday = 0; // подряд плюсовых закрытий сегодня (hot-hand-лесенка)
 
   constructor(public member: EnsembleMember, private baseSymbol: string) {
     this.strategy = buildStrategy(member.params);
@@ -71,6 +73,13 @@ class MemberState {
 
   symbol(): string {
     return `${this.baseSymbol}~${this.member.key}`;
+  }
+
+  /** Множитель размера следующей сделки: как в оверлее бэктеста — по уже
+   *  ЗАКРЫТЫМ сделкам текущего дня, без подглядывания в будущее. */
+  hhMult(): number {
+    if (!this.member.params.hotHandLadder) return 1;
+    return this.winStreakToday >= 5 ? 5 : this.winStreakToday >= 3 ? 3 : 1;
   }
 }
 
@@ -93,15 +102,29 @@ export class EnsembleLeg {
 
   async start(): Promise<void> {
     if (this.running) return;
+    const todayStart = new Date(new Date().toISOString().slice(0, 10));
+    const closedToday = await this.deps.store.closedTradesSince(MODE, todayStart);
     for (const m of this.members) {
       m.dayKey = new Date().toISOString().slice(0, 10);
       m.tradesToday = await this.deps.store.countTradesToday(MODE, m.symbol());
       m.realizedToday = await this.deps.store.realizedPnlToday(MODE, m.symbol());
+      // hot-hand: стрик восстанавливается из сегодняшних закрытий, чтобы рестарт
+      // посреди дня не сбрасывал лесенку
+      const mine = closedToday
+        .filter(t => t.symbol === m.symbol())
+        .sort((a, b) => (a.closedAt?.getTime() ?? 0) - (b.closedAt?.getTime() ?? 0));
+      m.winStreakToday = 0;
+      for (const t of mine) m.winStreakToday = (t.pnl ?? 0) > 0 ? m.winStreakToday + 1 : 0;
       // открытые виртуальные позиции переживают рестарт — усыновляем из БД
+      // (множитель hot-hand восстанавливаем из записанного размера)
       const rows = await this.deps.store.listOpenTrades(MODE, m.symbol());
       m.open = rows
         .filter(r => r.tpPrice !== null && r.slPrice !== null)
-        .map(r => ({ rowId: r.id, side: r.side, entry: r.entryPrice, tp: r.tpPrice!, sl: r.slPrice!, openedAt: r.openedAt.getTime() }));
+        .map(r => ({
+          rowId: r.id, side: r.side, entry: r.entryPrice, tp: r.tpPrice!, sl: r.slPrice!,
+          openedAt: r.openedAt.getTime(),
+          mult: Math.max(1, Math.round(r.units / m.member.params.units)),
+        }));
     }
     await this.warmupFromHistory();
     this.running = true;
@@ -165,6 +188,7 @@ export class EnsembleLeg {
       m.dayKey = dayKey;
       m.tradesToday = 0;
       m.realizedToday = 0;
+      m.winStreakToday = 0; // лесенка hot-hand сбрасывается к утру
     }
     const p = m.member.params;
     const now = q.time.getTime();
@@ -179,11 +203,14 @@ export class EnsembleLeg {
           keep.push(pe);
           continue;
         }
+        // hot-hand: множитель фиксируется в момент открытия позиции (= филла),
+        // как openedAt в оверлее бэктеста
+        const mult = m.hhMult();
         const row = await this.deps.store.openTrade({
           mode: MODE,
           symbol: m.symbol(),
           side: pe.side,
-          units: p.units,
+          units: p.units * mult,
           entryPrice: pe.price,
           slPrice: pe.sl,
           tpPrice: pe.tp,
@@ -197,7 +224,7 @@ export class EnsembleLeg {
           newsDistMin: null,
           paramsSnapshot: p,
         });
-        m.open.push({ rowId: row.id, side: pe.side, entry: pe.price, tp: pe.tp, sl: pe.sl, openedAt: q.time.getTime() });
+        m.open.push({ rowId: row.id, side: pe.side, entry: pe.price, tp: pe.tp, sl: pe.sl, openedAt: q.time.getTime(), mult });
         m.tradesToday += 1;
       }
       m.pending = keep;
@@ -234,8 +261,9 @@ export class EnsembleLeg {
           keep.push(o);
           continue;
         }
-        const commission = (this.cfg.commissionFrac ?? 0) * o.entry * m.member.params.units;
-        const pnl = (o.side === 'BUY' ? exit - o.entry : o.entry - exit) * m.member.params.units - commission;
+        const closeUnits = m.member.params.units * (o.mult ?? 1);
+        const commission = (this.cfg.commissionFrac ?? 0) * o.entry * closeUnits;
+        const pnl = (o.side === 'BUY' ? exit - o.entry : o.entry - exit) * closeUnits - commission;
         await this.deps.store.closeTradeById(o.rowId, {
           exitPrice: exit,
           closedAt: q.time,
@@ -243,6 +271,7 @@ export class EnsembleLeg {
           closeReason: o.beLocked && exit === o.entry ? 'BE' : reason,
         });
         m.realizedToday += pnl;
+        m.winStreakToday = pnl > 0 ? m.winStreakToday + 1 : 0; // лесенка hot-hand
       }
       m.open = keep;
     }
@@ -264,6 +293,7 @@ export class EnsembleLeg {
     if (!verdict.ok) return;
     if (p.entryMode === 'market') {
       // рыночный вход: платим спред сразу (механика намайненных правил)
+      const mult = m.hhMult();
       const entry = sig.side === 'BUY' ? q.ask : q.bid;
       const tp = round5(sig.side === 'BUY' ? entry + sig.tpPips * PIP : entry - sig.tpPips * PIP);
       const sl = round5(sig.side === 'BUY' ? entry - sig.slPips * PIP : entry + sig.slPips * PIP);
@@ -271,12 +301,12 @@ export class EnsembleLeg {
         mode: MODE,
         symbol: m.symbol(),
         side: sig.side,
-        units: p.units,
+        units: p.units * mult,
         entryPrice: entry,
         slPrice: sl,
         tpPrice: tp,
         openedAt: q.time,
-        costSpread: (q.ask - q.bid) * p.units,
+        costSpread: (q.ask - q.bid) * p.units * mult,
         costCommission: 0,
         brokerTradeId: null,
         spreadAtEntry: spreadPips,
@@ -285,7 +315,7 @@ export class EnsembleLeg {
         newsDistMin: null,
         paramsSnapshot: p,
       });
-      m.open.push({ rowId: row.id, side: sig.side, entry, tp, sl, openedAt: q.time.getTime() });
+      m.open.push({ rowId: row.id, side: sig.side, entry, tp, sl, openedAt: q.time.getTime(), mult });
       m.tradesToday += 1;
       return;
     }
@@ -314,6 +344,7 @@ export class EnsembleLeg {
       pendingNow: number;
       tradesToday: number;
       realizedToday: number;
+      hotStreak: number | null; // подряд плюсов сегодня (только у hot-hand-клонов)
       license: 'granted' | 'denied' | 'collecting';
     }>;
   }> {
@@ -338,6 +369,7 @@ export class EnsembleLeg {
           pendingNow: m.pending.length,
           tradesToday: m.tradesToday,
           realizedToday: +m.realizedToday.toFixed(2),
+          hotStreak: m.member.params.hotHandLadder ? m.winStreakToday : null,
           license,
         };
       }),

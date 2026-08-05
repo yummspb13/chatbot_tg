@@ -58,6 +58,7 @@ export const MAKER_PRESET: AgentParams = {
   beLockFrac: 0,
   partialFrac: 0,
   dailyProfitStopUsd: 0,
+  hotHandLadder: false,
   tradeHoursUtc: [],
   autoBlackoutHours: [],
 };

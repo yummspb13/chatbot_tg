@@ -44,6 +44,9 @@ export interface AgentParams {
   partialFrac: number;     // частичная фиксация: половина объёма выходит на frac пути к TP (0 = выкл)
   dailyProfitStopUsd: number; // дневная цель: достигнута → новых входов до следующего дня UTC (0 = выкл;
                               // A/B-гипотеза профит-стопа 05.08 — пока читается только виртуальными книгами)
+  hotHandLadder: boolean;  // «лесенка за серией» (A/B 05.08, docs/HOT-HAND-2026-08-05.md): 3 плюса
+                           // ПОДРЯД за день → размер ×3, 5 подряд → ×5, любой минус сбрасывает.
+                           // Только виртуальные книги; live-деньгами не читается
   tradeHoursUtc: number[]; // разрешённые часы UTC для входов (пусто = все)
   autoBlackoutHours: number[]; // часы UTC, отключённые модулем обучения
 }
@@ -71,6 +74,7 @@ export const DEFAULT_PARAMS: AgentParams = {
   beLockFrac: 0,
   partialFrac: 0,
   dailyProfitStopUsd: 0,
+  hotHandLadder: false,
   tradeHoursUtc: [],
   autoBlackoutHours: [],
 };
@@ -121,6 +125,7 @@ export function clampParams(input: unknown): AgentParams {
     beLockFrac: clampNum(p.beLockFrac, 0, 0.9, DEFAULT_PARAMS.beLockFrac),
     partialFrac: clampNum(p.partialFrac, 0, 0.75, DEFAULT_PARAMS.partialFrac),
     dailyProfitStopUsd: clampNum(p.dailyProfitStopUsd, 0, 100, DEFAULT_PARAMS.dailyProfitStopUsd),
+    hotHandLadder: p.hotHandLadder === true,
     tradeHoursUtc: hourList(p.tradeHoursUtc, 24),
     autoBlackoutHours: hourList(p.autoBlackoutHours, 8),
   };
@@ -186,6 +191,13 @@ export const ENSEMBLE_MEMBERS: EnsembleMember[] = [
     key: 'impulse',
     params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 2, tpPips: 10, slPips: 20, cooldownSec: 900 },
   },
+  // A/B 05.08 (подключено по команде владельца): семейная гипотеза «профит-стоп
+  // любит meanrev» — клон живого пресета + дневная цель +2$ (в оверлее на полных
+  // данных +2$/д лучше базы по net И DD; docs/PROFIT-STOP-2026-08-05.md)
+  { key: 'meanrev-ps', params: { ...DEFAULT_PARAMS, dailyProfitStopUsd: 2 } },
+  // A/B 05.08: hot-hand-лесенка (3 плюса подряд → ×3, 5 → ×5) — eur-meanrev был
+  // главным бенефициаром оверлея (net/DD 0.176 → 1.108; docs/HOT-HAND-2026-08-05.md)
+  { key: 'meanrev-hh', params: { ...DEFAULT_PARAMS, hotHandLadder: true } },
 ];
 
 // Крипто-ансамбль: те же роли на BTC-стриме крипто-ноги (24/7, включая выходные).
@@ -197,6 +209,11 @@ export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
   {
     key: 'btc-meanrev',
     params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 32, tpPips: 24, slPips: 80, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
+  },
+  // A/B профит-стопа 05.08: расширение семейной гипотезы на весь meanrev-ростер
+  {
+    key: 'btc-meanrev-ps',
+    params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 32, tpPips: 24, slPips: 80, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0, dailyProfitStopUsd: 2 },
   },
   {
     key: 'btc-spreadw',
@@ -264,6 +281,11 @@ export const ENSEMBLE_MEMBERS_OIL: EnsembleMember[] = [
     key: 'oil-impulse',
     params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20 },
   },
+  // A/B hot-hand 05.08: второй бенефициар оверлея (+146$ → +270$ при DD 312→432)
+  {
+    key: 'oil-impulse-hh',
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, hotHandLadder: true },
+  },
 ];
 
 export const ENSEMBLE_MEMBERS_GBPJPY: EnsembleMember[] = [
@@ -319,6 +341,11 @@ export const ENSEMBLE_MEMBERS_GBPNZD: EnsembleMember[] = [
     key: 'gn-meanrev',
     params: { ...DEFAULT_PARAMS, windowSec: 3600, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15 },
   },
+  // A/B профит-стопа 05.08: расширение семейной гипотезы на весь meanrev-ростер
+  {
+    key: 'gn-meanrev-ps',
+    params: { ...DEFAULT_PARAMS, windowSec: 3600, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, dailyProfitStopUsd: 2 },
+  },
 ];
 
 export const ENSEMBLE_MEMBERS_EURJPY: EnsembleMember[] = [
@@ -326,6 +353,11 @@ export const ENSEMBLE_MEMBERS_EURJPY: EnsembleMember[] = [
   {
     key: 'ej-echo',
     params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 80, tpPips: 48, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 10 },
+  },
+  // A/B hot-hand 05.08: третий бенефициар оверлея (+59$ → +69$ при том же DD)
+  {
+    key: 'ej-echo-hh',
+    params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 80, tpPips: 48, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 10, hotHandLadder: true },
   },
 ];
 
@@ -409,6 +441,7 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       beLockFrac: 0,
       partialFrac: 0,
       dailyProfitStopUsd: 0,
+      hotHandLadder: false,
       tradeHoursUtc: [],
       autoBlackoutHours: [],
     },
@@ -441,6 +474,7 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       beLockFrac: 0,
       partialFrac: 0,
       dailyProfitStopUsd: 0,
+      hotHandLadder: false,
       tradeHoursUtc: [],
       autoBlackoutHours: [],
     },
