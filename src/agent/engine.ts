@@ -151,18 +151,22 @@ export class AgentEngine {
       undefined, 'engine',
     );
 
-    // Вотермарк простоя: сервис лежал дольше 10 мин (суспенд/сбой) → виртуальные
-    // ноги проигрывают пропуск по истории (сделки-BF), чтобы срабатывания гипотез
-    // не терялись. Обычные деплои (<10 мин) догонки не заслуживают.
+    // Вотермарк простоя: последний РАЗРЫВ в снапшотах >10 мин (суспенд/сбой) →
+    // виртуальные ноги проигрывают пропуск по истории (сделки-BF). Разрыв берём
+    // только свежий (конец ≤20 мин назад): это либо «лежали до сейчас», либо
+    // цепочка «Render поднял старый билд → через минуты накатился новый»;
+    // старые разрывы не трогаем — поверх уже наросли живые данные.
     let gapStart: Date | null = null;
     try {
-      const lastTs = await this.deps.store.latestSnapshotTs();
-      if (lastTs && Date.now() - lastTs.getTime() > 10 * 60_000) {
-        gapStart = lastTs;
+      const gap = await this.deps.store.recentSnapshotGap();
+      if (gap && Date.now() - gap.end.getTime() <= 20 * 60_000) {
+        gapStart = gap.start;
         log.warn(
-          `обнаружен простой с ${lastTs.toISOString()} (${Math.round((Date.now() - lastTs.getTime()) / 60_000)} мин) — виртуальные ноги догонят его по истории`,
+          `обнаружен простой ${gap.start.toISOString()} → ${gap.end.toISOString()} (${Math.round((gap.end.getTime() - gap.start.getTime()) / 60_000)} мин) — виртуальные ноги догонят его по истории`,
           undefined, 'engine',
         );
+      } else if (gap) {
+        log.info(`разрыв снапшотов ${gap.start.toISOString()} → ${gap.end.toISOString()} слишком давний — догонку не запускаю`, undefined, 'engine');
       }
     } catch (e) {
       log.warn(`вотермарк простоя: ${errMsg(e)}`, undefined, 'engine');

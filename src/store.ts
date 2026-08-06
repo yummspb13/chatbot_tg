@@ -111,9 +111,12 @@ export interface TradeStore {
   closedTradesSince(mode: string, since: Date): Promise<TradeRecord[]>;
   saveSnapshot(mode: string, balance: number, equity: number, openPositions: number): Promise<void>;
   equitySeries(mode: string, hours: number): Promise<EquityPoint[]>;
-  /** Последний equity-снапшот любого режима — вотермарк «когда сервис жил в
-   *  последний раз» для догонки виртуальных ног после простоя. */
-  latestSnapshotTs(): Promise<Date | null>;
+  /** Последний разрыв в equity-снапшотах (>10 мин, за 72ч, включая «хвост»
+   *  от последнего снапшота до сейчас) — вотермарк простоя для догонки.
+   *  Ищем именно РАЗРЫВ, а не последний снапшот: Render при разблокировке
+   *  сначала поднимает старый билд, который пишет свежие снапшоты до того,
+   *  как задеплоится новый, — простой 05-06.08 так и потерялся. */
+  recentSnapshotGap(): Promise<{ start: Date; end: Date } | null>;
   createProposal(params: AgentParams, report: unknown): Promise<ProposalRecord>;
   listProposals(status?: string): Promise<ProposalRecord[]>;
   getProposal(id: number): Promise<ProposalRecord | null>;
@@ -255,9 +258,13 @@ class PrismaStore implements TradeStore {
     await this.p.equitySnapshot.create({ data: { mode, balance, equity, openPositions } });
   }
 
-  async latestSnapshotTs(): Promise<Date | null> {
-    const r = await this.p.equitySnapshot.findFirst({ orderBy: { ts: 'desc' }, select: { ts: true } });
-    return r?.ts ?? null;
+  async recentSnapshotGap(): Promise<{ start: Date; end: Date } | null> {
+    const rows = await this.p.equitySnapshot.findMany({
+      where: { ts: { gte: new Date(Date.now() - 72 * 3600_000) } },
+      orderBy: { ts: 'asc' },
+      select: { ts: true },
+    });
+    return findGap(rows.map(r => r.ts));
   }
 
   async equitySeries(mode: string, hours: number): Promise<EquityPoint[]> {
@@ -420,8 +427,9 @@ class MemoryStore implements TradeStore {
       .map(s => ({ ts: s.ts, balance: s.balance, equity: s.equity }));
   }
 
-  async latestSnapshotTs(): Promise<Date | null> {
-    return this.snapshots.length ? this.snapshots[this.snapshots.length - 1].ts : null;
+  async recentSnapshotGap(): Promise<{ start: Date; end: Date } | null> {
+    const since = Date.now() - 72 * 3600_000;
+    return findGap(this.snapshots.map(s => s.ts).filter(t => t.getTime() >= since));
   }
 
   async createProposal(params: AgentParams, report: unknown): Promise<ProposalRecord> {
@@ -455,6 +463,19 @@ class MemoryStore implements TradeStore {
   async deletePushSub(endpoint: string): Promise<void> {
     this.pushSubs = this.pushSubs.filter(x => x.endpoint !== endpoint);
   }
+}
+
+/** Последний разрыв >10 мин в отсортированном ряду снапшотов; хвост
+ *  «последний снапшот → сейчас» считается таким же разрывом. */
+function findGap(ts: Date[]): { start: Date; end: Date } | null {
+  const MIN_GAP = 10 * 60_000;
+  let gap: { start: Date; end: Date } | null = null;
+  for (let i = 1; i < ts.length; i++) {
+    if (ts[i].getTime() - ts[i - 1].getTime() > MIN_GAP) gap = { start: ts[i - 1], end: ts[i] };
+  }
+  const last = ts[ts.length - 1];
+  if (last && Date.now() - last.getTime() > MIN_GAP) gap = { start: last, end: new Date() };
+  return gap;
 }
 
 export function createStore(): TradeStore {
