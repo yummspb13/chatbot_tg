@@ -170,23 +170,47 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
     await ctx.reply(lines.join('\n'));
   });
 
+  // Telegram режет сообщения на 4096 символах: 48 участников одним куском не
+  // влезают (команда молча падала) — шлём частями с запасом
+  const replyChunked = async (ctx: { reply: (t: string) => Promise<unknown> }, lines: string[]): Promise<void> => {
+    let buf: string[] = [];
+    let len = 0;
+    for (const line of lines) {
+      if (len + line.length + 1 > 3500 && buf.length) {
+        await ctx.reply(buf.join('\n'));
+        buf = [];
+        len = 0;
+      }
+      buf.push(line);
+      len += line.length + 1;
+    }
+    if (buf.length) await ctx.reply(buf.join('\n'));
+  };
+
   b.command('agent_ensemble', async ctx => {
     const st = await deps.engine.ensembleStats();
     if (!st) {
       await ctx.reply('🎼 Ансамбль не запущен (нужен live-режим и работающий агент; ENSEMBLE=0 его выключает).');
       return;
     }
-    const lines = [`🎼 Ансамбль (виртуально, 14 дней)${st.running ? '' : ' — ОСТАНОВЛЕН'}:`];
-    for (const m of st.members) {
-      const lic = m.license === 'granted' ? '✅ лицензия' : m.license === 'denied' ? '❌ без лицензии' : `⏳ набирает (${m.trades14}/10)`;
-      lines.push(
-        `${m.key.padEnd(9)} ${lic} · net ${m.net14 >= 0 ? '+' : ''}${m.net14}$ (${m.trades14} сд, wr ${m.winRate14}%)`
-        + ` · сегодня ${m.realizedToday >= 0 ? '+' : ''}${m.realizedToday}$/${m.tradesToday} сд`
-        + (m.openNow || m.pendingNow ? ` · откр ${m.openNow}, лимиток ${m.pendingNow}` : ''),
-      );
+    const lines = [`🎼 Ансамбль: ${st.members.length} виртуальных контуров (14 дней)${st.running ? '' : ' — ОСТАНОВЛЕН'}`];
+    for (const g of st.groups) {
+      lines.push('');
+      lines.push(`── ${g.title} ──`);
+      for (const m of g.members) {
+        const lic = m.license === 'granted' ? '✅' : m.license === 'denied' ? '❌' : `⏳${m.trades14}/10`;
+        lines.push(
+          `${m.key} ${lic} · ${m.net14 >= 0 ? '+' : ''}${m.net14}$/${m.trades14}сд/wr${m.winRate14}%`
+          + ` · дн ${m.realizedToday >= 0 ? '+' : ''}${m.realizedToday}$/${m.tradesToday}`
+          + (m.openNow || m.pendingNow ? ` · откр${m.openNow}/лим${m.pendingNow}` : '')
+          + (m.hotStreak && m.hotStreak > 0 ? ` ⚡${m.hotStreak}` : '')
+          + (m.bf14 > 0 ? ` (BF${m.bf14})` : ''),
+        );
+      }
     }
-    lines.push('Лицензии справочные: реальным объёмом ансамбль не управляет.');
-    await ctx.reply(lines.join('\n'));
+    lines.push('');
+    lines.push('Лицензии справочные (BF-догонки в них не входят): реальным объёмом ансамбль не управляет.');
+    await replyChunked(ctx, lines);
   });
 
   b.command('agent_report', async ctx => {
@@ -285,6 +309,10 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
 
   b.catch((err, ctx) => {
     log.error(`telegraf: ${errMsg(err)} (update ${ctx.updateType})`, undefined, 'telegram');
+    // молчание бота хуже ошибки: сообщаем в чат, что команда упала
+    if (ctx.updateType === 'message') {
+      void ctx.reply(`⚠️ Команда не выполнилась: ${errMsg(err).slice(0, 200)}`).catch(() => {});
+    }
   });
 
   // launch() в telegraf резолвится только при остановке — не await'им

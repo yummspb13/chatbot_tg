@@ -795,10 +795,19 @@ export class AgentEngine {
     const moex = this.moexLeg ? await this.moexLeg.stats() : null;
     if (!fx && !btc && !mkt && !moex) return null;
     const ages = [fx?.lastQuoteAgoSec, btc?.lastQuoteAgoSec, mkt?.lastQuoteAgoSec, moex?.lastQuoteAgoSec].filter((x): x is number => typeof x === 'number');
+    // groups — для Telegram (48 участников не влезают в одно сообщение 4096);
+    // members плоским списком остаётся для PWA
+    const groups = [
+      fx ? { title: '🇪🇺 FX EUR/USD', members: fx.members } : null,
+      btc ? { title: '₿ BTC (24/7)', members: btc.members } : null,
+      mkt ? { title: '🌍 CFD-рынки', members: mkt.members } : null,
+      moex ? { title: '🇷🇺 MOEX', members: moex.members } : null,
+    ].filter((g): g is { title: string; members: NonNullable<typeof fx>['members'] } => g !== null);
     return {
       running: (fx?.running ?? false) || (btc?.running ?? false) || (mkt?.running ?? false) || (moex?.running ?? false),
       lastQuoteAgoSec: ages.length ? Math.min(...ages) : null,
-      members: [...(fx?.members ?? []), ...(btc?.members ?? []), ...(mkt?.members ?? []), ...(moex?.members ?? [])],
+      members: groups.flatMap(g => g.members),
+      groups,
     };
   }
 }
