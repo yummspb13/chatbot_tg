@@ -29,6 +29,39 @@ const origSocketWrite = net.Socket.prototype.write;
   return (origSocketWrite as any).call(this, chunk, ...args);
 };
 
+// Перепись TCP-соединений: количество по удалённым IP и состояниям.
+// Шторм реконнектов виден как рост counter'а сокетов TIME_WAIT/SYN к одному
+// хосту — сами рукопожатия чистотекстовый метр не видит (они на TLS-уровне).
+const TCP_STATES: Record<string, string> = { '01': 'est', '02': 'syn', '06': 'tw', '08': 'cw' };
+
+export function tcpCensus(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const file of ['/proc/net/tcp', '/proc/net/tcp6']) {
+    let lines: string[];
+    try {
+      lines = readFileSync(file, 'utf8').split('\n').slice(1);
+    } catch {
+      continue;
+    }
+    for (const line of lines) {
+      const f = line.trim().split(/\s+/);
+      if (f.length < 4) continue;
+      const [remHex, portHex] = f[2].split(':');
+      if (!remHex || remHex.length < 8) continue;
+      const port = parseInt(portHex, 16);
+      // локальные/слушающие пропускаем; группируем по ip:port назначения
+      const tail = remHex.slice(-8);
+      if (tail === '00000000' || tail === '0100007F') continue;
+      const ip = [tail.slice(6, 8), tail.slice(4, 6), tail.slice(2, 4), tail.slice(0, 2)]
+        .map(h => parseInt(h, 16)).join('.');
+      const st = TCP_STATES[f[3]] ?? f[3];
+      const key = `${ip}:${port}|${st}`;
+      out[key] = (out[key] ?? 0) + 1;
+    }
+  }
+  return Object.fromEntries(Object.entries(out).sort((a, b) => b[1] - a[1]).slice(0, 12));
+}
+
 export function topHosts(n = 10): Array<{ host: string; mb: number }> {
   return [...hostTx.entries()]
     .sort((a, b) => b[1] - a[1])
