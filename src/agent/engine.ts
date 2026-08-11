@@ -3,7 +3,7 @@
 
 import { config } from '../config';
 import { errMsg, log } from '../logger';
-import { netMeter, readNetTotals } from '../netmeter';
+import { netMeter, readNetTotals, topHosts } from '../netmeter';
 import { AgentParams, clampParams, CRYPTO_PRESETS, ENSEMBLE_MEMBERS, ENSEMBLE_MEMBERS_BTC } from './params';
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
@@ -775,7 +775,7 @@ export class AgentEngine {
 
   status() {
     return {
-      net: { ...(readNetTotals() ?? {}), topRoutes: netMeter.topRoutes(8) },
+      net: { ...(readNetTotals() ?? {}), topRoutes: netMeter.topRoutes(8), topHosts: topHosts(10) },
       running: this.running,
       mode: this.settings?.mode ?? null,
       symbol: this.settings?.symbol ?? null,

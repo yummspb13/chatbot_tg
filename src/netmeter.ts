@@ -5,7 +5,39 @@
 // метр показывает «кто» по динамике счётчиков.
 
 import { readFileSync } from 'node:fs';
+import net from 'node:net';
 import type { NextFunction, Request, Response } from 'express';
+
+// ---- учёт исходящего по адресам назначения (уровень сокетов) ----
+// Патчим net.Socket.write и считаем только транспортные сокеты (не TLS-обёртки,
+// у тех encrypted=true и их байты повторно проходят через транспорт) — т.е.
+// фактические байты в провод, сгруппированные по IP:порту назначения.
+const hostTx = new Map<string, number>();
+const origSocketWrite = net.Socket.prototype.write;
+(net.Socket.prototype as any).write = function (this: any, chunk: any, ...args: any[]) {
+  try {
+    if (!this.encrypted && this.remoteAddress) {
+      const len = Buffer.isBuffer(chunk) ? chunk.length : typeof chunk === 'string' ? Buffer.byteLength(chunk) : 0;
+      if (len > 0) {
+        const key = `${this.remoteAddress}:${this.remotePort}`;
+        hostTx.set(key, (hostTx.get(key) ?? 0) + len);
+      }
+    }
+  } catch { /* учёт не должен ломать отправку */ }
+  return (origSocketWrite as any).call(this, chunk, ...args);
+};
+
+export function topHosts(n = 10): Array<{ host: string; mb: number }> {
+  const agg = new Map<string, number>();
+  for (const [key, bytes] of hostTx) {
+    const ip = key.slice(0, key.lastIndexOf(':')); // группируем по IP (портов много при реконнектах)
+    agg.set(ip, (agg.get(ip) ?? 0) + bytes);
+  }
+  return [...agg.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, n)
+    .map(([host, bytes]) => ({ host, mb: +(bytes / 1024 / 1024).toFixed(1) }));
+}
 
 interface NetTotals {
   rxBytes: number;
