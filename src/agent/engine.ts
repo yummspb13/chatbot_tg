@@ -3,6 +3,7 @@
 
 import { config } from '../config';
 import { errMsg, log } from '../logger';
+import { netMeter, readNetTotals } from '../netmeter';
 import { AgentParams, clampParams, CRYPTO_PRESETS, ENSEMBLE_MEMBERS, ENSEMBLE_MEMBERS_BTC } from './params';
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
@@ -691,7 +692,24 @@ export class AgentEngine {
     }
   }
 
+  // сетевой метр: суммарный tx/rx контейнера раз в 15 мин в лог (охота на
+  // пожирателя трафика Render — 25ГБ Pro-лимит сгорел к 10.08)
+  private lastNetLogAt = 0;
+
+  private logNetMeter(): void {
+    if (Date.now() - this.lastNetLogAt < 15 * 60_000) return;
+    this.lastNetLogAt = Date.now();
+    const d = netMeter.tick();
+    if (!d) return;
+    const top = netMeter.topRoutes(3).map(r => `${r.route} ${r.mb}МБ/${r.hits}`).join(' · ') || '—';
+    log.info(
+      `сеть: за 15м ↑${d.txMb15}МБ ↓${d.rxMb15}МБ · с запуска (${d.sinceMin}м) ↑${d.txMbTotal}МБ ↓${d.rxMbTotal}МБ · топ HTTP: ${top}`,
+      undefined, 'net',
+    );
+  }
+
   private async snapshot(): Promise<void> {
+    this.logNetMeter();
     const settings = this.settings;
     const adapter = this.adapter;
     if (!settings || !adapter) return;
@@ -757,6 +775,7 @@ export class AgentEngine {
 
   status() {
     return {
+      net: { ...(readNetTotals() ?? {}), topRoutes: netMeter.topRoutes(8) },
       running: this.running,
       mode: this.settings?.mode ?? null,
       symbol: this.settings?.symbol ?? null,

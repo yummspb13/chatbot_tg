@@ -6,12 +6,16 @@ import compression from 'compression';
 import express from 'express';
 import { config } from '../config';
 import { log } from '../logger';
+import { egressMeter } from '../netmeter';
 import { buildApiRouter, ApiDeps } from './api';
 
 export function startWebServer(deps: ApiDeps): Server {
   const app = express();
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+  // метр ДО compression: его обёртка res.write ловит байты, которые gzip
+  // пишет в сокет — т.е. фактический провод, а не размер до сжатия
+  app.use(egressMeter);
   // gzip всех ответов: JSON панели жмётся ~в 10 раз — экономия трафика Render,
   // лимит которого мы уже однажды сожгли (05.08, суспенд воркспейса)
   app.use(compression());
