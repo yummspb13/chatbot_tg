@@ -1,6 +1,7 @@
 // Управление агентом из Telegram: только админ (TELEGRAM_ADMIN_CHAT_ID).
 // Уведомления об открытии/закрытии сделок и ежечасные сводки шлются через notify().
 
+import { createHash } from 'node:crypto';
 import { Context, Telegraf } from 'telegraf';
 import { config } from '../config';
 import { errMsg, log } from '../logger';
@@ -68,6 +69,28 @@ function fmtParams(p: AgentParams): string {
     `tradeHoursUtc=[${p.tradeHoursUtc.join(',')}] (пусто = все часы)`,
     `autoBlackoutHours=[${p.autoBlackoutHours.join(',')}] (управляется обучением)`,
   ].join('\n');
+}
+
+// Webhook-состояние: web/server.ts монтирует handler лениво (сервер стартует
+// раньше телеграма — геттеры избегают гонки порядка инициализации)
+let webhookState: { path: string; handler: (req: any, res: any) => void } | null = null;
+
+export function tgWebhook(): { path: string; handler: (req: any, res: any) => void } | null {
+  return webhookState;
+}
+
+/** Поллинг с вечными ретраями (локалка/фолбэк): 409 деплой-гонки и сетевые
+ *  обрывы больше не оставляют бота глухим навсегда. */
+function launchPollingWithRetry(b: ReturnType<typeof getBot>, attempt: number): void {
+  void b.launch({ dropPendingUpdates: true }).catch(e => {
+    const msg = errMsg(e);
+    const delay = Math.min(60_000, 5000 * 2 ** Math.min(attempt, 4));
+    log.error(
+      `telegram launch: ${msg}${msg.includes('409') ? ' (второй опрашивающий — деплой-гонка?)' : ''} — повтор через ${Math.round(delay / 1000)}с`,
+      undefined, 'telegram',
+    );
+    setTimeout(() => launchPollingWithRetry(b, attempt + 1), delay);
+  });
 }
 
 export async function startTelegram(deps: BotDeps): Promise<void> {
@@ -316,18 +339,26 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
   });
 
   // launch() в telegraf резолвится только при остановке — не await'им
-  void b.launch({ dropPendingUpdates: true }).catch(e => {
-    const msg = errMsg(e);
-    if (msg.includes('409')) {
-      log.error(
-        'Telegram 409: этот токен уже опрашивает другой процесс (старый afisha-деплой?). '
-        + 'Отключите старый webhook/деплой или выпустите новый токен у BotFather.',
-        undefined, 'telegram',
-      );
-    } else {
-      log.error(`telegram launch: ${msg}`, undefined, 'telegram');
+  // Транспорт входящих. На Render — WEBHOOK: при деплоях старый и новый
+  // инстансы поллят одновременно, Telegram (409) отбрасывает одного, и если
+  // проигрывает новый — бот глохнет до следующего деплоя (поймано 10-11.08 на
+  // /agent_ensemble). Вебхук гонок не имеет: Telegram доставляет POST'ы на
+  // URL, последний setWebhook побеждает автоматически.
+  const external = (process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || '').replace(/\/+$/, '');
+  if (external.startsWith('https://')) {
+    const path = `/tg/${createHash('sha256').update(config.telegramToken!).digest('hex').slice(0, 24)}`;
+    webhookState = { path, handler: b.webhookCallback(path) };
+    try {
+      await b.telegram.setWebhook(`${external}${path}`);
+      log.success(`Telegram: webhook-режим (${external}${path.slice(0, 8)}…) — гонки поллинга исключены`, undefined, 'telegram');
+    } catch (e) {
+      log.error(`Telegram setWebhook: ${errMsg(e)} — откат на поллинг`, undefined, 'telegram');
+      webhookState = null;
+      launchPollingWithRetry(b, 0);
     }
-  });
+  } else {
+    launchPollingWithRetry(b, 0);
+  }
 
   try {
     const me = await b.telegram.getMe();

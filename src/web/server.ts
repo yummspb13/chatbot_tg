@@ -8,6 +8,7 @@ import { config } from '../config';
 import { log } from '../logger';
 import { egressMeter } from '../netmeter';
 import { buildApiRouter, ApiDeps } from './api';
+import { tgWebhook } from '../telegram/bot';
 
 export function startWebServer(deps: ApiDeps): Server {
   const app = express();
@@ -25,6 +26,17 @@ export function startWebServer(deps: ApiDeps): Server {
     // net-счётчики публичны сознательно: цифры трафика не секрет, а диагноз
     // пожирателя лимита Render можно снимать снаружи без авторизации
     res.json({ ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString(), net: s.net });
+  });
+
+  // Telegram-webhook: лениво (телеграм стартует после веб-сервера), путь
+  // секретный (хэш токена). До /api и статики.
+  app.use((req, res, next) => {
+    const wh = tgWebhook();
+    if (wh && req.path === wh.path) {
+      wh.handler(req, res);
+      return;
+    }
+    next();
   });
 
   app.use('/api', buildApiRouter(deps));
