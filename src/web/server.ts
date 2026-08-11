@@ -22,7 +22,9 @@ export function startWebServer(deps: ApiDeps): Server {
 
   app.get('/health', (_req, res) => {
     const s = deps.engine.status();
-    res.json({ ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString() });
+    // net-счётчики публичны сознательно: цифры трафика не секрет, а диагноз
+    // пожирателя лимита Render можно снимать снаружи без авторизации
+    res.json({ ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString(), net: s.net });
   });
 
   app.use('/api', buildApiRouter(deps));
