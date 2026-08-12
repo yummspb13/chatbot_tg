@@ -79,6 +79,16 @@ export function tgWebhook(): { path: string; handler: (req: any, res: any) => vo
   return webhookState;
 }
 
+// Самодиагностика для /health: транспорт, свежесть апдейтов, последняя ошибка.
+// Плюс счётчик переустановок вебхука (см. reassert ниже).
+export const tgDiag = {
+  transport: 'off' as 'off' | 'webhook' | 'polling',
+  lastUpdateAt: 0,
+  updatesTotal: 0,
+  lastError: '',
+  reasserts: 0,
+};
+
 /** Поллинг с вечными ретраями (локалка/фолбэк): 409 деплой-гонки и сетевые
  *  обрывы больше не оставляют бота глухим навсегда. */
 function launchPollingWithRetry(b: ReturnType<typeof getBot>, attempt: number): void {
@@ -105,6 +115,8 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
   const b = getBot();
 
   b.use(async (ctx, next) => {
+    tgDiag.lastUpdateAt = Date.now();
+    tgDiag.updatesTotal += 1;
     if (!isAdmin(ctx)) {
       if (ctx.message) await ctx.reply('Доступ запрещён.').catch(() => {});
       return;
@@ -347,16 +359,43 @@ export async function startTelegram(deps: BotDeps): Promise<void> {
   const external = (process.env.RENDER_EXTERNAL_URL || process.env.PUBLIC_URL || '').replace(/\/+$/, '');
   if (external.startsWith('https://')) {
     const path = `/tg/${createHash('sha256').update(config.telegramToken!).digest('hex').slice(0, 24)}`;
+    const url = `${external}${path}`;
     webhookState = { path, handler: b.webhookCallback(path) };
     try {
-      await b.telegram.setWebhook(`${external}${path}`);
+      await b.telegram.setWebhook(url);
+      tgDiag.transport = 'webhook';
       log.success(`Telegram: webhook-режим (${external}${path.slice(0, 8)}…) — гонки поллинга исключены`, undefined, 'telegram');
     } catch (e) {
+      tgDiag.lastError = errMsg(e);
       log.error(`Telegram setWebhook: ${errMsg(e)} — откат на поллинг`, undefined, 'telegram');
       webhookState = null;
+      tgDiag.transport = 'polling';
       launchPollingWithRetry(b, 0);
     }
+    // Самовосстановление: если параллельно жив ЧУЖОЙ процесс с этим токеном
+    // (старый afisha-воркер) — его Telegraf при рестарте делает deleteWebhook
+    // и глушит нас. Раз в 10 минут проверяем и переустанавливаем вебхук.
+    if (tgDiag.transport === 'webhook') {
+      setInterval(async () => {
+        try {
+          const info = await b.telegram.getWebhookInfo();
+          if (info.url !== url) {
+            await b.telegram.setWebhook(url);
+            tgDiag.reasserts += 1;
+            log.warn(
+              `Telegram: вебхук был сбит (стоял «${info.url || 'пусто — кто-то поллит этим токеном'}») — переустановлен. `
+              + 'Похоже, жив второй процесс с этим токеном (старый afisha-воркер?) — его надо выключить или сменить токен.',
+              undefined, 'telegram',
+            );
+          }
+          if (info.last_error_message) tgDiag.lastError = `${info.last_error_date}: ${info.last_error_message}`;
+        } catch (e) {
+          tgDiag.lastError = errMsg(e);
+        }
+      }, 10 * 60_000).unref();
+    }
   } else {
+    tgDiag.transport = 'polling';
     launchPollingWithRetry(b, 0);
   }
 

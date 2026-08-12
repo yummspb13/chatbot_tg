@@ -8,7 +8,7 @@ import { config } from '../config';
 import { log } from '../logger';
 import { egressMeter } from '../netmeter';
 import { buildApiRouter, ApiDeps } from './api';
-import { tgWebhook } from '../telegram/bot';
+import { tgDiag, tgWebhook } from '../telegram/bot';
 
 export function startWebServer(deps: ApiDeps): Server {
   const app = express();
@@ -23,9 +23,12 @@ export function startWebServer(deps: ApiDeps): Server {
 
   app.get('/health', (_req, res) => {
     const s = deps.engine.status();
-    // net-счётчики публичны сознательно: цифры трафика не секрет, а диагноз
-    // пожирателя лимита Render можно снимать снаружи без авторизации
-    res.json({ ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString(), net: s.net });
+    // net/tg-диагностика публична сознательно: цифры трафика и транспорт бота
+    // не секрет, а снимать их снаружи без авторизации — необходимость
+    res.json({
+      ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString(), net: s.net,
+      tg: { ...tgDiag, lastUpdateAgoSec: tgDiag.lastUpdateAt ? Math.round((Date.now() - tgDiag.lastUpdateAt) / 1000) : null },
+    });
   });
 
   // Telegram-webhook: лениво (телеграм стартует после веб-сервера), путь
