@@ -31,6 +31,7 @@ export interface MetaApiConfig {
   token: string;
   accountId: string;
   symbol: string; // MT5-имя символа, напр. EURUSD или EURUSDm
+  quoteIntervalMs?: number; // дроссель котировок (не задан = сырые тики; live-контур — тики)
 }
 
 export class MetaApiAdapter implements ExecutionAdapter {
@@ -54,7 +55,10 @@ export class MetaApiAdapter implements ExecutionAdapter {
         const conn = account.getStreamingConnection();
         await conn.connect();
         await conn.waitSynchronized({ timeoutInSeconds: 180 });
-        await conn.subscribeToMarketData(this.cfg.symbol);
+        await conn.subscribeToMarketData(
+          this.cfg.symbol,
+          this.cfg.quoteIntervalMs ? [{ type: 'quotes', intervalInMilliseconds: this.cfg.quoteIntervalMs }] : undefined,
+        );
         this.conn = conn;
         return conn;
       })().catch(e => {

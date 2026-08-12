@@ -43,7 +43,13 @@ export class MultiQuoteFeed {
         const conn = account.getStreamingConnection();
         await conn.connect();
         await conn.waitSynchronized({ timeoutInSeconds: 180 });
-        for (const s of this.cfg.symbols) await conn.subscribeToMarketData(s);
+        // Дроссель 5с: виртуальным книгам тики не нужны (бэктест — минутки,
+        // MOEX-нога поллит те же 5с), а сырой тиковый поток 8 символов +
+        // socket.io-подтверждения на каждый пакет — главный подозреваемый
+        // сожранных 33ГБ трафика Render (11.08)
+        for (const s of this.cfg.symbols) {
+          await conn.subscribeToMarketData(s, [{ type: 'quotes', intervalInMilliseconds: 5000 }]);
+        }
         this.conn = conn;
         return conn;
       })().catch(e => {

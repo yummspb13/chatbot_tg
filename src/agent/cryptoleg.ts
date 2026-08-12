@@ -85,6 +85,9 @@ export class CryptoLeg {
       token: config.metaapiToken,
       accountId: config.metaapiAccountId,
       symbol: this.mt5Symbol(),
+      // BTC тикает гуще всех символов — дроссель 5с (echo/limit живёт на
+      // часовых медианах, TP/SL реальных позиций всё равно на стороне брокера)
+      quoteIntervalMs: 5000,
     });
     this.adapter = new ScaledAdapter(inner, {
       mt5Symbol: this.mt5Symbol(),
