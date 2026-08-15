@@ -11,6 +11,7 @@ import { EnsembleLeg } from './ensemble';
 import { MakerLeg } from './makerleg';
 import { MarketsLeg } from './marketsleg';
 import { MoexLeg } from './moexleg';
+import { TriangleMonitor } from './triangles';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -74,6 +75,7 @@ export class AgentEngine {
   private btcEnsemble: EnsembleLeg | null = null;
   private marketsLeg: MarketsLeg | null = null;
   private moexLeg: MoexLeg | null = null;
+  private triangles: TriangleMonitor | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -281,6 +283,18 @@ export class AgentEngine {
       }
     }
 
+    // Монитор треугольников обменника Т-Банка (идея владельца 12.08): публичные
+    // курсы, денег не касается, только наблюдение и алерты
+    if (settings.mode === 'live') {
+      try {
+        this.triangles = new TriangleMonitor(this.deps.notify);
+        this.triangles.start();
+      } catch (e) {
+        this.triangles = null;
+        log.warn(`монитор треугольников не запустился: ${errMsg(e)}`, undefined, 'triangle');
+      }
+    }
+
     if (isFxWeekend(new Date())) {
       return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.${cryptoNote}`;
     }
@@ -336,6 +350,10 @@ export class AgentEngine {
     if (this.moexLeg) {
       await this.moexLeg.stop().catch(e => log.warn(`остановка MOEX-ноги: ${errMsg(e)}`, undefined, 'moex'));
       this.moexLeg = null;
+    }
+    if (this.triangles) {
+      this.triangles.stop();
+      this.triangles = null;
     }
   }
 
@@ -776,6 +794,7 @@ export class AgentEngine {
   status() {
     return {
       net: { ...(readNetTotals() ?? {}), topRoutes: netMeter.topRoutes(8), topHosts: topHosts(10), tcp: tcpCensus() },
+      triangles: this.triangles?.summary() ?? null,
       running: this.running,
       mode: this.settings?.mode ?? null,
       symbol: this.settings?.symbol ?? null,
