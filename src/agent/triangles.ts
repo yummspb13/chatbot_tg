@@ -19,7 +19,12 @@ import path from 'node:path';
 import { Agent, Dispatcher, ProxyAgent, request } from 'undici';
 import { errMsg, log } from '../logger';
 
-const CURRENCIES = ['USD', 'EUR', 'GBP', 'CNY', 'AED', 'TRY', 'KZT'];
+// Валюты обменника (проверены живыми запросами 16.08). Рублёвые ноги — все;
+// кроссы — только между десяткой ликвидных (иначе свип раздувается до сотен
+// запросов, а трафик мы только что лечили). Окна рассинхрона вероятнее на
+// экзотике — она участвует через рублёвые ноги циклов с мейджорами.
+const CURRENCIES = ['USD', 'EUR', 'GBP', 'CNY', 'AED', 'TRY', 'KZT', 'JPY', 'CHF', 'HKD', 'AMD', 'BYN', 'KGS', 'UZS', 'TJS', 'GEL', 'ILS', 'INR'];
+const CROSS_CURRENCIES = ['USD', 'EUR', 'GBP', 'CNY', 'AED', 'TRY', 'CHF', 'JPY', 'HKD', 'KZT'];
 const CATEGORY = 'DebitCardsTransfers';
 const SWEEP_MS = 5 * 60_000;
 
@@ -87,8 +92,8 @@ export class TriangleMonitor {
     if (!this.running) return;
     try {
       for (const c of CURRENCIES) await this.fetchPair(c, 'RUB');
-      for (const a of CURRENCIES) {
-        for (const b of CURRENCIES) {
+      for (const a of CROSS_CURRENCIES) {
+        for (const b of CROSS_CURRENCIES) {
           if (a !== b) await this.fetchPair(a, b);
         }
       }
@@ -101,8 +106,8 @@ export class TriangleMonitor {
 
   private evaluate(): void {
     let best: TriangleBest | null = null;
-    for (const a of CURRENCIES) {
-      for (const b of CURRENCIES) {
+    for (const a of CROSS_CURRENCIES) {
+      for (const b of CROSS_CURRENCIES) {
         if (a === b) continue;
         const aRub = this.rates.get(`${a}/RUB`);
         const ab = this.rates.get(`${a}/${b}`);
