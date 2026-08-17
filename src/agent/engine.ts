@@ -12,6 +12,7 @@ import { MakerLeg } from './makerleg';
 import { MarketsLeg } from './marketsleg';
 import { MoexLeg } from './moexleg';
 import { TriangleMonitor } from './triangles';
+import type { PolyCollector } from '../poly/collector';
 import { isFxWeekend, RiskManager } from './risk';
 import { SimAdapter } from '../broker/sim';
 import { OandaAdapter } from '../broker/oanda';
@@ -76,6 +77,7 @@ export class AgentEngine {
   private marketsLeg: MarketsLeg | null = null;
   private moexLeg: MoexLeg | null = null;
   private triangles: TriangleMonitor | null = null;
+  private polyLeg: PolyCollector | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -295,6 +297,35 @@ export class AgentEngine {
       }
     }
 
+    // Polymarket-коллектор 5-минуток (docs/POLYMARKET-PLAN-2026-08-17.md, M3):
+    // read-only стаканы + резолюции, деньги не затрагиваются. POLY=0 выключает.
+    if (config.poly && settings.mode === 'live') {
+      try {
+        const { createPolyStore } = await import('../poly/store');
+        const { PolyCollector: Collector } = await import('../poly/collector');
+        this.polyLeg = new Collector(
+          {
+            store: createPolyStore(),
+            notify: this.deps.notify,
+            // референс-цена BTC из уже текущего крипто-стрима (нулевой трафик);
+            // lastQuote в scaled-пространстве (÷100k) — восстанавливаем реальную
+            getRefPrice: asset => {
+              if (asset !== 'btc') return null;
+              const q = this.cryptoLeg?.status().lastQuote;
+              return q ? +(((q.bid + q.ask) / 2) * 100_000).toFixed(0) : null;
+            },
+          },
+          config.polyAssets,
+        );
+        await this.polyLeg.start();
+        cryptoNote += '\n🎲 Polymarket-коллектор: 5-минутки BTC/ETH, read-only стаканы + резолюции (POLY=0 — выкл).';
+      } catch (e) {
+        this.polyLeg = null;
+        cryptoNote += `\n⚠️ Polymarket-коллектор не запустился: ${errMsg(e)}`;
+        log.error(`Polymarket-коллектор не запустился: ${errMsg(e)}`, undefined, 'poly');
+      }
+    }
+
     if (isFxWeekend(new Date())) {
       return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.${cryptoNote}`;
     }
@@ -354,6 +385,10 @@ export class AgentEngine {
     if (this.triangles) {
       this.triangles.stop();
       this.triangles = null;
+    }
+    if (this.polyLeg) {
+      await this.polyLeg.stop().catch(e => log.warn(`остановка poly-коллектора: ${errMsg(e)}`, undefined, 'poly'));
+      this.polyLeg = null;
     }
   }
 
@@ -795,6 +830,7 @@ export class AgentEngine {
     return {
       net: { ...(readNetTotals() ?? {}), topRoutes: netMeter.topRoutes(8), topHosts: topHosts(10), tcp: tcpCensus() },
       triangles: this.triangles?.summary() ?? null,
+      poly: this.polyLeg?.summarySync() ?? { enabled: config.poly, running: false },
       running: this.running,
       mode: this.settings?.mode ?? null,
       symbol: this.settings?.symbol ?? null,

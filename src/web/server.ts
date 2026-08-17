@@ -28,6 +28,7 @@ export function startWebServer(deps: ApiDeps): Server {
     res.json({
       ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString(), net: s.net,
       tg: { ...tgDiag, lastUpdateAgoSec: tgDiag.lastUpdateAt ? Math.round((Date.now() - tgDiag.lastUpdateAt) / 1000) : null },
+      poly: s.poly, // луп-чекапы прода без пароля (M3+)
     });
   });
 
