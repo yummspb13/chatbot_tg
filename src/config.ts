@@ -63,6 +63,11 @@ export const config = {
   // Токен ТОЛЬКО ДЛЯ ЧТЕНИЯ — торговых вызовов в коде нет (docs/RF-BROKER-PLAN.md).
   tinkoffToken: process.env.TINKOFF_TOKEN || null,
 
+  // Polymarket-подсистема (docs/POLYMARKET-PLAN-2026-08-17.md): read-only
+  // коллектор 5-минуток + бумажный мейкер. POLY=0 — общий kill-switch.
+  poly: process.env.POLY !== '0',
+  polyAssets: (process.env.POLY_ASSETS || 'btc,eth').split(',').map(s => s.trim()).filter(Boolean),
+
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',
   symbolDefault: process.env.SYMBOL || 'EUR_USD',
   simStartBalance: num(process.env.SIM_START_BALANCE, 50),

@@ -84,3 +84,41 @@ model PushSubscription {
 
   @@map("agent_PushSubscription")
 }
+
+// --- Polymarket-подсистема (docs/POLYMARKET-PLAN-2026-08-17.md) ---
+// DDL накатывается синхронно через Supabase apply_migration (db push не нужен)
+
+model PolySnap {
+  id        Int      @id @default(autoincrement())
+  ts        DateTime @default(now())
+  asset     String
+  slug      String
+  endDate   DateTime
+  upBid     Float?
+  upAsk     Float?
+  downBid   Float?
+  downAsk   Float?
+  setSumAsk Float?
+  depthUsd  Float?
+  refPx     Float?
+  isEvent   Boolean  @default(false)
+
+  @@index([ts])
+  @@index([asset, ts])
+  @@index([slug])
+  @@map("poly_Snap")
+}
+
+model PolyResolution {
+  id           Int      @id @default(autoincrement())
+  slug         String   @unique
+  asset        String
+  endTs        DateTime
+  outcome      String
+  closeUpPrice Float?
+  twapNote     String?
+  createdAt    DateTime @default(now())
+
+  @@index([asset, endTs])
+  @@map("poly_Resolution")
+}
