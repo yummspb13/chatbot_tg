@@ -140,6 +140,7 @@ export class MoexLeg {
   private loopPromise: Promise<void> | null = null;
   private lastQuoteAt = 0;
   private mirror: AfksMirror | null = null;
+  private mirrorStartError: string | null = null;
 
   constructor(
     private deps: EnsembleDeps & { notify: (text: string) => Promise<void> },
@@ -199,6 +200,7 @@ export class MoexLeg {
         });
       } catch (e) {
         this.mirror = null;
+        this.mirrorStartError = errMsg(e); // диагноз виден в /health без пароля
         log.error(`AFKS-зеркало не запустилось: ${errMsg(e)}`, undefined, 'afks');
         await this.deps.notify(`⚠️ AFKS-зеркало не запустилось: ${errMsg(e)}`).catch(() => {});
       }
@@ -297,7 +299,9 @@ export class MoexLeg {
       inSession: moexInSession(new Date()),
       tickers: (this.legs.length ? this.legs.map(l => l.spec) : this.specs).map(s => s.ticker),
       lastQuoteAgoSec: this.lastQuoteAt ? Math.round((Date.now() - this.lastQuoteAt) / 1000) : null,
-      afksMirror: this.mirror ? this.mirror.summary() : { mode: config.afksLive, running: false },
+      afksMirror: this.mirror
+        ? this.mirror.summary()
+        : { mode: config.afksLive, running: false, startError: this.mirrorStartError },
     };
   }
 }
