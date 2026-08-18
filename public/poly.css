@@ -173,6 +173,10 @@ body.poly {
 .ghost-svg .dot { fill: var(--border); }
 .ghost-svg .ribbon { fill: var(--border); opacity: .5; }
 .ghost-svg text { fill: var(--muted); font-size: 9px; font-family: ui-monospace, Menlo, monospace; }
+.ghost-svg.live { opacity: 1; }
+.ghost-svg.live text { fill: var(--text); }
+.stage.v-no { color: var(--down); border-color: rgba(229, 83, 75, .5); }
+.stage.v-ok { color: var(--up); border-color: rgba(63, 182, 139, .5); }
 .stub-note { margin-top: 6px; }
 
 /* ---------- статусбар ---------- */

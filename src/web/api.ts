@@ -159,6 +159,17 @@ export function buildApiRouter(deps: ApiDeps): Router {
     }
   });
 
+  r.get('/poly/model', async (_req, res) => {
+    try {
+      // модель обучается офлайн (M5) и приезжает файлом в билде
+      const { readFile } = await import('node:fs/promises');
+      const raw = await readFile('data/poly-model.json', 'utf8').catch(() => null);
+      res.json({ model: raw ? JSON.parse(raw) : null });
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
+  });
+
   r.get('/report', async (req, res) => {
     try {
       const windowMin = Math.min(Math.max(Number(req.query.window) || config.reportWindowMin, 15), 240);

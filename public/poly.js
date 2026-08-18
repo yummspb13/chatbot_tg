@@ -55,6 +55,7 @@ function showTerm() {
   $('login').classList.add('hidden');
   $('term').classList.remove('hidden');
   buildStubs();
+  drawModel(); // один раз: файл модели статичен в билде
   refreshSummary();
   refreshData();
   startTimers();
@@ -336,6 +337,7 @@ function buildTicker(resolutions) {
 function buildStubs() {
   const n = $('neuralSvg');
   if (n && !n.childNodes.length) {
+    // до загрузки модели — призрачный скелет; drawModel() заменит живыми весами
     const layers = [4, 6, 6, 2];
     const xs = [30, 110, 190, 270];
     const posY = (cnt, i) => 20 + (i + 0.5) * (130 / cnt);
@@ -371,6 +373,56 @@ function buildStubs() {
       '<path class="ribbon" d="M20,85 C110,85 150,80 280,75 L280,95 C150,100 110,105 20,105 Z"/>' +
       '<path class="ribbon" d="M20,120 C110,120 150,125 280,120 L280,140 C150,145 110,140 20,140 Z"/>' +
       '<text x="20" y="40">покупки UP/DOWN</text><text x="130" y="20">полные сеты &lt;$1</text><text x="240" y="160">won / lost</text>';
+  }
+}
+
+// ---------- Neural Shell: живые веса модели (M5) ----------
+
+const FEATURE_LABELS = {
+  ret1: 'ret 1м', mom3: 'mom 3м', mom5: 'mom 5м',
+  drift5: 'ход бакета', volRatio: 'вола 30м', prevOut: 'исход t−1',
+};
+
+async function drawModel() {
+  let model = null;
+  try {
+    model = (await api('/poly/model')).model;
+  } catch (e) {
+    return; // нет связи — остаётся заглушка
+  }
+  const svgEl = $('neuralSvg');
+  if (!model || !model.weights || !svgEl) return;
+  const names = model.featureNames || [];
+  const ws = model.weights;
+  const maxW = Math.max(...ws.map((w) => Math.abs(w)), 1e-6);
+  const yIn = (i) => 18 + (i + 0.5) * (128 / names.length);
+  const OUT = { x: 262, y: 82 };
+  let svg = '';
+  names.forEach((f, i) => {
+    const w = ws[i];
+    const th = 0.6 + 3.4 * (Math.abs(w) / maxW);
+    svg += `<line x1="96" y1="${yIn(i)}" x2="${OUT.x - 14}" y2="${OUT.y}" stroke="${w >= 0 ? '#3fb68b' : '#e5534b'}" stroke-width="${th.toFixed(1)}" opacity="0.75"><title>${f}: w=${w.toFixed(3)}</title></line>`;
+  });
+  names.forEach((f, i) => {
+    svg += `<circle class="node" cx="90" cy="${yIn(i)}" r="6"/>` +
+      `<text x="84" y="${yIn(i) + 3}" text-anchor="end">${FEATURE_LABELS[f] || f} ${ws[i] >= 0 ? '+' : ''}${ws[i].toFixed(2)}</text>`;
+  });
+  svg += `<circle class="node" cx="${OUT.x}" cy="${OUT.y}" r="9"/><text x="${OUT.x}" y="${OUT.y + 22}" text-anchor="middle">P(up)</text>`;
+  svgEl.innerHTML = svg;
+  svgEl.classList.add('live');
+
+  const panel = svgEl.closest('.panel');
+  const stage = panel && panel.querySelector('.stage');
+  const note = panel && panel.querySelector('.stub-note');
+  const m = model.metrics && model.metrics.test;
+  if (stage) {
+    stage.textContent = model.verdict === 'licensed' ? 'ЛИЦЕНЗИРОВАНА' : 'REJECTED';
+    stage.classList.add(model.verdict === 'licensed' ? 'v-ok' : 'v-no');
+  }
+  if (note && m) {
+    note.textContent = `логистическая регрессия (M5): тест acc ${(m.acc * 100).toFixed(1)}% против базы ${(m.accBase * 100).toFixed(1)}%, ` +
+      `t=${m.tPaired} при пороге леджера z≥${model.bonferroni ? model.bonferroni.zThreshold : '—'} — ` +
+      (model.verdict === 'licensed' ? 'край доказан' : 'не значимо: скоса нет, мейкер котирует симметрично');
   }
 }
 

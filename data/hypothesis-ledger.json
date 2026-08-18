@@ -1,5 +1,5 @@
 {
- "totalTested": 51239,
+ "totalTested": 51242,
  "lockboxEntrants": 27,
  "batches": [
   {
@@ -86,6 +86,14 @@
    "id": "news-guard оверлей (идея владельца: Иран/Ормуз → фильтр новостного режима)",
    "when": "2026-08-06",
    "n": 12,
+   "stage1": 0,
+   "stage2": 0,
+   "lockboxWins": 0
+  },
+  {
+   "id": "poly fair-модель 5m (логрег: 3 λ-конфигурации, walk-forward 11-15→16-18.08)",
+   "when": "2026-08-18",
+   "n": 3,
    "stage1": 0,
    "stage2": 0,
    "lockboxWins": 0
