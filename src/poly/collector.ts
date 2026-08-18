@@ -59,6 +59,7 @@ export class PolyCollector {
   private errStreak = 0;
   private cf403Streak = 0;
   private pendingResolutions = new Map<string, { asset: string; endMs: number; tries: number }>();
+  private lastResReqAt = 0;
   private lastTop = new Map<string, TopOfBook>();
   private topListeners: Array<(t: TopOfBook) => void> = [];
   private windowsToday = 0;
@@ -219,9 +220,20 @@ export class PolyCollector {
     }
   }
 
-  /** Резолюции истёкших рынков: gamma по слагу через 120с после endDate. */
+  /** Резолюции истёкших рынков: gamma по слагу через 120с после endDate.
+   *  Бюджет жёсткий: ≤1 HTTP-запрос за вызов и не чаще раза в 20с (3 req/мин),
+   *  иначе на смене бакета минутный бюджет 24 (книги) + резолюции пробивает
+   *  самокап 30. Старый код с `continue` слал запрос на КАЖДУЮ ожидающую
+   *  запись за тик — это и был бурст, вставший дедлоком 17.08 (8ч простоя). */
   private async pollResolutions(): Promise<void> {
     const now = Date.now();
+    // предохранитель: очередь не растёт бесконечно, старейшие — под нож
+    while (this.pendingResolutions.size > 24) {
+      const oldest = this.pendingResolutions.keys().next().value as string;
+      this.pendingResolutions.delete(oldest);
+      log.warn(`poly: очередь резолюций >24 — выбрасываю ${oldest} (добёрет харвестер M4)`, undefined, 'poly');
+    }
+    if (now - this.lastResReqAt < 20_000) return;
     for (const [slug, p] of this.pendingResolutions) {
       if (now - p.endMs < 120_000) continue;
       if (p.tries > 15) {
@@ -229,25 +241,27 @@ export class PolyCollector {
         log.warn(`poly: резолюция ${slug} не получена за ${p.tries} попыток — сдаюсь`, undefined, 'poly');
         continue;
       }
-      p.tries += 1;
       if (await this.deps.store.hasResolution(slug)) {
         this.pendingResolutions.delete(slug);
         continue;
       }
+      p.tries += 1;
+      this.lastResReqAt = now;
       const m = await this.client.marketBySlug(slug).catch(() => null);
-      if (!m || !m.closed) continue;
-      try {
-        const prices = JSON.parse(m.outcomePrices) as string[];
-        const upPrice = Number(prices[0]);
-        const outcome: 'up' | 'down' = upPrice > 0.5 ? 'up' : 'down';
-        await this.deps.store.saveResolution({
-          slug, asset: p.asset, endTs: new Date(p.endMs), outcome, closeUpPrice: upPrice,
-        });
-        this.pendingResolutions.delete(slug);
-      } catch (e) {
-        log.warn(`poly: разбор резолюции ${slug}: ${errMsg(e)}`, undefined, 'poly');
+      if (m && m.closed) {
+        try {
+          const prices = JSON.parse(m.outcomePrices) as string[];
+          const upPrice = Number(prices[0]);
+          const outcome: 'up' | 'down' = upPrice > 0.5 ? 'up' : 'down';
+          await this.deps.store.saveResolution({
+            slug, asset: p.asset, endTs: new Date(p.endMs), outcome, closeUpPrice: upPrice,
+          });
+          this.pendingResolutions.delete(slug);
+        } catch (e) {
+          log.warn(`poly: разбор резолюции ${slug}: ${errMsg(e)}`, undefined, 'poly');
+        }
       }
-      break; // не больше одной резолюции за тик — бережём бюджет
+      break; // ровно один HTTP-запрос резолюций за вызов
     }
   }
 

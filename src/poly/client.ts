@@ -94,6 +94,13 @@ export class PolyClient {
     this.stats.windowReqs += 1;
   }
 
+  /** Окно с учётом протухания. Считать его ТОЛЬКО в bumpWindow нельзя: при
+   *  пропуске тиков по самокапу запросов нет, окно не сбрасывается и perMin
+   *  застывает на капе навсегда — ровно этот дедлок стоил 8ч простоя 17-18.08. */
+  private curPerMin(): number {
+    return Date.now() - this.stats.windowStart > 60_000 ? 0 : this.stats.windowReqs;
+  }
+
   /** Рынок события по слагу (events API даёт вложенный markets[0]). */
   async marketBySlug(slug: string): Promise<GammaMarket | null> {
     this.stats.gamma += 1;
@@ -130,7 +137,7 @@ export class PolyClient {
       book: this.stats.book,
       errors: this.stats.errors,
       cf403: this.stats.cf403,
-      perMin: this.stats.windowReqs,
+      perMin: this.curPerMin(),
     };
   }
 
