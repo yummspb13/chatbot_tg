@@ -83,10 +83,28 @@ class MemberState {
   }
 }
 
+/** Событие живой виртуальной сделки — для зеркал (micro-этап AFKS). Цены в
+ *  ВИРТУАЛЬНОЙ шкале (нога знает свой priceScale и конвертирует сама).
+ *  Во время BF-догонки/повтора истории события НЕ эмитятся. */
+export interface VirtualTradeEvent {
+  kind: 'open' | 'close';
+  memberKey: string;
+  baseSymbol: string;
+  rowId: number;
+  side: 'BUY' | 'SELL';
+  price: number;      // entry (open) или exit (close)
+  tp?: number;
+  sl?: number;
+  pnl?: number;       // close: виртуальные $ (с виртуальной комиссией)
+  reason?: string;    // close: TP|SL|TIME|BE
+  time: Date;
+}
+
 export class EnsembleLeg {
   private members: MemberState[];
   private running = false;
   private lastQuoteAt = 0;
+  private tradeListeners: Array<(e: VirtualTradeEvent) => void> = [];
   // 'BF' во время догонки простоя: сделки из проигранной истории помечаются в
   // brokerTradeId (у виртуальных он всё равно пуст) — лицензии их не считают
   private backfillTag: string | null = null;
@@ -104,6 +122,22 @@ export class EnsembleLeg {
 
   isRunning(): boolean {
     return this.running;
+  }
+
+  /** Подписка зеркала на живые виртуальные сделки (BF-догонка не эмитится). */
+  onVirtualTrade(cb: (e: VirtualTradeEvent) => void): void {
+    this.tradeListeners.push(cb);
+  }
+
+  private emitTrade(e: VirtualTradeEvent): void {
+    if (this.replaying || this.backfillTag) return; // история — не сигнал зеркалу
+    for (const cb of this.tradeListeners) {
+      try {
+        cb(e);
+      } catch (err) {
+        log.warn(`слушатель виртуальных сделок: ${errMsg(err)}`, undefined, 'ensemble');
+      }
+    }
   }
 
   /** gapStart — вотермарк простоя: прогрев истории обрезается на нём, а
@@ -297,6 +331,10 @@ export class EnsembleLeg {
         });
         m.open.push({ rowId: row.id, side: pe.side, entry: pe.price, tp: pe.tp, sl: pe.sl, openedAt: q.time.getTime(), mult });
         m.tradesToday += 1;
+        this.emitTrade({
+          kind: 'open', memberKey: m.member.key, baseSymbol: this.cfg.baseSymbol, rowId: row.id,
+          side: pe.side, price: pe.price, tp: pe.tp, sl: pe.sl, time: q.time,
+        });
       }
       m.pending = keep;
     }
@@ -343,6 +381,11 @@ export class EnsembleLeg {
         });
         m.realizedToday += pnl;
         m.winStreakToday = pnl > 0 ? m.winStreakToday + 1 : 0; // лесенка hot-hand
+        this.emitTrade({
+          kind: 'close', memberKey: m.member.key, baseSymbol: this.cfg.baseSymbol, rowId: o.rowId,
+          side: o.side, price: exit, pnl,
+          reason: o.beLocked && exit === o.entry ? 'BE' : reason, time: q.time,
+        });
       }
       m.open = keep;
     }
@@ -388,6 +431,10 @@ export class EnsembleLeg {
       });
       m.open.push({ rowId: row.id, side: sig.side, entry, tp, sl, openedAt: q.time.getTime(), mult });
       m.tradesToday += 1;
+      this.emitTrade({
+        kind: 'open', memberKey: m.member.key, baseSymbol: this.cfg.baseSymbol, rowId: row.id,
+        side: sig.side, price: entry, tp, sl, time: q.time,
+      });
       return;
     }
     const price = round5(sig.side === 'BUY' ? q.bid - p.entryOffsetPips * PIP : q.ask + p.entryOffsetPips * PIP);

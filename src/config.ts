@@ -60,8 +60,18 @@ export const config = {
   markets: process.env.MARKETS !== '0',
 
   // РФ-ветка: виртуальная MOEX-нога на маркетдате T-Invest API.
-  // Токен ТОЛЬКО ДЛЯ ЧТЕНИЯ — торговых вызовов в коде нет (docs/RF-BROKER-PLAN.md).
   tinkoffToken: process.env.TINKOFF_TOKEN || null,
+
+  // Micro-этап AFKS (решение владельца 18.08: депозит 20 000 ₽, старый токен
+  // осознанно оставлен до рубежа 100к): зеркало лицензированного виртуала
+  // afks-matrend реальными лимитками. Режимы: off | sandbox (дефолт — песочница
+  // Тинькофф, фейковые деньги) | live (ТОЛЬКО явный AFKS_LIVE=1 от владельца).
+  afksLive: (process.env.AFKS_LIVE === '1' ? 'live'
+    : process.env.AFKS_LIVE === '0' ? 'off' : 'sandbox') as 'off' | 'sandbox' | 'live',
+  afksLots: num(process.env.AFKS_LOTS, 5),                    // лотов на сделку (AFKS лот = 100 акций)
+  afksFeeFrac: num(process.env.AFKS_FEE_FRAC, 0.0005),        // комиссия за СТОРОНУ (тариф «Трейдер» 0.05%)
+  afksDailyLossRub: num(process.env.AFKS_DAILY_LOSS_RUB, 500), // дневной стоп зеркала, ₽
+  afksAccountId: process.env.AFKS_ACCOUNT_ID || null,          // боевой счёт; пусто — первый открытый
 
   // Polymarket-подсистема (docs/POLYMARKET-PLAN-2026-08-17.md): read-only
   // коллектор 5-минуток + бумажный мейкер. POLY=0 — общий kill-switch.

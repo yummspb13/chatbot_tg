@@ -17,6 +17,7 @@ import { config } from '../config';
 import { errMsg, log } from '../logger';
 import { AgentParams, DEFAULT_PARAMS, EnsembleMember } from './params';
 import { EnsembleDeps, EnsembleLeg } from './ensemble';
+import { AfksMirror } from './afksmirror';
 import { MOEX_INSTRUMENTS, TinkoffClient } from '../broker/tinkoff';
 import { sleep } from '../broker/types';
 
@@ -138,8 +139,12 @@ export class MoexLeg {
   private running = false;
   private loopPromise: Promise<void> | null = null;
   private lastQuoteAt = 0;
+  private mirror: AfksMirror | null = null;
 
-  constructor(private deps: EnsembleDeps, private specs: MoexSpec[] = MOEX_LEGS) {}
+  constructor(
+    private deps: EnsembleDeps & { notify: (text: string) => Promise<void> },
+    private specs: MoexSpec[] = MOEX_LEGS,
+  ) {}
 
   isRunning(): boolean {
     return this.running;
@@ -174,6 +179,31 @@ export class MoexLeg {
     }
     for (const l of this.legs) await l.leg.start();
     this.running = true;
+
+    // Micro-этап AFKS (решение владельца 18.08): зеркало живых сделок
+    // afks-matrend реальными ордерами. Ошибка зеркала НЕ роняет ногу.
+    const afks = this.legs.find(l => l.spec.ticker === 'AFKS');
+    if (afks && config.afksLive !== 'off') {
+      try {
+        this.mirror = new AfksMirror({ notify: this.deps.notify });
+        await this.mirror.start();
+        const scale = afks.spec.priceScale;
+        afks.leg.onVirtualTrade(e => {
+          if (e.memberKey !== 'afks-matrend') return;
+          this.mirror?.onVirtual({
+            ...e,
+            priceRub: e.price * scale,
+            tpRub: e.tp === undefined ? undefined : e.tp * scale,
+            slRub: e.sl === undefined ? undefined : e.sl * scale,
+          });
+        });
+      } catch (e) {
+        this.mirror = null;
+        log.error(`AFKS-зеркало не запустилось: ${errMsg(e)}`, undefined, 'afks');
+        await this.deps.notify(`⚠️ AFKS-зеркало не запустилось: ${errMsg(e)}`).catch(() => {});
+      }
+    }
+
     if (gapStart) await this.replayGap(gapStart);
     this.loopPromise = this.loop();
     log.success(
@@ -189,6 +219,8 @@ export class MoexLeg {
       await this.loopPromise.catch(() => {});
       this.loopPromise = null;
     }
+    await this.mirror?.stop().catch(() => {});
+    this.mirror = null;
     await this.client?.shutdown().catch(() => {});
     this.client = null;
     for (const l of this.legs) l.leg.stop();
@@ -265,6 +297,7 @@ export class MoexLeg {
       inSession: moexInSession(new Date()),
       tickers: (this.legs.length ? this.legs.map(l => l.spec) : this.specs).map(s => s.ticker),
       lastQuoteAgoSec: this.lastQuoteAt ? Math.round((Date.now() - this.lastQuoteAt) / 1000) : null,
+      afksMirror: this.mirror ? this.mirror.summary() : { mode: config.afksLive, running: false },
     };
   }
 }

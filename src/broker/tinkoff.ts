@@ -36,6 +36,15 @@ function num(p: Money | undefined): number | null {
   return Number.isFinite(v) ? v : null;
 }
 
+/** Обратная конверсия для тел запросов (Quotation/MoneyValue). */
+export function toMoney(v: number): { units: string; nano: number } {
+  const units = Math.trunc(v);
+  const nano = Math.round((v - units) * 1e9);
+  return { units: String(units), nano };
+}
+
+export { num as moneyNum };
+
 export class TinkoffClient {
   private dispatcher: Dispatcher;
 
@@ -49,7 +58,7 @@ export class TinkoffClient {
       : new Agent({ connect: { ca } });
   }
 
-  private async call<T>(service: string, method: string, body: unknown): Promise<T> {
+  protected async call<T>(service: string, method: string, body: unknown): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const res = await request(`${BASE}.${service}/${method}`, {
         method: 'POST',
@@ -76,10 +85,19 @@ export class TinkoffClient {
 
   /** uid инструмента по тикеру (класс TQBR). */
   async shareUid(ticker: string): Promise<string> {
+    return (await this.shareInfo(ticker)).uid;
+  }
+
+  /** uid + размер лота + шаг цены — зеркалу нужны для реальных ордеров. */
+  async shareInfo(ticker: string): Promise<{ uid: string; lot: number; priceStep: number }> {
     const d = await this.call<any>('InstrumentsService', 'ShareBy', {
       idType: 'INSTRUMENT_ID_TYPE_TICKER', classCode: 'TQBR', id: ticker,
     });
-    return d.instrument.uid as string;
+    return {
+      uid: d.instrument.uid as string,
+      lot: Number(d.instrument.lot ?? 1),
+      priceStep: num(d.instrument.minPriceIncrement) ?? 0.01,
+    };
   }
 
   /** Верх стакана: bid/ask (null — на аукционе/вне сессии) + последняя цена. */

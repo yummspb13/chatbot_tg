@@ -275,7 +275,7 @@ export class AgentEngine {
 
     if (config.tinkoffToken && settings.mode === 'live') {
       try {
-        this.moexLeg = new MoexLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
+        this.moexLeg = new MoexLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout, notify: this.deps.notify });
         await this.moexLeg.start(gapStart);
         cryptoNote += '\n🇷🇺 MOEX-нога: TATN, GAZP, ROSN — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).';
       } catch (e) {
