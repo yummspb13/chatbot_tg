@@ -301,11 +301,12 @@ export class AgentEngine {
     // read-only стаканы + резолюции, деньги не затрагиваются. POLY=0 выключает.
     if (config.poly && settings.mode === 'live') {
       try {
-        const { createPolyStore } = await import('../poly/store');
+        const { polyStore } = await import('../poly/store');
         const { PolyCollector: Collector } = await import('../poly/collector');
         this.polyLeg = new Collector(
           {
-            store: createPolyStore(),
+            // общий синглтон: тот же инстанс читают /api/poly/* для экрана
+            store: polyStore(),
             notify: this.deps.notify,
             // референс-цена BTC из уже текущего крипто-стрима (нулевой трафик);
             // lastQuote в scaled-пространстве (÷100k) — восстанавливаем реальную
@@ -824,6 +825,12 @@ export class AgentEngine {
       (q.ask - q.bid) / PIP,
     );
     return '✅ Тестовый ордер отправлен';
+  }
+
+  /** Свежая сводка Polymarket-коллектора для /api/poly/summary (в status()
+   *  идёт минутный кэш summarySync — экрану нужны живые secToEnd/счётчики). */
+  async polySummary() {
+    return this.polyLeg ? this.polyLeg.summary() : null;
   }
 
   status() {

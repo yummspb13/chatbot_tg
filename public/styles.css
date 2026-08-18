@@ -88,5 +88,8 @@ th { color: var(--muted); font-weight: 500; }
 
 footer { text-align: center; margin-top: 20px; }
 
+.navlink { color: var(--accent); text-decoration: none; }
+.navlink:hover { text-decoration: underline; }
+
 #equityChart .u-legend { color: var(--muted); font-size: 11px; }
 #logs { max-height: 220px; overflow-y: auto; }

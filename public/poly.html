@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070c16">
+  <title>Polymarket-терминал — FX Agent</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/uplot.min.css">
+  <link rel="stylesheet" href="/poly.css">
+</head>
+<body class="poly">
+  <!-- Логин: тот же пароль и кука, что у главной панели -->
+  <div id="login" class="loginwrap hidden">
+    <div class="panel login-card">
+      <h1>🎲 Polymarket-терминал</h1>
+      <p class="muted">Вход только для владельца — пароль главной панели.</p>
+      <input id="password" type="password" placeholder="Пароль" autocomplete="current-password">
+      <button id="loginBtn" class="btn primary">Войти</button>
+      <p id="loginError" class="error hidden"></p>
+    </div>
+  </div>
+
+  <div id="term" class="hidden">
+    <header class="bar">
+      <a href="/" class="backlink">← панель</a>
+      <h1>POLYMARKET · 5-минутки up/down</h1>
+      <div class="bar-right">
+        <label class="muted small" for="assetSel">актив</label>
+        <select id="assetSel"><option value="btc">BTC</option></select>
+        <span id="connBadge" class="badge">…</span>
+      </div>
+    </header>
+
+    <div id="offNote" class="offnote hidden"></div>
+
+    <!-- Тикер событий: последние резолюции + окна дня -->
+    <div class="ticker" aria-label="лента последних событий">
+      <div class="ticker-track" id="tickerTrack"><span class="muted">загрузка ленты…</span></div>
+    </div>
+
+    <main class="grid">
+      <section class="panel area-price">
+        <h2>BTC · референс-цена <span class="muted small">$, из нашего MT5-стрима (снапы за 6ч)</span></h2>
+        <div id="priceChart" class="chart" role="img" aria-label="Линия референс-цены BTC за 6 часов"></div>
+      </section>
+
+      <section class="panel area-pnl">
+        <h2>PnL мейкера <span class="stage">этап M6</span></h2>
+        <div class="pnl-stub">
+          <div class="big muted">бумажный мейкер ещё не торгует</div>
+          <p class="muted small">Деньги не задействованы. Порядок честный: окна (M4) → fair-модель (M5) → лицензия мейкера ≥50 филлов/14д (M6).</p>
+        </div>
+        <div class="kpis">
+          <div><span class="muted small">снапов сегодня</span><div id="kSnaps" class="kpi">—</div></div>
+          <div><span class="muted small">окон &lt;$1</span><div id="kWindows" class="kpi">—</div></div>
+          <div><span class="muted small">резолюций</span><div id="kRes" class="kpi">—</div></div>
+          <div><span class="muted small">req/мин <span title="самокап 30 запросов в минуту">(кап 30)</span></span><div id="kReq" class="kpi">—</div></div>
+        </div>
+      </section>
+
+      <section class="panel area-sum">
+        <h2>Сумма сета (UP ask + DOWN ask) <span class="muted small">ниже $1.00 — окно сет-арбитража</span></h2>
+        <div id="sumChart" class="chart" role="img" aria-label="Кривая суммы аск-цен обеих сторон; зона ниже одного доллара подсвечена"></div>
+      </section>
+
+      <section class="panel area-life">
+        <h2>Market Lifecycle <span id="lifeSlug" class="muted small mono"></span></h2>
+        <div class="lifebar" title="5-минутный бакет: торговля → TWAP-окно 60с → резолюция">
+          <div class="lifezone twap" title="TWAP-окно 60с"></div>
+          <div class="lifefill" id="lifeFill"></div>
+        </div>
+        <div class="life-row">
+          <span id="lifePhase" class="phase-chip">—</span>
+          <span id="lifeLeft" class="mono big">—</span>
+        </div>
+        <div class="book mono small" id="bookNow">книга: —</div>
+        <div class="phases muted small">создан → торгуется → TWAP 60с → резолюция (через ~120с после конца)</div>
+      </section>
+
+      <section class="panel area-rgrid">
+        <h2>Resolution Grid <span class="muted small">последние экспирации, цена закрытия UP в ¢</span></h2>
+        <div id="resGrid" class="resgrid" aria-label="Сетка исходов последних пятиминуток"></div>
+        <div id="resStats" class="muted small"></div>
+      </section>
+
+      <section class="panel area-neural">
+        <h2>Neural Shell <span class="stage">этап M5</span></h2>
+        <div class="stubwrap">
+          <svg id="neuralSvg" viewBox="0 0 300 170" class="ghost-svg" aria-hidden="true"></svg>
+          <div class="stub-note muted small">fair-модель обучается на этапе M5 — здесь появятся фичи, веса и fair-вероятность UP</div>
+        </div>
+      </section>
+
+      <section class="panel area-edge">
+        <h2>Edge Matrix <span class="stage">этап M5</span></h2>
+        <div class="stubwrap">
+          <svg id="edgeSvg" viewBox="0 0 300 170" class="ghost-svg" aria-hidden="true"></svg>
+          <div class="stub-note muted small">scatter «модель vs рынок» — после обучения fair-модели (M5)</div>
+        </div>
+      </section>
+
+      <section class="panel area-hedge">
+        <h2>Hedge Flow <span class="stage">этап M6</span></h2>
+        <div class="stubwrap">
+          <svg id="hedgeSvg" viewBox="0 0 300 170" class="ghost-svg" aria-hidden="true"></svg>
+          <div class="stub-note muted small">потоки «покупки → сеты → won/lost» появятся с бумажным мейкером (M6)</div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="statusbar mono small" id="statusbar">—</footer>
+    <p class="muted small disclaimer">Тестовый стенд: read-only данные Polymarket, торговля бумажная, обещаний доходности нет.</p>
+  </div>
+
+  <script src="/uplot.min.js"></script>
+  <script src="/poly.js"></script>
+</body>
+</html>

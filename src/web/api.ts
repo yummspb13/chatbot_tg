@@ -10,6 +10,7 @@ import { newsStatus, upcomingNews } from '../news/calendar';
 import { checkPassword, clearSessionCookie, isAuthed, requireAuth, setSessionCookie } from './auth';
 import { pushPublicKey, pushReady } from './push';
 import { computeHourStats } from '../learn/stats';
+import { polyStore } from '../poly/store';
 import type { TradeStore } from '../store';
 
 export interface ApiDeps {
@@ -109,6 +110,50 @@ export function buildApiRouter(deps: ApiDeps): Router {
         return { ts: t.closedAt, cum: +cum.toFixed(2) };
       });
       res.json({ points: thin(points) });
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
+  });
+
+  // --- Polymarket-терминал /poly.html (план M7a) ---
+  // Валидация asset: слаги строятся из этого куска — только [a-z0-9]
+  const polyAsset = (v: unknown): string | undefined =>
+    typeof v === 'string' && /^[a-z0-9]{1,12}$/.test(v) ? v : undefined;
+
+  r.get('/poly/summary', async (_req, res) => {
+    try {
+      // null = коллектор не запущен (агент не в live или POLY=0) — экран честно скажет
+      res.json({ summary: await deps.engine.polySummary() });
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
+  });
+
+  r.get('/poly/snaps', async (req, res) => {
+    try {
+      const hours = Math.min(Math.max(Number(req.query.hours) || 6, 1), 72);
+      const asset = polyAsset(req.query.asset) ?? 'btc';
+      const rows = await polyStore().snaps(hours, asset);
+      const points = rows.map(s => ({
+        ts: s.ts, setSumAsk: s.setSumAsk, upAsk: s.upAsk, downAsk: s.downAsk,
+        refPx: s.refPx, depthUsd: s.depthUsd, isEvent: s.isEvent,
+      }));
+      res.json({ asset, points: thin(points) });
+    } catch (e) {
+      res.status(500).json({ error: errMsg(e) });
+    }
+  });
+
+  r.get('/poly/resolutions', async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(Number(req.query.limit) || 96, 1), 300);
+      const asset = polyAsset(req.query.asset);
+      const rows = await polyStore().resolutions(limit, asset);
+      res.json({
+        resolutions: rows.map(x => ({
+          slug: x.slug, asset: x.asset, endTs: x.endTs, outcome: x.outcome, closeUpPrice: x.closeUpPrice,
+        })),
+      });
     } catch (e) {
       res.status(500).json({ error: errMsg(e) });
     }

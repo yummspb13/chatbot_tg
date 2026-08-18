@@ -150,6 +150,14 @@ export function createPolyStore(): PolyStore {
   return new MemoryPolyStore();
 }
 
+// Общий инстанс процесса: коллектор (engine) пишет, /api/poly/* (экран) читает.
+// Важно для Memory-фолбэка — два createPolyStore() не увидели бы данных друг друга.
+let shared: PolyStore | null = null;
+export function polyStore(): PolyStore {
+  shared ??= createPolyStore();
+  return shared;
+}
+
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
   (async () => {

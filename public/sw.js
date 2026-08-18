@@ -1,11 +1,14 @@
 // Service worker PWA: офлайн-шелл + Web Push уведомления.
 
-const CACHE = 'fx-agent-v1';
+const CACHE = 'fx-agent-v2'; // v2: +Polymarket-терминал (poly.*)
 const SHELL = [
   '/',
   '/index.html',
   '/styles.css',
   '/app.js',
+  '/poly.html',
+  '/poly.js',
+  '/poly.css',
   '/uplot.min.js',
   '/uplot.min.css',
   '/manifest.webmanifest',

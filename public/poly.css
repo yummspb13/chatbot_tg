@@ -1,0 +1,184 @@
+/* Polymarket-терминал: тёмная широкоэкранная сетка (референс — ролик владельца).
+   Палитра main-панели, но фон глубже — «терминальная» подача. */
+
+:root {
+  --bg: #070c16;
+  --card: #0d1526;
+  --border: #1d2a45;
+  --text: #e7edf7;
+  --muted: #8899b4;
+  --up: #3fb68b;      /* статусный: исход UP / okay */
+  --down: #e5534b;    /* статусный: исход DOWN / ошибка */
+  --gold: #c9a227;    /* акцент данных: sum-кривая, TWAP-зона */
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+
+body.poly {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.big { font-size: 18px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.error { color: var(--down); }
+.pos { color: var(--up); }
+.neg { color: var(--down); }
+
+/* ---------- логин ---------- */
+.loginwrap { max-width: 420px; margin: 0 auto; padding: 12px; }
+.login-card { margin-top: 22vh; text-align: center; }
+.login-card input {
+  width: 100%; margin: 12px 0; padding: 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 16px;
+}
+.btn {
+  border: 1px solid var(--border); background: var(--bg); color: var(--text);
+  padding: 10px 14px; border-radius: 10px; font-size: 14px; cursor: pointer;
+}
+.btn.primary { background: var(--up); border-color: var(--up); color: #06251a; font-weight: 600; }
+
+/* ---------- каркас ---------- */
+#term { max-width: 1180px; margin: 0 auto; padding: 8px 10px 30px; overflow-x: clip; }
+
+.bar { display: flex; align-items: center; gap: 12px; padding: 6px 2px; flex-wrap: wrap; }
+.bar h1 { font-size: 16px; letter-spacing: .08em; margin: 0; flex: 1; }
+@media (min-width: 960px) { .bar h1 { white-space: nowrap; } }
+.backlink { color: var(--muted); text-decoration: none; font-size: 13px; }
+.backlink:hover { color: var(--text); }
+.bar-right { display: flex; align-items: center; gap: 8px; }
+.bar-right select {
+  background: var(--card); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; padding: 6px 8px; font-size: 13px;
+}
+.badge {
+  padding: 3px 10px; border-radius: 999px; font-size: 12px;
+  background: var(--border); color: var(--muted); white-space: nowrap;
+}
+.badge.on { background: rgba(63, 182, 139, .15); color: var(--up); }
+.badge.off { background: rgba(229, 83, 75, .15); color: var(--down); }
+
+.offnote {
+  border: 1px solid rgba(229, 83, 75, .5); background: rgba(229, 83, 75, .08);
+  border-radius: 10px; padding: 10px 12px; margin: 8px 0; font-size: 13px;
+}
+
+/* ---------- тикер ---------- */
+.ticker {
+  overflow: hidden; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); margin: 8px 0; white-space: nowrap;
+}
+.ticker-track {
+  display: inline-block; padding: 7px 0; font-size: 13px;
+  animation: tick 45s linear infinite; will-change: transform;
+}
+.ticker:hover .ticker-track { animation-play-state: paused; }
+.ticker-track .sep { color: var(--border); margin: 0 10px; }
+@keyframes tick { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
+
+/* ---------- сетка панелей ---------- */
+.grid { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 960px) {
+  .grid {
+    grid-template-columns: 2fr 1fr;
+    grid-template-areas:
+      "price pnl"
+      "sum   life"
+      "rgrid neural"
+      "edge  hedge";
+  }
+  .area-price { grid-area: price; }
+  .area-pnl { grid-area: pnl; }
+  .area-sum { grid-area: sum; }
+  .area-life { grid-area: life; }
+  .area-rgrid { grid-area: rgrid; }
+  .area-neural { grid-area: neural; }
+  .area-edge { grid-area: edge; }
+  .area-hedge { grid-area: hedge; }
+}
+
+.panel {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px; min-width: 0;
+  overflow: hidden; /* грид-блоуаут: панель не раздвигает трек шире вьюпорта */
+}
+.panel h2 { font-size: 13.5px; margin: 0 0 10px; letter-spacing: .02em; }
+.stage {
+  font-size: 11px; color: var(--gold); border: 1px solid rgba(201, 162, 39, .45);
+  border-radius: 999px; padding: 1px 8px; vertical-align: 1px; white-space: nowrap;
+}
+
+.chart { min-height: 150px; }
+.chart .u-legend { color: var(--muted); font-size: 11px; }
+
+/* ---------- PnL-карточка ---------- */
+.pnl-stub .big { margin: 6px 0 2px; }
+.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; margin-top: 10px; }
+.kpi { font-size: 20px; font-variant-numeric: tabular-nums; }
+
+/* ---------- lifecycle ---------- */
+.lifebar {
+  position: relative; height: 16px; border-radius: 8px; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.lifefill {
+  position: absolute; inset: 0 auto 0 0; width: 0%;
+  background: linear-gradient(90deg, rgba(63,182,139,.25), rgba(63,182,139,.75));
+  transition: width .9s linear;
+}
+.lifezone.twap {
+  position: absolute; top: 0; bottom: 0; right: 0; width: 20%; /* 60с из 300с */
+  background: repeating-linear-gradient(135deg, rgba(201,162,39,.28) 0 4px, transparent 4px 8px);
+}
+.life-row { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 4px; flex-wrap: wrap; gap: 4px 8px; }
+.phase-chip {
+  font-size: 12px; padding: 2px 10px; border-radius: 999px;
+  background: var(--border); color: var(--text);
+}
+.phase-chip.twap { background: rgba(201,162,39,.2); color: var(--gold); }
+.phase-chip.resolve { background: rgba(63,182,139,.18); color: var(--up); }
+.book { margin: 6px 0; word-break: break-word; white-space: normal; }
+.phases { margin-top: 6px; }
+
+/* ---------- resolution grid ---------- */
+.resgrid {
+  display: grid; gap: 4px;
+  grid-template-columns: repeat(auto-fill, minmax(40px, 1fr));
+}
+.cell {
+  border-radius: 6px; text-align: center; padding: 3px 0 4px;
+  font-size: 11px; line-height: 1.25; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--border); cursor: default;
+}
+.cell .glyph { font-size: 12px; display: block; }
+.cell.up { background: rgba(63,182,139,.13); border-color: rgba(63,182,139,.4); color: var(--up); }
+.cell.down { background: rgba(229,83,75,.12); border-color: rgba(229,83,75,.4); color: var(--down); }
+.resgrid .empty { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+#resStats { margin-top: 8px; }
+
+/* ---------- заглушки этапов ---------- */
+.stubwrap { position: relative; }
+.ghost-svg { width: 100%; height: auto; max-height: 200px; display: block; margin: 0 auto; opacity: .55; }
+.ghost-svg .node { fill: var(--bg); stroke: var(--muted); stroke-width: 1; }
+.ghost-svg .edge { stroke: var(--border); stroke-width: 1; }
+.ghost-svg .axis { stroke: var(--muted); stroke-width: 1; }
+.ghost-svg .dot { fill: var(--border); }
+.ghost-svg .ribbon { fill: var(--border); opacity: .5; }
+.ghost-svg text { fill: var(--muted); font-size: 9px; font-family: ui-monospace, Menlo, monospace; }
+.stub-note { margin-top: 6px; }
+
+/* ---------- статусбар ---------- */
+.statusbar {
+  margin-top: 10px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--card); padding: 8px 12px; color: var(--muted);
+  overflow-x: auto; white-space: nowrap;
+}
+.disclaimer { text-align: center; margin: 12px 0 0; }

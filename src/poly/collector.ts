@@ -274,9 +274,13 @@ export class PolyCollector {
       perAsset: [...this.lastTop.values()].map(t => ({
         asset: t.asset,
         slug: t.slug,
+        endDateMs: t.endDateMs, // клиент экрана тикает secToEnd сам между поллами
         secToEnd: Math.max(0, Math.round((t.endDateMs - Date.now()) / 1000)),
+        upBid: t.upBid, upAsk: t.upAsk, downBid: t.downBid, downAsk: t.downAsk,
         setSumAsk: t.setSumAsk,
         depthUsd: t.depthUsd,
+        refPx: t.refPx,
+        ageSec: Math.round((Date.now() - t.time.getTime()) / 1000),
       })),
     };
   }
