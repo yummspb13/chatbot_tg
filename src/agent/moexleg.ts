@@ -182,28 +182,23 @@ export class MoexLeg {
     this.running = true;
 
     // Micro-этап AFKS (решение владельца 18.08): зеркало живых сделок
-    // afks-matrend реальными ордерами. Ошибка зеркала НЕ роняет ногу.
+    // afks-matrend реальными ордерами. Ошибка зеркала НЕ роняет ногу, а сетевой
+    // чих на буте НЕ хоронит этап: подписка ставится сразу (события копятся
+    // фильтром running внутри зеркала), старт ретраится каждые 5 минут.
     const afks = this.legs.find(l => l.spec.ticker === 'AFKS');
     if (afks && config.afksLive !== 'off') {
-      try {
-        this.mirror = new AfksMirror({ notify: this.deps.notify });
-        await this.mirror.start();
-        const scale = afks.spec.priceScale;
-        afks.leg.onVirtualTrade(e => {
-          if (e.memberKey !== 'afks-matrend') return;
-          this.mirror?.onVirtual({
-            ...e,
-            priceRub: e.price * scale,
-            tpRub: e.tp === undefined ? undefined : e.tp * scale,
-            slRub: e.sl === undefined ? undefined : e.sl * scale,
-          });
+      this.mirror = new AfksMirror({ notify: this.deps.notify });
+      const scale = afks.spec.priceScale;
+      afks.leg.onVirtualTrade(e => {
+        if (e.memberKey !== 'afks-matrend') return;
+        this.mirror?.onVirtual({
+          ...e,
+          priceRub: e.price * scale,
+          tpRub: e.tp === undefined ? undefined : e.tp * scale,
+          slRub: e.sl === undefined ? undefined : e.sl * scale,
         });
-      } catch (e) {
-        this.mirror = null;
-        this.mirrorStartError = errMsg(e); // диагноз виден в /health без пароля
-        log.error(`AFKS-зеркало не запустилось: ${errMsg(e)}`, undefined, 'afks');
-        await this.deps.notify(`⚠️ AFKS-зеркало не запустилось: ${errMsg(e)}`).catch(() => {});
-      }
+      });
+      void this.startMirrorWithRetry();
     }
 
     if (gapStart) await this.replayGap(gapStart);
@@ -212,6 +207,26 @@ export class MoexLeg {
       `MOEX-нога запущена: ${this.legs.map(l => `${l.spec.ticker} (${l.spec.roster.map(r => r.key).join('+')})`).join(', ')} — виртуально, read-only, комиссия 0.1%/круг в модели`,
       undefined, 'moex',
     );
+  }
+
+  /** Старт зеркала с ретраями: боевой/песочный контур Тинькофф из-за границы
+   *  иногда таймаутится на хэндшейке — пробуем, пока нога жива. */
+  private async startMirrorWithRetry(): Promise<void> {
+    for (let attempt = 0; this.running && this.mirror && !this.mirror.isRunning(); attempt++) {
+      try {
+        await this.mirror.start();
+        this.mirrorStartError = null;
+        if (attempt > 0) await this.deps.notify('✅ AFKS-зеркало поднялось после ретрая.').catch(() => {});
+        return;
+      } catch (e) {
+        this.mirrorStartError = errMsg(e); // диагноз виден в /health без пароля
+        log.error(`AFKS-зеркало: старт не удался (попытка ${attempt + 1}): ${this.mirrorStartError}`, undefined, 'afks');
+        if (attempt === 0) {
+          await this.deps.notify(`⚠️ AFKS-зеркало не запустилось: ${this.mirrorStartError} — ретраю каждые 5 минут.`).catch(() => {});
+        }
+        await sleep(300_000);
+      }
+    }
   }
 
   async stop(): Promise<void> {
@@ -300,7 +315,7 @@ export class MoexLeg {
       tickers: (this.legs.length ? this.legs.map(l => l.spec) : this.specs).map(s => s.ticker),
       lastQuoteAgoSec: this.lastQuoteAt ? Math.round((Date.now() - this.lastQuoteAt) / 1000) : null,
       afksMirror: this.mirror
-        ? this.mirror.summary()
+        ? { ...this.mirror.summary(), startError: this.mirrorStartError }
         : { mode: config.afksLive, running: false, startError: this.mirrorStartError },
     };
   }

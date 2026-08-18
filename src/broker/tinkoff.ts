@@ -53,24 +53,37 @@ export class TinkoffClient {
     // undici не читает переменные прокси сам: в средах с HTTPS_PROXY (дев-контейнер)
     // ходим через него, на Render — напрямую; пин CA действует в обоих случаях
     const proxy = process.env.HTTPS_PROXY || process.env.https_proxy;
+    // connect timeout 30с: хэндшейк с РФ-хостом из-за границы бывает дольше
+    // дефолтных 10с — зеркало ловило Connect Timeout на первом же коннекте
     this.dispatcher = proxy
-      ? new ProxyAgent({ uri: proxy, requestTls: { ca } })
-      : new Agent({ connect: { ca } });
+      ? new ProxyAgent({ uri: proxy, requestTls: { ca }, connect: { timeout: 30_000 } })
+      : new Agent({ connect: { ca, timeout: 30_000 } });
   }
 
   protected async call<T>(service: string, method: string, body: unknown): Promise<T> {
     for (let attempt = 0; ; attempt++) {
-      const res = await request(`${BASE}.${service}/${method}`, {
-        method: 'POST',
-        dispatcher: this.dispatcher,
-        headers: {
-          authorization: `Bearer ${this.token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(body),
-        headersTimeout: 15_000,
-        bodyTimeout: 15_000,
-      });
+      let res;
+      try {
+        res = await request(`${BASE}.${service}/${method}`, {
+          method: 'POST',
+          dispatcher: this.dispatcher,
+          headers: {
+            authorization: `Bearer ${this.token}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          headersTimeout: 15_000,
+          bodyTimeout: 15_000,
+        });
+      } catch (e) {
+        // сетевой чих (connect timeout/reset): ретрай безопасен даже для ордеров —
+        // orderId генерится ДО call и не меняется между попытками (идемпотентность)
+        if (attempt < 3) {
+          await sleep(1500 * 2 ** attempt);
+          continue;
+        }
+        throw e;
+      }
       const text = await res.body.text();
       if (res.statusCode === 429 && attempt < 3) {
         await sleep(2000 * 2 ** attempt); // ratelimit — подождать и повторить
