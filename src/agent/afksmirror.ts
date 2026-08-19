@@ -115,7 +115,11 @@ export class AfksMirror {
     void this.handle(e).catch(async err => {
       this.lastError = errMsg(err);
       log.error(`AFKS-зеркало: ${this.lastError}`, undefined, 'afks');
-      await this.deps.notify(`🚨 AFKS-зеркало: ошибка — ${this.lastError}`).catch(() => {});
+      // 30042 = шорт без включённой маржинальной торговли — подсказка вместо кода
+      const hint = this.lastError.includes('30042')
+        ? '\nЭто SELL-сигнал при выключенной маржинальной торговле: включите её в Т-Инвестициях (настройки счёта), иначе шорты (большинство сигналов матренда) будут пропускаться.'
+        : '';
+      await this.deps.notify(`🚨 AFKS-зеркало: ошибка — ${this.lastError}${hint}`).catch(() => {});
     });
   }
 
