@@ -1,5 +1,5 @@
 {
- "totalTested": 51242,
+ "totalTested": 51638,
  "lockboxEntrants": 27,
  "batches": [
   {
@@ -94,6 +94,14 @@
    "id": "poly fair-модель 5m (логрег: 3 λ-конфигурации, walk-forward 11-15→16-18.08)",
    "when": "2026-08-18",
    "n": 3,
+   "stage1": 0,
+   "stage2": 0,
+   "lockboxWins": 0
+  },
+  {
+   "id": "drop-momentum MOEX (идея владельца: «ловить продолжение сильного хода», 396 ячеек, 11 бумаг)",
+   "when": "2026-08-21",
+   "n": 396,
    "stage1": 0,
    "stage2": 0,
    "lockboxWins": 0
