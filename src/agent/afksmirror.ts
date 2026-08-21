@@ -1,8 +1,9 @@
-// Зеркало afks-matrend: живые виртуальные сделки лицензированного участника
-// (14/14 за 2 недели) повторяются реальными лимитками на счёте Тинькофф.
-// Micro-этап по решению владельца 18.08.2026 (20 000 ₽): меряем, совпадает ли
-// РЕАЛЬНОЕ исполнение (спред, проскальзывание, комиссия 0.05%/сторона на
-// «Трейдере») с виртуальной моделью, на которой набрана лицензия.
+// Зеркало виртуального участника MOEX-ноги: живые сделки ЛИЦЕНЗИРОВАННОГО
+// виртуала повторяются реальными лимитками на счёте Тинькофф. Micro-этап по
+// решению владельца 18.08.2026 (20 000 ₽); мультитикер с 21.08 (env MIRRORS,
+// подключение нового тикера — только при лицензии ≥10 живых сделок/14д, net>0).
+// Меряем, совпадает ли РЕАЛЬНОЕ исполнение (спред, проскальзывание, комиссия
+// 0.05%/сторона на «Трейдере») с виртуальной моделью лицензии.
 //
 // Механика: вход виртуала → лимитка по его цене + допуск 2 шага; не залилась за
 // 90с → отмена, сделка «пропущена» (честный лог расхождения). После входа в
@@ -24,6 +25,12 @@ export interface MirrorDeps {
   notify: (text: string) => Promise<void>;
 }
 
+export interface MirrorCfg {
+  ticker: string;     // тикер TQBR (AFKS, SIBN, …)
+  memberKey: string;  // виртуал-родитель (afks-matrend, sibn-meanrev, …)
+  lots: number;       // лотов на сделку
+}
+
 interface MirrorPosition {
   virtRowId: number;
   side: 'BUY' | 'SELL';
@@ -40,7 +47,11 @@ const POLL_MS = 5_000;
 
 const rub = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}₽`;
 
-export class AfksMirror {
+export class TickerMirror {
+  // дневной лимит −AFKS_DAILY_LOSS_RUB — ОБЩИЙ на все зеркала счёта
+  private static sharedDayKey = '';
+  private static sharedDayPnl = 0;
+
   private trader: TinkoffTrader | null = null;
   private accountId = '';
   private uid = '';
@@ -54,9 +65,10 @@ export class AfksMirror {
   private dayStopNotified = false;
   private skipped = 0;
   private lastError: string | null = null;
+  startError: string | null = null; // ставит startMirrorWithRetry (moexleg)
   private running = false;
 
-  constructor(private deps: MirrorDeps) {}
+  constructor(private deps: MirrorDeps, private cfg: MirrorCfg) {}
 
   mode(): 'off' | 'sandbox' | 'live' {
     return config.afksLive;
@@ -71,13 +83,13 @@ export class AfksMirror {
     if (!config.tinkoffToken) throw new Error('нет TINKOFF_TOKEN');
     this.trader = new TinkoffTrader(config.tinkoffToken, config.afksLive === 'sandbox');
     this.accountId = await this.trader.ensureAccount(config.afksAccountId);
-    const info = await this.trader.shareInfo('AFKS');
+    const info = await this.trader.shareInfo(this.cfg.ticker);
     this.uid = info.uid;
     this.lotSize = info.lot;
     this.priceStep = info.priceStep;
-    // сироты: на счёте есть AFKS, а виртуал (усыновляющий свои позиции из БД)
-    // пришлёт close только для того, что открывал он. Всё живое зеркало
-    // восстановить нельзя без persist — честно закрываем остаток маркетом.
+    // сироты: на счёте есть бумага, а виртуал (усыновляющий свои позиции из БД)
+    // пришлёт close только для того, что открывал он. Живое зеркало восстановить
+    // нельзя без persist — честно закрываем остаток маркетом.
     const qty = await this.trader.positionQty(this.accountId, this.uid);
     if (qty !== 0) {
       const lots = Math.round(Math.abs(qty) / this.lotSize);
@@ -87,15 +99,15 @@ export class AfksMirror {
           direction: qty > 0 ? 'SELL' : 'BUY',
         });
         await this.deps.notify(
-          `⚠️ AFKS-зеркало: на счёте найдена позиция ${qty} шт без родителя (рестарт?) — закрыта маркетом.`,
+          `⚠️ ${this.cfg.ticker}-зеркало: на счёте найдена позиция ${qty} шт без родителя (рестарт?) — закрыта маркетом.`,
         );
       }
     }
     this.running = true;
     const cash = await this.trader.cashRub(this.accountId).catch(() => null);
     log.success(
-      `AFKS-зеркало запущено (${config.afksLive}): счёт ${this.accountId}, лот ${this.lotSize} шт, ` +
-      `${config.afksLots} лот(ов)/сделка, шаг ${this.priceStep}, кэш ${cash === null ? '?' : cash.toFixed(0) + '₽'}`,
+      `${this.cfg.ticker}-зеркало запущено (${config.afksLive}): счёт ${this.accountId}, лот ${this.lotSize} шт, ` +
+      `${this.cfg.lots} лот(ов)/сделка, шаг ${this.priceStep}, кэш ${cash === null ? '?' : cash.toFixed(0) + '₽'}`,
       undefined, 'afks',
     );
   }
@@ -114,12 +126,12 @@ export class AfksMirror {
     // обрабатываем всегда, вход при занятости пропускаем)
     void this.handle(e).catch(async err => {
       this.lastError = errMsg(err);
-      log.error(`AFKS-зеркало: ${this.lastError}`, undefined, 'afks');
+      log.error(`${this.cfg.ticker}-зеркало: ${this.lastError}`, undefined, 'afks');
       // 30042 = шорт без включённой маржинальной торговли — подсказка вместо кода
       const hint = this.lastError.includes('30042')
-        ? '\nЭто SELL-сигнал при выключенной маржинальной торговле: включите её в Т-Инвестициях (настройки счёта), иначе шорты (большинство сигналов матренда) будут пропускаться.'
+        ? '\nЭто SELL-сигнал при выключенной маржинальной торговле: включите её в Т-Инвестициях (настройки счёта), иначе шорты будут пропускаться.'
         : '';
-      await this.deps.notify(`🚨 AFKS-зеркало: ошибка — ${this.lastError}${hint}`).catch(() => {});
+      await this.deps.notify(`🚨 ${this.cfg.ticker}-зеркало: ошибка — ${this.lastError}${hint}`).catch(() => {});
     });
   }
 
@@ -134,6 +146,10 @@ export class AfksMirror {
       this.dayPnl = 0;
       this.dayTrades = 0;
       this.dayStopNotified = false;
+    }
+    if (key !== TickerMirror.sharedDayKey) {
+      TickerMirror.sharedDayKey = key;
+      TickerMirror.sharedDayPnl = 0;
     }
   }
 
@@ -153,20 +169,20 @@ export class AfksMirror {
       return; // уже есть позиция/операция — зеркало строго ≤1
     }
     if (!moexInSession(new Date())) return;
-    if (this.dayPnl <= -config.afksDailyLossRub) {
+    if (TickerMirror.sharedDayPnl <= -config.afksDailyLossRub) {
       if (!this.dayStopNotified) {
         this.dayStopNotified = true;
-        await this.deps.notify(`⛔️ AFKS-зеркало: дневной стоп ${rub(this.dayPnl)} — входов до завтра не будет.`);
+        await this.deps.notify(`⛔️ Зеркала: общий дневной стоп ${rub(TickerMirror.sharedDayPnl)} — входов до завтра не будет.`);
       }
       return;
     }
     this.busy = true;
     try {
-      const qty = config.afksLots * this.lotSize;
+      const qty = this.cfg.lots * this.lotSize;
       // допуск 2 шага в сторону исполнения: BUY чуть дороже, SELL чуть дешевле
       const price = this.rounded(e.priceRub + (e.side === 'BUY' ? 2 : -2) * this.priceStep);
       const orderId = await t.postLimit({
-        accountId: this.accountId, uid: this.uid, lots: config.afksLots, price, direction: e.side,
+        accountId: this.accountId, uid: this.uid, lots: this.cfg.lots, price, direction: e.side,
       });
       const st = await this.waitFill(orderId);
       if (!st.filled) {
@@ -176,7 +192,7 @@ export class AfksMirror {
         if (after === 0) {
           this.skipped += 1;
           await this.deps.notify(
-            `⚠️ AFKS: вход виртуала @${e.priceRub.toFixed(3)}₽ НЕ исполнился за 90с (лимит ${price.toFixed(3)}) — сделка пропущена. Пропусков: ${this.skipped}.`,
+            `⚠️ ${this.cfg.ticker}: вход виртуала @${e.priceRub.toFixed(3)}₽ НЕ исполнился за 90с (лимит ${price.toFixed(3)}) — сделка пропущена. Пропусков: ${this.skipped}.`,
           );
           return;
         }
@@ -186,22 +202,22 @@ export class AfksMirror {
       let stopOrderId: string | null = null;
       if (slRub !== null) {
         stopOrderId = await t.postStopLoss({
-          accountId: this.accountId, uid: this.uid, lots: config.afksLots,
+          accountId: this.accountId, uid: this.uid, lots: this.cfg.lots,
           stopPrice: this.rounded(slRub),
           direction: e.side === 'BUY' ? 'SELL' : 'BUY',
         }).catch(err => {
-          log.warn(`AFKS: стоп-страховка не поставилась: ${errMsg(err)}`, undefined, 'afks');
+          log.warn(`${this.cfg.ticker}: стоп-страховка не поставилась: ${errMsg(err)}`, undefined, 'afks');
           return null;
         });
       }
       this.pos = {
-        virtRowId: e.rowId, side: e.side, lots: config.afksLots, qty,
+        virtRowId: e.rowId, side: e.side, lots: this.cfg.lots, qty,
         entryPrice: entry, virtEntry: e.priceRub, stopOrderId, openedAt: Date.now(),
       };
       const fee = entry * qty * config.afksFeeFrac;
       const risk = slRub !== null ? Math.abs(entry - slRub) * qty : null;
       await this.deps.notify(
-        `🟢 AFKS вход (${config.afksLive === 'sandbox' ? 'ПЕСОЧНИЦА' : 'СЧЁТ'}): ${e.side} ${config.afksLots} лот × ${this.lotSize} = ${qty} шт @ ${entry.toFixed(3)}₽` +
+        `🟢 ${this.cfg.ticker} вход (${config.afksLive === 'sandbox' ? 'ПЕСОЧНИЦА' : 'СЧЁТ'}): ${e.side} ${this.cfg.lots} лот × ${this.lotSize} = ${qty} шт @ ${entry.toFixed(3)}₽` +
         `\nвиртуал @ ${e.priceRub.toFixed(3)} · слип ${((entry - e.priceRub) * (e.side === 'BUY' ? 1 : -1) * qty).toFixed(1)}₽` +
         `\nстоп ${slRub === null ? '—' : this.rounded(slRub).toFixed(3)}${this.pos.stopOrderId ? ' (на бирже)' : ''} · цель ${e.tpRub === undefined ? '—' : this.rounded(e.tpRub).toFixed(3)}` +
         `\nриск ~${risk === null ? '?' : risk.toFixed(0)}₽ · комиссия входа ${fee.toFixed(2)}₽`,
@@ -246,11 +262,12 @@ export class AfksMirror {
       const pnl = gross - fee;
       this.rollDay(e.time);
       this.dayPnl += pnl;
+      TickerMirror.sharedDayPnl += pnl;
       this.dayTrades += 1;
       const minutes = Math.round((Date.now() - pos.openedAt) / 60_000);
       this.pos = null;
       await this.deps.notify(
-        `🔴 AFKS выход (${e.reason ?? '—'}): ${exit.toFixed(3)}₽ · виртуал @ ${e.priceRub.toFixed(3)} · ${minutes} мин` +
+        `🔴 ${this.cfg.ticker} выход (${e.reason ?? '—'}): ${exit.toFixed(3)}₽ · виртуал @ ${e.priceRub.toFixed(3)} · ${minutes} мин` +
         `\nИТОГ: ${rub(pnl)} (комиссия ${fee.toFixed(2)}₽ учтена)` +
         `\nдень: ${rub(this.dayPnl)} за ${this.dayTrades} сд · виртуал этой сделки: ${e.pnl === undefined ? '—' : (e.pnl >= 0 ? '+' : '') + e.pnl.toFixed(2)}$`,
       );
@@ -279,8 +296,12 @@ export class AfksMirror {
 
   summary() {
     return {
+      ticker: this.cfg.ticker,
+      member: this.cfg.memberKey,
+      lots: this.cfg.lots,
       mode: config.afksLive,
       running: this.running,
+      startError: this.startError,
       account: this.accountId ? `${this.accountId.slice(0, 4)}…` : null,
       position: this.pos
         ? { side: this.pos.side, qty: this.pos.qty, entry: +this.pos.entryPrice.toFixed(3), minutes: Math.round((Date.now() - this.pos.openedAt) / 60_000) }

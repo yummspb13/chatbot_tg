@@ -69,6 +69,15 @@ export const config = {
   afksLive: (process.env.AFKS_LIVE === '1' ? 'live'
     : process.env.AFKS_LIVE === '0' ? 'off' : 'sandbox') as 'off' | 'sandbox' | 'live',
   afksLots: num(process.env.AFKS_LOTS, 5),                    // лотов на сделку (AFKS лот = 100 акций)
+  // Мультитикер-зеркала: 'ТИКЕР:виртуал:лоты,...'. Новый тикер добавляется
+  // ТОЛЬКО при лицензии виртуала (≥10 живых сделок/14д, net>0) — правило дома.
+  mirrors: (process.env.MIRRORS || 'AFKS:afks-matrend:5')
+    .split(',')
+    .map(s => {
+      const [ticker, memberKey, lots] = s.trim().split(':');
+      return { ticker: (ticker || '').toUpperCase(), memberKey: memberKey || '', lots: Number(lots) || 5 };
+    })
+    .filter(m => m.ticker && m.memberKey),
   afksFeeFrac: num(process.env.AFKS_FEE_FRAC, 0.0005),        // комиссия за СТОРОНУ (тариф «Трейдер» 0.05%)
   afksDailyLossRub: num(process.env.AFKS_DAILY_LOSS_RUB, 500), // дневной стоп зеркала, ₽
   afksAccountId: process.env.AFKS_ACCOUNT_ID || null,          // боевой счёт; пусто — первый открытый
