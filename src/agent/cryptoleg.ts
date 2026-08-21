@@ -113,7 +113,7 @@ export class CryptoLeg {
     this.watchdog = setInterval(() => this.checkWatchdog(), 10_000);
     log.success(
       `крипто-нога запущена: ${this.preset.symbol} (${this.mt5Symbol()}), ${this.preset.params.strategyType}/${this.preset.params.entryMode}, `
-      + `входы только в FX-выходные, дневной лимит ${this.preset.params.maxDailyLossUsd}$`,
+      + `входы ${config.cryptoAllWeek ? 'всю неделю' : 'только в FX-выходные'}, дневной лимит ${this.preset.params.maxDailyLossUsd}$`,
       undefined, 'crypto',
     );
   }
@@ -237,11 +237,11 @@ export class CryptoLeg {
     const risk = this.risk;
     if (!strategy || !risk || !this.running) return;
 
-    // стратегия ест каждую котировку (echo учится и в будни), а входы — только
-    // пока FX закрыт и дневной лимит ноги не выбран
+    // стратегия ест каждую котировку; входы: всю неделю (решение владельца
+    // 21.08, CRYPTO_ALLWEEK=0 вернёт только-выходные) и пока лимит не выбран
     const sig = strategy.onQuote(q);
     if (!sig) return;
-    if (!isFxWeekend(q.time) || this.halted()) return;
+    if ((!config.cryptoAllWeek && !isFxWeekend(q.time)) || this.halted()) return;
 
     const spreadPips = (q.ask - q.bid) / PIP;
     const own = await this.deps.store.listOpenTrades('live', this.preset.symbol);
@@ -486,7 +486,7 @@ export class CryptoLeg {
       mt5Symbol: this.mt5Symbol(),
       strategy: `${this.preset.params.strategyType}/${this.preset.params.entryMode}`,
       running: this.running,
-      entriesActive: this.running && isFxWeekend(new Date()) && !this.halted(),
+      entriesActive: this.running && (config.cryptoAllWeek || isFxWeekend(new Date())) && !this.halted(),
       haltedToday: this.halted(),
       warmupDays: this.warmupDays,
       lastQuote: this.lastQuote,

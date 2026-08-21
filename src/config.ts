@@ -34,6 +34,9 @@ export const config = {
   // Крипто-эксперимент выходных: пока FX закрыт, торгуем крипто-CFD на том же
   // MT5-счёте (только live+metaapi). Честная рамка — см. CRYPTO_PRESETS в params.ts.
   cryptoWeekend: process.env.CRYPTO_WEEKEND === '1',
+  // 21.08: владелец явно расширил крипто-входы на всю неделю («он хорош как для
+  // выходных, так и для не выходных»). CRYPTO_ALLWEEK=0 вернёт только-выходные.
+  cryptoAllWeek: process.env.CRYPTO_ALLWEEK !== '0',
   cryptoPreset: (process.env.CRYPTO_PRESET === 'eth' ? 'eth' : 'btc') as 'btc' | 'eth',
   mt5SymbolCrypto: process.env.MT5_SYMBOL_CRYPTO || null, // дефолт берётся из пресета
 
@@ -69,9 +72,10 @@ export const config = {
   afksLive: (process.env.AFKS_LIVE === '1' ? 'live'
     : process.env.AFKS_LIVE === '0' ? 'off' : 'sandbox') as 'off' | 'sandbox' | 'live',
   afksLots: num(process.env.AFKS_LOTS, 5),                    // лотов на сделку (AFKS лот = 100 акций)
-  // Мультитикер-зеркала: 'ТИКЕР:виртуал:лоты,...'. Новый тикер добавляется
-  // ТОЛЬКО при лицензии виртуала (≥10 живых сделок/14д, net>0) — правило дома.
-  mirrors: (process.env.MIRRORS || 'AFKS:afks-matrend:5')
+  // Мультитикер-зеркала: 'ТИКЕР:виртуал:лоты,...'. Правило дома — подключение
+  // при лицензии виртуала; SIBN добавлен на 7/10 живых сделках ЯВНЫМ решением
+  // владельца 21.08 («всё ок, одобряю — говорю явно»).
+  mirrors: (process.env.MIRRORS || 'AFKS:afks-matrend:5,SIBN:sibn-meanrev:5')
     .split(',')
     .map(s => {
       const [ticker, memberKey, lots] = s.trim().split(':');
