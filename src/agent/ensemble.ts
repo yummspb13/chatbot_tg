@@ -129,6 +129,12 @@ export class EnsembleLeg {
     this.tradeListeners.push(cb);
   }
 
+  /** Открытые позиции участника (для усыновления сирот зеркалом после рестарта). */
+  openFor(memberKey: string): Array<{ rowId: number; side: 'BUY' | 'SELL'; entry: number; tp: number; sl: number }> {
+    const m = this.members.find(x => x.member.key === memberKey);
+    return m ? m.open.map(o => ({ rowId: o.rowId, side: o.side, entry: o.entry, tp: o.tp, sl: o.sl })) : [];
+  }
+
   private emitTrade(e: VirtualTradeEvent): void {
     if (this.replaying || this.backfillTag) return; // история — не сигнал зеркалу
     for (const cb of this.tradeListeners) {

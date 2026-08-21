@@ -142,4 +142,14 @@ export class TinkoffTrader extends TinkoffClient {
     if (this.sandbox) return;
     await this.call('StopOrdersService', 'CancelStopOrder', { accountId, stopOrderId });
   }
+
+  /** Активные стоп-ордера счёта (песочница их не поддерживает — пусто). */
+  async stopOrders(accountId: string): Promise<Array<{ stopOrderId: string; instrumentUid: string }>> {
+    if (this.sandbox) return [];
+    const d = await this.call<any>('StopOrdersService', 'GetStopOrders', { accountId });
+    return (d.stopOrders ?? []).map((s: any) => ({
+      stopOrderId: String(s.stopOrderId),
+      instrumentUid: String(s.instrumentUid ?? ''),
+    }));
+  }
 }

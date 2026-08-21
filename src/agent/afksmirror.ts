@@ -23,6 +23,9 @@ import { moexInSession } from './moexleg';
 
 export interface MirrorDeps {
   notify: (text: string) => Promise<void>;
+  /** Открытая позиция виртуала-родителя (цены УЖЕ в ₽) — для усыновления
+   *  сироты после рестарта вместо слепого закрытия. */
+  getParentOpen?: () => { rowId: number; side: 'BUY' | 'SELL'; entryRub: number; slRub: number } | null;
 }
 
 export interface MirrorCfg {
@@ -67,6 +70,8 @@ export class TickerMirror {
   private lastError: string | null = null;
   startError: string | null = null; // ставит startMirrorWithRetry (moexleg)
   private running = false;
+  private syncTimer: NodeJS.Timeout | null = null;
+  private parentMissingTicks = 0;
 
   constructor(private deps: MirrorDeps, private cfg: MirrorCfg) {}
 
@@ -87,23 +92,53 @@ export class TickerMirror {
     this.uid = info.uid;
     this.lotSize = info.lot;
     this.priceStep = info.priceStep;
-    // сироты: на счёте есть бумага, а виртуал (усыновляющий свои позиции из БД)
-    // пришлёт close только для того, что открывал он. Живое зеркало восстановить
-    // нельзя без persist — честно закрываем остаток маркетом.
+    // висячие стоп-ордера прежнего процесса: id потерян рестартом, а стоп без
+    // позиции при срабатывании ОТКРЫЛ бы новую — сносим все по инструменту
+    const stops = await this.trader.stopOrders(this.accountId).catch(() => []);
+    for (const s of stops) {
+      if (s.instrumentUid === this.uid) {
+        await this.trader.cancelStop(this.accountId, s.stopOrderId).catch(() => {});
+        log.warn(`${this.cfg.ticker}: снят висячий стоп-ордер ${s.stopOrderId} (рестарт)`, undefined, 'afks');
+      }
+    }
+    // позиция на счёте после рестарта: если виртуал-родитель ДЕРЖИТ свою тем же
+    // направлением — усыновляем (вход берём из виртуала как оценку, стоп
+    // перевыставляем); иначе позиция беспризорная — закрываем маркетом
     const qty = await this.trader.positionQty(this.accountId, this.uid);
     if (qty !== 0) {
+      const parent = this.deps.getParentOpen?.() ?? null;
+      const sameDir = parent && ((qty > 0 && parent.side === 'BUY') || (qty < 0 && parent.side === 'SELL'));
       const lots = Math.round(Math.abs(qty) / this.lotSize);
-      if (lots > 0) {
+      if (sameDir && parent && lots > 0) {
+        const stopOrderId = await this.trader.postStopLoss({
+          accountId: this.accountId, uid: this.uid, lots,
+          stopPrice: this.rounded(parent.slRub),
+          direction: parent.side === 'BUY' ? 'SELL' : 'BUY',
+        }).catch(() => null);
+        this.pos = {
+          virtRowId: parent.rowId, side: parent.side, lots, qty: Math.abs(qty),
+          entryPrice: parent.entryRub, virtEntry: parent.entryRub, stopOrderId, openedAt: Date.now(),
+        };
+        await this.deps.notify(
+          `♻️ ${this.cfg.ticker}-зеркало: позиция ${qty} шт усыновлена после рестарта (вход ~${parent.entryRub.toFixed(3)}₽ по виртуалу, стоп ${this.rounded(parent.slRub).toFixed(3)} перевыставлен).`,
+        );
+      } else if (lots > 0) {
         await this.trader.postMarket({
           accountId: this.accountId, uid: this.uid, lots,
           direction: qty > 0 ? 'SELL' : 'BUY',
         });
         await this.deps.notify(
-          `⚠️ ${this.cfg.ticker}-зеркало: на счёте найдена позиция ${qty} шт без родителя (рестарт?) — закрыта маркетом.`,
+          `⚠️ ${this.cfg.ticker}-зеркало: на счёте позиция ${qty} шт без родителя (рестарт?) — закрыта маркетом.`,
         );
       }
     }
     this.running = true;
+    // вотчдог рассинхрона: родитель закрылся, а close-событие потерялось
+    // (инцидент 21.08: зеркальный шорт жил час после TP виртуала) — позиция
+    // без родителя дольше ~3 минут закрывается маркетом с алертом
+    this.syncTimer = setInterval(() => {
+      void this.syncCheck().catch(e => log.warn(`${this.cfg.ticker} sync: ${errMsg(e)}`, undefined, 'afks'));
+    }, 60_000);
     const cash = await this.trader.cashRub(this.accountId).catch(() => null);
     log.success(
       `${this.cfg.ticker}-зеркало запущено (${config.afksLive}): счёт ${this.accountId}, лот ${this.lotSize} шт, ` +
@@ -114,8 +149,49 @@ export class TickerMirror {
 
   async stop(): Promise<void> {
     this.running = false;
+    if (this.syncTimer) {
+      clearInterval(this.syncTimer);
+      this.syncTimer = null;
+    }
     await this.trader?.shutdown().catch(() => {});
     this.trader = null;
+  }
+
+  /** Позиция есть, а родитель уже без своей ≥3 минут → закрыть маркетом. */
+  private async syncCheck(): Promise<void> {
+    if (!this.running || this.busy || !this.pos || !this.trader) return;
+    const parent = this.deps.getParentOpen?.();
+    if (parent && parent.rowId === this.pos.virtRowId) {
+      this.parentMissingTicks = 0;
+      return;
+    }
+    this.parentMissingTicks += 1;
+    if (this.parentMissingTicks < 3) return;
+    this.parentMissingTicks = 0;
+    const pos = this.pos;
+    this.busy = true;
+    try {
+      if (pos.stopOrderId) await this.trader.cancelStop(this.accountId, pos.stopOrderId).catch(() => {});
+      const closeDir = pos.side === 'BUY' ? 'SELL' : 'BUY';
+      const mkt = await this.trader.postMarket({
+        accountId: this.accountId, uid: this.uid, lots: pos.lots, direction: closeDir,
+      });
+      const st = await this.waitFill(mkt);
+      const exit = st.avgPrice ?? pos.entryPrice;
+      const gross = (pos.side === 'BUY' ? exit - pos.entryPrice : pos.entryPrice - exit) * pos.qty;
+      const fee = (pos.entryPrice + exit) * pos.qty * config.afksFeeFrac;
+      const pnl = gross - fee;
+      this.rollDay(new Date());
+      this.dayPnl += pnl;
+      TickerMirror.sharedDayPnl += pnl;
+      this.dayTrades += 1;
+      this.pos = null;
+      await this.deps.notify(
+        `⚠️ ${this.cfg.ticker}-зеркало: РАССИНХРОН — виртуал уже без позиции, close-событие потерялось. Закрыл маркетом @ ${exit.toFixed(3)}₽.\nИТОГ: ${rub(pnl)} (комиссия ${fee.toFixed(2)}₽) · день: ${rub(this.dayPnl)}`,
+      );
+    } finally {
+      this.busy = false;
+    }
   }
 
   /** Вход из MoexLeg: событие afks-matrend с ценами, УЖЕ переведёнными в ₽. */

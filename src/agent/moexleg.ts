@@ -195,7 +195,14 @@ export class MoexLeg {
           log.warn(`зеркало ${mc.ticker}: виртуал ${mc.memberKey} не в ростере — пропуск`, undefined, 'afks');
           continue;
         }
-        const mirror = new TickerMirror({ notify: this.deps.notify }, mc);
+        const scaleForParent = legEntry.spec.priceScale;
+        const mirror = new TickerMirror({
+          notify: this.deps.notify,
+          getParentOpen: () => {
+            const o = legEntry.leg.openFor(mc.memberKey)[0];
+            return o ? { rowId: o.rowId, side: o.side, entryRub: o.entry * scaleForParent, slRub: o.sl * scaleForParent } : null;
+          },
+        }, mc);
         this.mirrors.push(mirror);
         const scale = legEntry.spec.priceScale;
         legEntry.leg.onVirtualTrade(e => {
