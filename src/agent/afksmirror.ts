@@ -310,11 +310,34 @@ export class TickerMirror {
     this.busy = true;
     try {
       if (pos.stopOrderId) await t.cancelStop(this.accountId, pos.stopOrderId).catch(() => {});
+      // ГОНКА 20.08: биржевой стоп исполнился одновременно с нашей закрывающей
+      // заявкой → продано дважды, на счёте повис обратный хвост. После отмены
+      // стопа сверяем ФАКТИЧЕСКИЙ остаток и закрываем только его.
+      const dirSign = pos.side === 'BUY' ? 1 : -1;
+      const qtyNow = await t.positionQty(this.accountId, this.uid);
+      const remaining = Math.max(0, qtyNow * dirSign); // осталось ШТУК нашей стороны
+      const lotsLeft = Math.round(remaining / this.lotSize);
+      if (lotsLeft <= 0) {
+        // позицию уже забрал биржевой стоп — фиксируем по цене выхода виртуала (оценка)
+        const exitByStop = this.rounded(e.priceRub);
+        const gross0 = (pos.side === 'BUY' ? exitByStop - pos.entryPrice : pos.entryPrice - exitByStop) * pos.qty;
+        const fee0 = (pos.entryPrice + exitByStop) * pos.qty * config.afksFeeFrac;
+        const pnl0 = gross0 - fee0;
+        this.rollDay(e.time);
+        this.dayPnl += pnl0;
+        TickerMirror.sharedDayPnl += pnl0;
+        this.dayTrades += 1;
+        this.pos = null;
+        await this.deps.notify(
+          `🔴 ${this.cfg.ticker} выход (биржевой стоп опередил): ~${exitByStop.toFixed(3)}₽\nИТОГ: ${rub(pnl0)} (оценка; комиссия ${fee0.toFixed(2)}₽) · день: ${rub(this.dayPnl)}`,
+        );
+        return;
+      }
       const closeDir = pos.side === 'BUY' ? 'SELL' : 'BUY';
       const price = this.rounded(e.priceRub + (closeDir === 'BUY' ? 2 : -2) * this.priceStep);
       let exit: number | null = null;
       const orderId = await t.postLimit({
-        accountId: this.accountId, uid: this.uid, lots: pos.lots, price, direction: closeDir,
+        accountId: this.accountId, uid: this.uid, lots: lotsLeft, price, direction: closeDir,
       });
       const st = await this.waitFill(orderId);
       if (st.filled) {
