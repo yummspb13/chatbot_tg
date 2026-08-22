@@ -54,6 +54,10 @@ interface VOpen {
   openedAt: number;   // для тайм-выхода (maxHoldSec)
   beLocked?: boolean; // BE-лок: SL уже перенесён на вход
   mult?: number;      // hot-hand множитель размера, зафиксирован при открытии
+  trailing?: boolean; // трейл-выход взведён: TP тронут при trailAfterTpFrac>0
+  peak?: number;      // лучшая цена после взвода (BUY: max bid, SELL: min ask);
+                      // рестарт это поле теряет — трейл взводится заново первым
+                      // тиком за TP, пик консервативно стартует с текущей цены
 }
 
 class MemberState {
@@ -351,12 +355,23 @@ export class EnsembleLeg {
       for (const o of m.open) {
         let exit: number | null = null;
         let reason = '';
-        if (o.side === 'BUY') {
-          if (q.bid <= o.sl) { exit = o.sl; reason = 'SL'; }
-          else if (q.bid >= o.tp) { exit = o.tp; reason = 'TP'; }
-        } else {
-          if (q.ask >= o.sl) { exit = o.sl; reason = 'SL'; }
-          else if (q.ask <= o.tp) { exit = o.tp; reason = 'TP'; }
+        const dir = o.side === 'BUY' ? 1 : -1;
+        const px = o.side === 'BUY' ? q.bid : q.ask; // выход всегда по пассивной стороне
+        if (o.trailing) {
+          // трейл взведён: TP/SL больше не смотрим — ведём пик и ловим откат
+          // на frac·(TP-дистанции). Худший исход BUY: peak ≥ tp → выход ≥
+          // entry+(1−frac)·dist, т.е. трейл никогда не отдаёт сделку в минус.
+          o.peak = dir === 1 ? Math.max(o.peak ?? o.tp, px) : Math.min(o.peak ?? o.tp, px);
+          const trail = o.peak - dir * p.trailAfterTpFrac * Math.abs(o.tp - o.entry);
+          if (dir * (px - trail) <= 0) { exit = trail; reason = 'TRAIL'; }
+        } else if (dir * (px - o.sl) <= 0) {
+          exit = o.sl; reason = 'SL';
+        } else if (dir * (px - o.tp) >= 0) {
+          if (p.trailAfterTpFrac > 0) {
+            // идея владельца 22.08: цель тронута — не фиксируем, взводим трейлинг
+            o.trailing = true;
+            o.peak = px;
+          } else { exit = o.tp; reason = 'TP'; }
         }
         // тайм-выход по рынку (пассивная сторона) — механика намайненных правил
         if (exit === null && p.maxHoldSec > 0 && now - o.openedAt >= p.maxHoldSec * 1000) {

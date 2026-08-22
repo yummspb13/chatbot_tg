@@ -277,7 +277,7 @@ export class AgentEngine {
       try {
         this.moexLeg = new MoexLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout, notify: this.deps.notify });
         await this.moexLeg.start(gapStart);
-        cryptoNote += '\n🇷🇺 MOEX-нога: TATN, GAZP, ROSN — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).';
+        cryptoNote += `\n🇷🇺 MOEX-нога: ${this.moexLeg.summary().tickers.join(', ')} — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).`;
       } catch (e) {
         this.moexLeg = null;
         cryptoNote += `\n⚠️ MOEX-нога не запустилась: ${errMsg(e)}`;

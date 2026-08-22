@@ -42,6 +42,10 @@ export interface AgentParams {
   maxHoldSec: number;      // тайм-стоп: закрыть по рынку через N сек, если ни TP, ни SL (0 = выкл)
   beLockFrac: number;      // брейк-ивен-лок: пройдено frac пути к TP → SL переносится на вход (0 = выкл)
   partialFrac: number;     // частичная фиксация: половина объёма выходит на frac пути к TP (0 = выкл)
+  trailAfterTpFrac: number; // трейл-выход (идея владельца 22.08): касание TP не закрывает сделку, а
+                            // взводит трейлинг — выход при откате цены на frac·(TP-дистанции) от лучшей
+                            // точки после взвода. 0 = выкл; δ=0.2 победил δ=0.4 в оверлее на 160 живых
+                            // виртуалках (docs/DAY-REVIEW-2026-08-22.md). Трейл-выход всегда ≥ entry+(1−frac)·dist
   dailyProfitStopUsd: number; // дневная цель: достигнута → новых входов до следующего дня UTC (0 = выкл;
                               // A/B-гипотеза профит-стопа 05.08 — пока читается только виртуальными книгами)
   hotHandLadder: boolean;  // «лесенка за серией» (A/B 05.08, docs/HOT-HAND-2026-08-05.md): 3 плюса
@@ -73,6 +77,7 @@ export const DEFAULT_PARAMS: AgentParams = {
   maxHoldSec: 0,
   beLockFrac: 0,
   partialFrac: 0,
+  trailAfterTpFrac: 0,
   dailyProfitStopUsd: 0,
   hotHandLadder: false,
   tradeHoursUtc: [],
@@ -124,6 +129,7 @@ export function clampParams(input: unknown): AgentParams {
     maxHoldSec: Math.round(clampNum(p.maxHoldSec, 0, 604800, DEFAULT_PARAMS.maxHoldSec)),
     beLockFrac: clampNum(p.beLockFrac, 0, 0.9, DEFAULT_PARAMS.beLockFrac),
     partialFrac: clampNum(p.partialFrac, 0, 0.75, DEFAULT_PARAMS.partialFrac),
+    trailAfterTpFrac: clampNum(p.trailAfterTpFrac, 0, 0.9, DEFAULT_PARAMS.trailAfterTpFrac),
     dailyProfitStopUsd: clampNum(p.dailyProfitStopUsd, 0, 100, DEFAULT_PARAMS.dailyProfitStopUsd),
     hotHandLadder: p.hotHandLadder === true,
     tradeHoursUtc: hourList(p.tradeHoursUtc, 24),
@@ -286,6 +292,13 @@ export const ENSEMBLE_MEMBERS_OIL: EnsembleMember[] = [
     key: 'oil-impulse-hh',
     params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, hotHandLadder: true },
   },
+  // A/B трейл-выхода 22.08 (идея владельца «цель тронута — ждём отката с пика»):
+  // WTI — главный бенефициар оверлея на живых виртуалках (−96.0$ → −53.1$, δ=20%);
+  // судья — форвард против oil-impulse (docs/DAY-REVIEW-2026-08-22.md)
+  {
+    key: 'oil-impulse-trail',
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, trailAfterTpFrac: 0.2 },
+  },
 ];
 
 export const ENSEMBLE_MEMBERS_GBPJPY: EnsembleMember[] = [
@@ -440,6 +453,7 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       maxHoldSec: 0,
       beLockFrac: 0,
       partialFrac: 0,
+      trailAfterTpFrac: 0,
       dailyProfitStopUsd: 0,
       hotHandLadder: false,
       tradeHoursUtc: [],
@@ -473,6 +487,7 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
       maxHoldSec: 0,
       beLockFrac: 0,
       partialFrac: 0,
+      trailAfterTpFrac: 0,
       dailyProfitStopUsd: 0,
       hotHandLadder: false,
       tradeHoursUtc: [],

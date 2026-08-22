@@ -10,7 +10,7 @@
 //
 // Сессии MOEX (MSK без переходов → UTC константно): основная 06:50-15:40,
 // вечерняя 16:05-20:50, будни. Вне сессий нога спит (котировок нет, лимит
-// запросов не тратим). Опрос стакана раз в 5с × 11 инструментов ≈ 132 req/мин
+// запросов не тратим). Опрос стакана раз в 5с × 7 инструментов ≈ 84 req/мин
 // при розничном лимите ~300.
 
 import { config } from '../config';
@@ -22,7 +22,7 @@ import { MOEX_INSTRUMENTS, TinkoffClient } from '../broker/tinkoff';
 import { sleep } from '../broker/types';
 
 interface MoexSpec {
-  ticker: string;      // = baseSymbol виртуальных сделок (TATN~tatn-meanrev)
+  ticker: string;      // = baseSymbol виртуальных сделок (GAZP~gazp-meanrev2)
   priceScale: number;
   roster: EnsembleMember[];
 }
@@ -33,87 +33,74 @@ const moexParams = (over: Partial<AgentParams>): AgentParams => ({
   ...over,
 } as AgentParams);
 
-// Параметры = победившие ячейки разведки 03.08 (после комиссий 0.1%/круг)
+// Состав пережил перекалибровку 22.08 (окно март→август, живые спреды,
+// data/moex-report.json: 128 ячеек, 12 прошло после комиссий): TATN/ROSN/
+// SNGS/RAGR не подтвердились ни одной ячейкой — сняты; GAZP/MOEX/TRNFP/SVCB/
+// ALRS пересели на лучшие ячейки нового окна. Ключи с «2» — чтобы история
+// старых ячеек не подмешивалась в 14-дневные лицензии новых (символ в БД =
+// ТИКЕР~ключ). AFKS и SIBN НЕ перекалибровывались: их зеркалит живой счёт,
+// смена ячейки под ногами зеркала — отдельное решение владельца; рядом с ними
+// трейл-клоны (A/B идеи владельца 22.08, судья — форвард).
 export const MOEX_LEGS: MoexSpec[] = [
-  {
-    ticker: 'TATN', priceScale: 1000,
-    roster: [{
-      key: 'tatn-meanrev', // звезда разведки: train +17.9 / test +33.2 net, wr 67%
-      params: moexParams({ windowSec: 3600, thresholdPips: 144, tpPips: 90, slPips: 180, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15 }),
-    }],
-  },
   {
     ticker: 'GAZP', priceScale: 1000,
     roster: [{
-      key: 'gazp-meanrev', // 4 согласованные ячейки; берём w3600-версию
-      params: moexParams({ windowSec: 3600, thresholdPips: 32, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 3, maxDailyLossUsd: 10 }),
+      key: 'gazp-meanrev2', // перекалибровка 22.08: train net +4.2 / test +0.3 (137 сд, wr 59%) — на грани
+      params: moexParams({ strategyType: 'meanrev', entryMode: 'market', windowSec: 3600, thresholdPips: 8, tpPips: 20, slPips: 40, cooldownSec: 900, spreadGuardPips: 3, maxDailyLossUsd: 10 }),
     }],
   },
-  {
-    ticker: 'ROSN', priceScale: 1000,
-    roster: [{
-      key: 'rosn-impulse', // сырьевая подпись impulse: третий класс активов
-      params: moexParams({ strategyType: 'impulse', windowSec: 3600, thresholdPips: 12, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 6, maxDailyLossUsd: 10 }),
-    }],
-  },
-  // ---- Расширение 05.08 (по команде «подключай»): полный скан 36 бумаг +
-  // валидация живыми стаканами. AFKS/MOEX/TRNFP — спред-модель подтверждена
-  // честной (×0.9-1.2); SVCB/SNGS/RAGR/SIBN/ALRS — ячейки пересчитаны с
-  // РЕАЛЬНЫМИ спредами и выжили. Параметры = лучшие walk-forward-ячейки.
   {
     ticker: 'AFKS', priceScale: 10,
-    roster: [{
-      key: 'afks-matrend', // 14 проходов скана; лучшая: train +21.9 / test +30.3 (40 сд, wr 65%)
-      params: moexParams({ strategyType: 'matrend', windowSec: 7200, thresholdPips: 24, tpPips: 60, slPips: 120, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 15 }),
-    }],
+    roster: [
+      {
+        key: 'afks-matrend', // 14 проходов скана 05.08; live-форвард: см. постмортем 22.08 (срез зеркала до 2 лотов)
+        params: moexParams({ strategyType: 'matrend', windowSec: 7200, thresholdPips: 24, tpPips: 60, slPips: 120, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 15 }),
+      },
+      {
+        key: 'afks-matrend-trail', // A/B трейл-выхода (δ=20%): в оверлее AFKS +2.6→+4.6$ — форвард рассудит
+        params: moexParams({ strategyType: 'matrend', windowSec: 7200, thresholdPips: 24, tpPips: 60, slPips: 120, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+      },
+    ],
   },
   {
     ticker: 'MOEX', priceScale: 1000,
     roster: [{
-      key: 'moex-meanrev', // 9 проходов; w3600: train +40.7 / test +13 (77 сд, wr 61%)
-      params: moexParams({ strategyType: 'meanrev', entryMode: 'market', windowSec: 3600, thresholdPips: 32, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 2, maxDailyLossUsd: 10 }),
+      key: 'moex-meanrev2', // перекалибровка 22.08: train 14.9→9.3 / test 16.8→14.3 (51 сд, wr 65%)
+      params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 16, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 2, maxDailyLossUsd: 10 }),
     }],
   },
   {
     ticker: 'TRNFP', priceScale: 10_000,
     roster: [{
-      key: 'trnfp-meanrev', // 6 проходов; train +5.4 / test +31.6 (226 сд, wr 70%)
-      params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 16, tpPips: 10, slPips: 20, cooldownSec: 900, spreadGuardPips: 1.5, maxDailyLossUsd: 10 }),
+      key: 'trnfp-meanrev2', // перекалибровка 22.08: train 15.4→6.2 / test 19.3→16.0 (99 сд, wr 61%)
+      params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 8, tpPips: 20, slPips: 40, cooldownSec: 900, spreadGuardPips: 1.5, maxDailyLossUsd: 10 }),
     }],
   },
   {
     ticker: 'SVCB', priceScale: 100,
     roster: [{
-      key: 'svcb-meanrev', // с реальным спредом ×2.4: train +34 / test +22.1 (41 сд, wr 71%)
-      params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 32, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 2, maxDailyLossUsd: 10 }),
-    }],
-  },
-  {
-    ticker: 'SNGS', priceScale: 100,
-    roster: [{
-      key: 'sngs-meanrev', // с реальным спредом ×1.6: train +24.5 / test +22.1 (78 сд, wr 71%)
-      params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 48, tpPips: 30, slPips: 60, cooldownSec: 900, spreadGuardPips: 3, maxDailyLossUsd: 10 }),
-    }],
-  },
-  {
-    ticker: 'RAGR', priceScale: 1000,
-    roster: [{
-      key: 'ragr-meanrev', // с реальным спредом ×2.0: train +10.1 / test +13.6 (78 сд, wr 68%)
-      params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 32, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 3, maxDailyLossUsd: 10 }),
+      key: 'svcb-meanrev2', // перекалибровка 22.08: train net +3.2 / test +0.4 (32 сд, wr 72%) — на грани
+      params: moexParams({ strategyType: 'meanrev', entryMode: 'market', windowSec: 3600, thresholdPips: 16, tpPips: 10, slPips: 20, cooldownSec: 900, spreadGuardPips: 2, maxDailyLossUsd: 10 }),
     }],
   },
   {
     ticker: 'SIBN', priceScale: 1000,
-    roster: [{
-      key: 'sibn-meanrev', // с реальным спредом ×1.6: train +84.5 / test +49.4 (316 сд, wr 63%)
-      params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15 }),
-    }],
+    roster: [
+      {
+        key: 'sibn-meanrev', // с реальным спредом ×1.6: train +84.5 / test +49.4 (316 сд, wr 63%); зеркалится живым счётом
+        params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15 }),
+      },
+      {
+        key: 'sibn-meanrev-trail', // A/B трейл-выхода (δ=20%): в оверлее SIBN +10.2→+11.1$ — форвард рассудит
+        params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+      },
+    ],
   },
   {
     ticker: 'ALRS', priceScale: 100,
     roster: [{
-      key: 'alrs-meanrev', // с реальным спредом ×2.2: train +16.2 / test +56.2 (48 сд, wr 67%)
-      params: moexParams({ strategyType: 'meanrev', entryMode: 'market', windowSec: 3600, thresholdPips: 112, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 9, maxDailyLossUsd: 15 }),
+      key: 'alrs-impulse', // перекалибровка 22.08: impulse сменил meanrev — train 23.2→17.4 / test 24.6→22.4 (34 сд, wr 62%)
+      params: moexParams({ strategyType: 'impulse', entryMode: 'market', windowSec: 1800, thresholdPips: 10, tpPips: 100, slPips: 200, cooldownSec: 900, spreadGuardPips: 9, maxDailyLossUsd: 15 }),
     }],
   },
 ];
