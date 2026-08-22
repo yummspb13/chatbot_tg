@@ -30,6 +30,7 @@ export function startWebServer(deps: ApiDeps): Server {
       tg: { ...tgDiag, lastUpdateAgoSec: tgDiag.lastUpdateAt ? Math.round((Date.now() - tgDiag.lastUpdateAt) / 1000) : null },
       poly: s.poly, // луп-чекапы прода без пароля (M3+)
       news: s.news ?? null, // контур Б: счётчики фона + точность судьи
+      oilShock: s.oilShock ?? null, // oilguard: активный нефтяной шок + свежесть WTI-стрима
       moex: s.moex ?? null, // + afksMirror: micro-этап виден мониторингу
     });
   });
