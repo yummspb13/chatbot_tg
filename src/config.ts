@@ -91,6 +91,11 @@ export const config = {
   // Polymarket-подсистема (docs/POLYMARKET-PLAN-2026-08-17.md): read-only
   // коллектор 5-минуток + бумажный мейкер. POLY=0 — общий kill-switch.
   poly: process.env.POLY !== '0',
+
+  // Новостной фон, контур Б (решение владельца 22.08): RSS → LLM-прогнозы
+  // направления форвардом, судья 12/24/96ч. Read-only, к торговле не подключён
+  // до гейта (≥30 прогнозов, точность 12-24ч бьёт монетку). NEWS_BIAS=0 — выкл.
+  newsBias: process.env.NEWS_BIAS !== '0',
   polyAssets: (process.env.POLY_ASSETS || 'btc,eth').split(',').map(s => s.trim()).filter(Boolean),
 
   agentModeDefault: (process.env.AGENT_MODE === 'live' ? 'live' : 'sim') as 'sim' | 'live',

@@ -29,6 +29,7 @@ export function startWebServer(deps: ApiDeps): Server {
       ok: true, running: s.running, mode: s.mode, ts: new Date().toISOString(), net: s.net,
       tg: { ...tgDiag, lastUpdateAgoSec: tgDiag.lastUpdateAt ? Math.round((Date.now() - tgDiag.lastUpdateAt) / 1000) : null },
       poly: s.poly, // луп-чекапы прода без пароля (M3+)
+      news: s.news ?? null, // контур Б: счётчики фона + точность судьи
       moex: s.moex ?? null, // + afksMirror: micro-этап виден мониторингу
     });
   });

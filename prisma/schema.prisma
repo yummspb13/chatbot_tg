@@ -109,6 +109,29 @@ model PolySnap {
   @@map("poly_Snap")
 }
 
+// --- Новостной фон, контур Б (22.08): LLM-прогнозы направления форвардом ---
+// DDL накатывается синхронно через Supabase apply_migration (db push не нужен)
+model NewsSignal {
+  id       Int      @id @default(autoincrement())
+  ts       DateTime @default(now())
+  source   String
+  title    String
+  hash     String
+  asset    String
+  dir      Int // +1 вверх / −1 вниз
+  conf     Float
+  horizonH Int
+  reason   String?
+  p0       Float? // цена на момент прогноза
+  p12      Float? // цена через 12/24/96 часов (судья)
+  p24      Float?
+  p96      Float?
+
+  @@unique([hash, asset])
+  @@index([ts])
+  @@map("news_Signal")
+}
+
 model PolyResolution {
   id           Int      @id @default(autoincrement())
   slug         String   @unique

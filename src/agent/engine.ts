@@ -78,6 +78,7 @@ export class AgentEngine {
   private moexLeg: MoexLeg | null = null;
   private triangles: TriangleMonitor | null = null;
   private polyLeg: PolyCollector | null = null;
+  private newsLeg: import('../news/bias').NewsBiasLeg | null = null;
 
   constructor(private deps: EngineDeps) {}
 
@@ -327,6 +328,39 @@ export class AgentEngine {
       }
     }
 
+    // Новостной фон, контур Б (решение владельца 22.08): RSS → LLM-прогнозы
+    // направления, судья сверяет через 12/24/96ч. Read-only: к торговле не
+    // подключён до гейта (≥30 прогнозов, точность 12-24ч бьёт монетку).
+    if (config.newsBias && settings.mode === 'live') {
+      try {
+        const { NewsBiasLeg } = await import('../news/bias');
+        this.newsLeg = new NewsBiasLeg({
+          getPrice: asset => {
+            if (asset === 'EURUSD') {
+              const q = this.lastQuote;
+              return q ? +((q.bid + q.ask) / 2).toFixed(5) : null;
+            }
+            if (asset === 'BTC') {
+              // lastQuote крипто-ноги в scaled-пространстве (÷100k) — как у poly
+              const q = this.cryptoLeg?.status().lastQuote;
+              return q ? +(((q.bid + q.ask) / 2) * 100_000).toFixed(0) : null;
+            }
+            if (asset === 'ETH') {
+              const s = this.polyLeg?.summarySync() as { perAsset?: Array<{ asset: string; refPx: number | null }> } | undefined;
+              return s?.perAsset?.find(a => a.asset === 'eth')?.refPx ?? null;
+            }
+            return null;
+          },
+        });
+        this.newsLeg.start();
+        cryptoNote += '\n📰 Новостной фон: RSS → LLM-прогнозы направлений форвардом, судья 12/24/96ч (NEWS_BIAS=0 — выкл).';
+      } catch (e) {
+        this.newsLeg = null;
+        cryptoNote += `\n⚠️ Новостной фон не запустился: ${errMsg(e)}`;
+        log.error(`новостной фон не запустился: ${errMsg(e)}`, undefined, 'news');
+      }
+    }
+
     if (isFxWeekend(new Date())) {
       return `▶️ Агент запущен: ${label}, ${settings.symbol}.\n⚠️ Сейчас выходные FX — входов не будет до воскресенья 21:15 UTC.${cryptoNote}`;
     }
@@ -390,6 +424,10 @@ export class AgentEngine {
     if (this.polyLeg) {
       await this.polyLeg.stop().catch(e => log.warn(`остановка poly-коллектора: ${errMsg(e)}`, undefined, 'poly'));
       this.polyLeg = null;
+    }
+    if (this.newsLeg) {
+      this.newsLeg.stop();
+      this.newsLeg = null;
     }
   }
 
@@ -838,6 +876,7 @@ export class AgentEngine {
       net: { ...(readNetTotals() ?? {}), topRoutes: netMeter.topRoutes(8), topHosts: topHosts(10), tcp: tcpCensus() },
       triangles: this.triangles?.summary() ?? null,
       poly: this.polyLeg?.summarySync() ?? { enabled: config.poly, running: false },
+      news: this.newsLeg?.summarySync() ?? { enabled: config.newsBias, running: false },
       running: this.running,
       mode: this.settings?.mode ?? null,
       symbol: this.settings?.symbol ?? null,
