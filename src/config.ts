@@ -75,7 +75,9 @@ export const config = {
   // Мультитикер-зеркала: 'ТИКЕР:виртуал:лоты,...'. Правило дома — подключение
   // при лицензии виртуала; SIBN добавлен на 7/10 живых сделках ЯВНЫМ решением
   // владельца 21.08 («всё ок, одобряю — говорю явно»).
-  mirrors: (process.env.MIRRORS || 'AFKS:afks-matrend:5,SIBN:sibn-meanrev:5')
+  // 22.08: AFKS срезан до 2 лотов по постмортему (режим-пила, ожидание 14д < 0);
+  // возврат к 5 — решением владельца после возврата тренда и exp14 > 0
+  mirrors: (process.env.MIRRORS || 'AFKS:afks-matrend:2,SIBN:sibn-meanrev:5')
     .split(',')
     .map(s => {
       const [ticker, memberKey, lots] = s.trim().split(':');
