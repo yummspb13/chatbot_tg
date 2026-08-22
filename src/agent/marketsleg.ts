@@ -30,7 +30,11 @@ export class MarketsLeg {
   private running = false;
   private lastAnyQuoteAt = 0;
 
-  constructor(private deps: EnsembleDeps, private specs: MarketLegSpec[] = MARKET_LEGS) {}
+  constructor(
+    // tapOil: реальная (нескейленная) цена WTI для трекера нефтяного шока (oilguard)
+    private deps: EnsembleDeps & { tapOil?: (mid: number, time: Date) => void },
+    private specs: MarketLegSpec[] = MARKET_LEGS,
+  ) {}
 
   isRunning(): boolean {
     return this.running;
@@ -99,6 +103,7 @@ export class MarketsLeg {
           this.lastAnyQuoteAt = Date.now();
           const l = bySymbol.get(q.mt5Symbol);
           if (!l) continue;
+          if (l.spec.key === 'oil') this.deps.tapOil?.((q.bid + q.ask) / 2, q.time);
           await l.leg.onQuote({
             symbol: l.spec.baseSymbol,
             bid: q.bid / l.spec.priceScale,

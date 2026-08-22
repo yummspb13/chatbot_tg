@@ -282,22 +282,18 @@ export const ENSEMBLE_MEMBERS_GOLD: EnsembleMember[] = [
 
 export const ENSEMBLE_MEMBERS_OIL: EnsembleMember[] = [
   // WTI impulse/limit: train +43$ / test +344$, но DD 342$ — главный кандидат на
-  // то, что форвард его съест; наблюдаем именно поэтому
+  // то, что форвард его съест; наблюдаем именно поэтому.
+  // 22.08 вечер: трейл-выход δ=20% включён В ОРИГИНАЛ командой владельца
+  // («делаем сразу»): WTI — главный бенефициар оверлея (−96.0$ → −53.1$);
+  // клон -trail слит с оригиналом, closeReason TRAIL маркирует новые выходы
   {
     key: 'oil-impulse',
-    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20 },
+    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, trailAfterTpFrac: 0.2 },
   },
   // A/B hot-hand 05.08: второй бенефициар оверлея (+146$ → +270$ при DD 312→432)
   {
     key: 'oil-impulse-hh',
     params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, hotHandLadder: true },
-  },
-  // A/B трейл-выхода 22.08 (идея владельца «цель тронута — ждём отката с пика»):
-  // WTI — главный бенефициар оверлея на живых виртуалках (−96.0$ → −53.1$, δ=20%);
-  // судья — форвард против oil-impulse (docs/DAY-REVIEW-2026-08-22.md)
-  {
-    key: 'oil-impulse-trail',
-    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, trailAfterTpFrac: 0.2 },
   },
 ];
 
@@ -426,7 +422,13 @@ export interface CryptoPreset {
 }
 
 export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
-  // echo/limit — лучшая выходная ячейка sweep (test +176$ в сб/вс, НО train-выходные −115$)
+  // 22.08 (мандат владельца «как управляющий»): живой пресет пересажен с echo
+  // на matrend — 14-дневный живой форвард виртуалов: btc-matrend +56.0$ (11 сд,
+  // exp +5.1$/сд, wr 73, ЛИЦЕНЗИЯ) против btc-echo −43.2$ (31 сд). Параметры =
+  // точная копия лицензированного виртуала btc-matrend (без трейла — замер
+  // live vs virtual остаётся чистым); echo продолжает жить виртуально.
+  // История: echo/limit была лучшей ВЫХОДНОЙ ячейкой свипа (test +176$ в сб/вс),
+  // неделя live показала, что тренды 24/7 она не ловит.
   btc: {
     key: 'btc',
     symbol: 'BTC_USD',
@@ -435,10 +437,10 @@ export const CRYPTO_PRESETS: Record<'btc' | 'eth', CryptoPreset> = {
     priceScale: 100_000, // 1000 юнитов = 0.01 лота (минимальный у Exness)
     digits: 2,
     params: {
-      strategyType: 'echo',
-      windowSec: 3600,
-      thresholdPips: 40,
-      tpPips: 48,
+      strategyType: 'matrend',
+      windowSec: 7200,
+      thresholdPips: 12,
+      tpPips: 100,
       slPips: 80,
       cooldownSec: 1800,
       units: 1000,

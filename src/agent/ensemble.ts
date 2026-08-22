@@ -33,6 +33,9 @@ export interface EnsembleConfig {
   crypto: boolean;    // true → риск-модуль не применяет блок FX-выходных (24/7)
   warmup: { instrument: string; scale: number } | null; // история для прогрева
   commissionFrac?: number; // доля нотионала за круг (MOEX 0.001) — вычитается из pnl при закрытии
+  // внешний гейт входа (oilguard и т.п.): false → сигнал участника молча
+  // пропускается; уже открытые позиции не трогает. Fail-open по построению
+  entryGuard?: (memberKey: string, side: 'BUY' | 'SELL', time: Date) => boolean;
 }
 
 const MODE = 'virtual';
@@ -416,6 +419,8 @@ export class EnsembleLeg {
     if (!sig || sig.both) return;
     // дневной профит-стоп (A/B-гипотеза 05.08): цель достигнута → входов до завтра нет
     if (p.dailyProfitStopUsd > 0 && m.realizedToday >= p.dailyProfitStopUsd) return;
+    // внешний гейт (oilguard-клоны): вход не разрешён — сигнал пропускается
+    if (this.cfg.entryGuard && !this.cfg.entryGuard(m.member.key, sig.side, q.time)) return;
     const verdict = m.risk.check({
       now: q.time,
       openCount: m.open.length + m.pending.length,

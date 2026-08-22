@@ -50,17 +50,16 @@ export const MOEX_LEGS: MoexSpec[] = [
     }],
   },
   {
-    ticker: 'AFKS', priceScale: 10,
-    roster: [
-      {
-        key: 'afks-matrend', // 14 проходов скана 05.08; live-форвард: см. постмортем 22.08 (срез зеркала до 2 лотов)
-        params: moexParams({ strategyType: 'matrend', windowSec: 7200, thresholdPips: 24, tpPips: 60, slPips: 120, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 15 }),
-      },
-      {
-        key: 'afks-matrend-trail', // A/B трейл-выхода (δ=20%): в оверлее AFKS +2.6→+4.6$ — форвард рассудит
-        params: moexParams({ strategyType: 'matrend', windowSec: 7200, thresholdPips: 24, tpPips: 60, slPips: 120, cooldownSec: 1800, spreadGuardPips: 6, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
-      },
-    ],
+    // 22.08 вечер (мандат владельца): afks-matrend снят — постмортем (пила) +
+    // перекалибровка (matrend-ячейки на новом окне не прошли вовсе) + марков-
+    // антиперсистентность сошлись в одно; AFKS пересел на meanrev. Цена выросла
+    // выше 10₽ → масштаб пипса теперь 100 (как в свипе); история старого
+    // символа остаётся в БД, новый ключ копит форвард с нуля.
+    ticker: 'AFKS', priceScale: 100,
+    roster: [{
+      key: 'afks-meanrev2', // перекалибровка 22.08: train 21→15.1 / test 13.4→11.5 (70 сд, wr 57%); трейл — команда «делаем сразу»
+      params: moexParams({ strategyType: 'meanrev', entryMode: 'market', windowSec: 3600, thresholdPips: 16, tpPips: 40, slPips: 80, cooldownSec: 900, spreadGuardPips: 3, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+    }],
   },
   {
     ticker: 'MOEX', priceScale: 1000,
@@ -84,15 +83,23 @@ export const MOEX_LEGS: MoexSpec[] = [
     }],
   },
   {
+    // 22.08 вечер: свежая ячейка sibn-meanrev2 (перекалибровка март→август) +
+    // oilguard-клон (батч 12/12 лучше на тесте: блок входов 60 мин после
+    // часового |хода| WTI > 2σ). Старая ячейка остаётся виртуальным контролем.
+    // Трейл на всех — команда владельца «делаем сразу».
     ticker: 'SIBN', priceScale: 1000,
     roster: [
       {
-        key: 'sibn-meanrev', // с реальным спредом ×1.6: train +84.5 / test +49.4 (316 сд, wr 63%); зеркалится живым счётом
-        params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15 }),
+        key: 'sibn-meanrev', // старая ячейка (скан 05.08): живой контроль для новой; форвард14 +3.7$ (7 сд)
+        params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
       },
       {
-        key: 'sibn-meanrev-trail', // A/B трейл-выхода (δ=20%): в оверлее SIBN +10.2→+11.1$ — форвард рассудит
-        params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+        key: 'sibn-meanrev2', // перекалибровка 22.08: train 18.2→2.4 / test 31.4→24.7 (49 сд, wr 67%); зеркалится живым счётом
+        params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+      },
+      {
+        key: 'sibn-meanrev2-og', // oilguard: та же ячейка, но входы блокируются при активном нефтяном шоке
+        params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
       },
     ],
   },
@@ -129,7 +136,9 @@ export class MoexLeg {
   private mirrors: TickerMirror[] = [];
 
   constructor(
-    private deps: EnsembleDeps & { notify: (text: string) => Promise<void> },
+    // oilShockSign: трекер нефтяного шока из движка (oilguard-клон SIBN);
+    // отсутствие колбэка или нефтяных данных = fail-open (входы разрешены)
+    private deps: EnsembleDeps & { notify: (text: string) => Promise<void>; oilShockSign?: () => number },
     private specs: MoexSpec[] = MOEX_LEGS,
   ) {}
 
@@ -159,7 +168,11 @@ export class MoexLeg {
         uid,
         leg: new EnsembleLeg(
           this.deps,
-          { baseSymbol: spec.ticker, crypto: false, warmup: null, commissionFrac: 0.001 },
+          {
+            baseSymbol: spec.ticker, crypto: false, warmup: null, commissionFrac: 0.001,
+            // oilguard: клоны с суффиксом -og не входят при активном нефтяном шоке
+            entryGuard: (memberKey) => !memberKey.endsWith('-og') || (this.deps.oilShockSign?.() ?? 0) === 0,
+          },
           spec.roster,
         ),
       });

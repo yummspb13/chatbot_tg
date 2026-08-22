@@ -11,6 +11,7 @@ import { EnsembleLeg } from './ensemble';
 import { MakerLeg } from './makerleg';
 import { MarketsLeg } from './marketsleg';
 import { MoexLeg } from './moexleg';
+import { OilShockTracker } from './oilshock';
 import { TriangleMonitor } from './triangles';
 import type { PolyCollector } from '../poly/collector';
 import { isFxWeekend, RiskManager } from './risk';
@@ -79,6 +80,7 @@ export class AgentEngine {
   private triangles: TriangleMonitor | null = null;
   private polyLeg: PolyCollector | null = null;
   private newsLeg: import('../news/bias').NewsBiasLeg | null = null;
+  private oilShock = new OilShockTracker();
 
   constructor(private deps: EngineDeps) {}
 
@@ -231,7 +233,12 @@ export class AgentEngine {
     if (config.ensemble && config.markets && settings.mode === 'live'
       && config.broker === 'metaapi' && config.metaapiToken && config.metaapiAccountId) {
       try {
-        this.marketsLeg = new MarketsLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
+        this.marketsLeg = new MarketsLeg({
+          store: this.deps.store,
+          isNewsBlackout: this.deps.isNewsBlackout,
+          // oilguard: реальная цена WTI из стрима кормит трекер нефтяного шока
+          tapOil: (mid, t) => this.oilShock.onQuote(mid, t),
+        });
         await this.marketsLeg.start(gapStart);
         cryptoNote += '\n🌍 Мультирынок: золото, нефть, GBPJPY, S&P500 — 5 победителей свипа торгуют виртуально (/agent_ensemble).';
       } catch (e) {
@@ -276,7 +283,13 @@ export class AgentEngine {
 
     if (config.tinkoffToken && settings.mode === 'live') {
       try {
-        this.moexLeg = new MoexLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout, notify: this.deps.notify });
+        this.moexLeg = new MoexLeg({
+          store: this.deps.store,
+          isNewsBlackout: this.deps.isNewsBlackout,
+          notify: this.deps.notify,
+          // oilguard-клон SIBN: блок входов при активном нефтяном шоке
+          oilShockSign: () => this.oilShock.shockSign(),
+        });
         await this.moexLeg.start(gapStart);
         cryptoNote += `\n🇷🇺 MOEX-нога: ${this.moexLeg.summary().tickers.join(', ')} — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).`;
       } catch (e) {
@@ -877,6 +890,7 @@ export class AgentEngine {
       triangles: this.triangles?.summary() ?? null,
       poly: this.polyLeg?.summarySync() ?? { enabled: config.poly, running: false },
       news: this.newsLeg?.summarySync() ?? { enabled: config.newsBias, running: false },
+      oilShock: this.oilShock.summary(),
       running: this.running,
       mode: this.settings?.mode ?? null,
       symbol: this.settings?.symbol ?? null,
