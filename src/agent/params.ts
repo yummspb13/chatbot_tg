@@ -314,12 +314,9 @@ export const ENSEMBLE_MEMBERS_GBPJPY: EnsembleMember[] = [
     key: 'gj-meanrev-ps',
     params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 16, tpPips: 12, slPips: 40, cooldownSec: 900, spreadGuardPips: 6, maxDailyLossUsd: 10, dailyProfitStopUsd: 2 },
   },
-  // намайненное 03.08 (docs/MINER-4MARKETS-2026-08-03.md): час 20 UTC → SHORT,
-  // t=−13.4, сейф +87.98$/64 сд — скворинг перед ролловером; выход ≤1ч
-  {
-    key: 'gj-h20',
-    params: { ...DEFAULT_PARAMS, strategyType: 'gjh20', entryMode: 'market', tpPips: 40, slPips: 40, cooldownSec: 3600, maxHoldSec: 3600, spreadGuardPips: 12, maxDailyLossUsd: 10 },
-  },
+  // gj-h20 СНЯТ 29.08 (мандат управляющего): намайненное правило «час 20 UTC →
+  // SHORT» умерло в форварде — 12+ сд wr 0% к 24.08, ещё 4 сд wr 25% за неделю
+  // 23-29.08. Классика майнинга: сейф на истории, ноль вживую. История в БД.
   // намайненное 03.08: воскресный вечер → LONG, сейф +21.68$/39 сд; согласуется
   // с гэп-стади (эффект жив ПОСЛЕ нормализации спреда, входы по рынку в течение часа)
   {
