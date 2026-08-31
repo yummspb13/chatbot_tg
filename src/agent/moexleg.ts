@@ -172,6 +172,10 @@ export class MoexLeg {
             baseSymbol: spec.ticker, crypto: false, warmup: null, commissionFrac: 0.001,
             // oilguard: клоны с суффиксом -og не входят при активном нефтяном шоке
             entryGuard: (memberKey) => !memberKey.endsWith('-og') || (this.deps.oilShockSign?.() ?? 0) === 0,
+            // 31.08: выравнивание с протестированной моделью — свип форс-закрывал
+            // на разрыве >30 мин (овернайт-гэпы не прыгают через стопы), живой
+            // виртуал раньше держал через ночь (AFKS висел неделю). Теперь 1:1
+            gapCloseMin: 30,
           },
           spec.roster,
         ),

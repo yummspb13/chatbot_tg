@@ -36,6 +36,10 @@ export interface EnsembleConfig {
   // внешний гейт входа (oilguard и т.п.): false → сигнал участника молча
   // пропускается; уже открытые позиции не трогает. Fail-open по построению
   entryGuard?: (memberKey: string, side: 'BUY' | 'SELL', time: Date) => boolean;
+  // форс-выход на разрыве котировок > N минут (модель moex-sweep: овернайт-гэпы
+  // через стопы не прыгают). Первая котировка после разрыва закрывает открытые
+  // по пассивной стороне (reason GAP) и сносит отложки. 0/выкл — держим через ночь
+  gapCloseMin?: number;
 }
 
 const MODE = 'virtual';
@@ -288,6 +292,28 @@ export class EnsembleLeg {
   }
 
   private async processQuote(q: Quote): Promise<void> {
+    // разрыв котировок (ночь/выходные MOEX): протестированная модель не несёт
+    // позиции через гэп — закрываем по первой цене после разрыва, как в свипе
+    const gapMs = (this.cfg.gapCloseMin ?? 0) * 60_000;
+    if (gapMs > 0 && this.lastQuoteAt && q.time.getTime() - this.lastQuoteAt > gapMs) {
+      for (const m of this.members) {
+        m.pending = [];
+        for (const o of m.open) {
+          const exit = o.side === 'BUY' ? q.bid : q.ask;
+          const closeUnits = m.member.params.units * (o.mult ?? 1);
+          const commission = (this.cfg.commissionFrac ?? 0) * o.entry * closeUnits;
+          const pnl = (o.side === 'BUY' ? exit - o.entry : o.entry - exit) * closeUnits - commission;
+          await this.deps.store.closeTradeById(o.rowId, { exitPrice: exit, closedAt: q.time, pnl, closeReason: 'GAP' });
+          m.realizedToday += pnl;
+          m.winStreakToday = pnl > 0 ? m.winStreakToday + 1 : 0;
+          this.emitTrade({
+            kind: 'close', memberKey: m.member.key, baseSymbol: this.cfg.baseSymbol, rowId: o.rowId,
+            side: o.side, price: exit, pnl, reason: 'GAP', time: q.time,
+          });
+        }
+        m.open = [];
+      }
+    }
     this.lastQuoteAt = Date.now();
     const spreadPips = (q.ask - q.bid) / PIP;
     const dayKey = q.time.toISOString().slice(0, 10);
