@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__Supabase",
+      "mcp__Supabase__execute_sql",
+      "mcp__Supabase__list_tables",
+      "mcp__Supabase__query_logs",
+      "mcp__Supabase__get_advisors",
+      "mcp__d0ffa7c1-4e9e-49d9-b7e6-bd8ccce15371",
+      "mcp__d0ffa7c1-4e9e-49d9-b7e6-bd8ccce15371__execute_sql",
+      "mcp__d0ffa7c1-4e9e-49d9-b7e6-bd8ccce15371__list_tables",
+      "mcp__d0ffa7c1-4e9e-49d9-b7e6-bd8ccce15371__query_logs"
+    ]
+  }
+}
