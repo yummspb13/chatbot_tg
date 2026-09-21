@@ -81,6 +81,10 @@ export class AgentEngine {
   private polyLeg: PolyCollector | null = null;
   private newsLeg: import('../news/bias').NewsBiasLeg | null = null;
   private oilShock = new OilShockTracker();
+  // алерт тишины MT5-стримов (урок 28.08→21.09: 24 дня без котировок и без
+  // единого сигнала владельцу) — раз в 10 мин, повтор не чаще раза в 12 ч
+  private streamTimer: ReturnType<typeof setInterval> | null = null;
+  private streamAlertAt = 0;
 
   constructor(private deps: EngineDeps) {}
 
@@ -150,6 +154,7 @@ export class AgentEngine {
     await this.deps.store.saveSettings({ isRunning: true, killSwitchAt: null });
     this.loopPromise = this.loop();
     this.watchdog = setInterval(() => this.checkWatchdog(), 5000);
+    this.streamTimer = setInterval(() => void this.checkStreamSilence(), 10 * 60_000);
 
     const label = settings.mode === 'sim'
       ? 'sim (симулятор, без реальных денег)'
@@ -188,7 +193,7 @@ export class AgentEngine {
           if (config.ensemble) {
             this.btcEnsemble = new EnsembleLeg(
               { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout },
-              { baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 } },
+              { baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 }, fillMode: 'cross' },
               ENSEMBLE_MEMBERS_BTC,
             );
             await this.btcEnsemble.start(gapStart);
@@ -450,12 +455,30 @@ export class AgentEngine {
       clearInterval(this.watchdog);
       this.watchdog = null;
     }
+    if (this.streamTimer) {
+      clearInterval(this.streamTimer);
+      this.streamTimer = null;
+    }
     this.abort?.abort();
     if (this.loopPromise) {
       await this.loopPromise.catch(() => {});
       this.loopPromise = null;
     }
     this.adapter = null;
+  }
+
+  /** MT5-стримы (крипто 24/7, мультирынок в будни) молчат > 2 ч → уведомление
+   *  владельцу: это почти всегда MetaApi (подписка/деплой аккаунта), а не рынок. */
+  private async checkStreamSilence(): Promise<void> {
+    if (!this.running) return;
+    const silent: string[] = [];
+    const crypto = this.cryptoLeg?.status();
+    if (crypto?.running && crypto.lastQuoteAgoSec !== null && crypto.lastQuoteAgoSec > 7200) silent.push(`крипто ${Math.round(crypto.lastQuoteAgoSec / 3600)}ч`);
+    const mk = this.marketsLeg?.summary();
+    if (mk?.running && !isFxWeekend(new Date()) && mk.lastQuoteAgoSec !== null && mk.lastQuoteAgoSec > 7200) silent.push(`мультирынок ${Math.round(mk.lastQuoteAgoSec / 3600)}ч`);
+    if (!silent.length || Date.now() - this.streamAlertAt < 12 * 3600_000) return;
+    this.streamAlertAt = Date.now();
+    await this.deps.notify(`⚠️ MT5-котировки молчат: ${silent.join(', ')}. Это MetaApi (подписка/деплой аккаунта на metaapi.cloud), не рынок — ноги переподключатся сами после восстановления.`).catch(() => {});
   }
 
   /** Мягкая пауза при выключении процесса: НЕ трогает isRunning в БД,

@@ -211,19 +211,15 @@ export const ENSEMBLE_MEMBERS: EnsembleMember[] = [
 // echo-btc = копия live-пресета крипто-ноги: виртуальный vs реальный = замер
 // исполнения на крипте; spreadweather на BTC впервые получает данные вообще
 // (в бэктесте не хватило ask-истории).
+// МОРГ 21.09 (ретроспектива + реплей простоя MetaApi 28.08→21.09 тем же кодом):
+// сняты btc-meanrev (live14 −40$ / реплей −12$), btc-spreadw (реплей −9.6$, 1 сд
+// за месяц), btc-vprofile (−26$ / −36$, wr 14-27%), btc-21h (намайненное
+// правило, wr 20%) — минус в обоих окнах. История символов остаётся в БД.
 export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
-  {
-    key: 'btc-meanrev',
-    params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 32, tpPips: 24, slPips: 80, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
-  },
   // A/B профит-стопа 05.08: расширение семейной гипотезы на весь meanrev-ростер
   {
     key: 'btc-meanrev-ps',
     params: { ...DEFAULT_PARAMS, windowSec: 1800, thresholdPips: 32, tpPips: 24, slPips: 80, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0, dailyProfitStopUsd: 2 },
-  },
-  {
-    key: 'btc-spreadw',
-    params: { ...DEFAULT_PARAMS, strategyType: 'spreadweather', windowSec: 7200, thresholdPips: 16, tpPips: 40, slPips: 96, cooldownSec: 900, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
   },
   {
     key: 'btc-echo',
@@ -242,18 +238,6 @@ export const ENSEMBLE_MEMBERS_BTC: EnsembleMember[] = [
   {
     key: 'btc-matrend',
     params: { ...DEFAULT_PARAMS, strategyType: 'matrend', windowSec: 7200, thresholdPips: 12, tpPips: 100, slPips: 80, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
-  },
-  // уровневая школа 01.08.2026 (там же, часть 3): POC/VA прошлой сессии + тренд —
-  // третий честный кандидат (train +88$ / test +200$); коррелирует с matrend
-  {
-    key: 'btc-vprofile',
-    params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 12, tpPips: 100, slPips: 60, cooldownSec: 1800, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
-  },
-  // намайненное правило btc-21h (docs/MINER-2026-08-01.md): 1 выживший из 1244;
-  // механика как в майнере — РЫНОЧНЫЙ вход, TP/SL 80/80, часовой тайм-выход
-  {
-    key: 'btc-21h',
-    params: { ...DEFAULT_PARAMS, strategyType: 'btc21h', entryMode: 'market', windowSec: 7200, tpPips: 80, slPips: 80, cooldownSec: 900, maxHoldSec: 3600, spreadGuardPips: 5, maxDailyLossUsd: 20, newsBufferMin: 0 },
   },
 ];
 
@@ -280,16 +264,10 @@ export const ENSEMBLE_MEMBERS_GOLD: EnsembleMember[] = [
   },
 ];
 
+// МОРГ 21.09: oil-impulse (с трейлом) снят — live14 −60$, реплей простоя −75.5$
+// (56 трейл-выходов не спасли); hot-hand-клон остаётся единственным
+// представителем нефти на наблюдении (реплей +18$, live14 −48$ — смешанно)
 export const ENSEMBLE_MEMBERS_OIL: EnsembleMember[] = [
-  // WTI impulse/limit: train +43$ / test +344$, но DD 342$ — главный кандидат на
-  // то, что форвард его съест; наблюдаем именно поэтому.
-  // 22.08 вечер: трейл-выход δ=20% включён В ОРИГИНАЛ командой владельца
-  // («делаем сразу»): WTI — главный бенефициар оверлея (−96.0$ → −53.1$);
-  // клон -trail слит с оригиналом, closeReason TRAIL маркирует новые выходы
-  {
-    key: 'oil-impulse',
-    params: { ...DEFAULT_PARAMS, strategyType: 'impulse', windowSec: 1800, thresholdPips: 6, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 20, trailAfterTpFrac: 0.2 },
-  },
   // A/B hot-hand 05.08: второй бенефициар оверлея (+146$ → +270$ при DD 312→432)
   {
     key: 'oil-impulse-hh',
@@ -336,12 +314,9 @@ export const ENSEMBLE_MEMBERS_SP500: EnsembleMember[] = [
 
 // Волна свипа 03.08 (docs/SWEEP6-2026-08-03.md): echo-кластер на недолларовых
 // рынках + GBPNZD-двойник + Nikkei. Параметры = победившие ячейки без изменений.
+// МОРГ 21.09: gn-echo снят (live14 −2.4$, реплей −14.4$) — echo-семейство на
+// кроссах не пережило форвард; meanrev-пара остаётся
 export const ENSEMBLE_MEMBERS_GBPNZD: EnsembleMember[] = [
-  // echo/limit: train +193.81$ / test +106.02$ — флагман волны
-  {
-    key: 'gn-echo',
-    params: { ...DEFAULT_PARAMS, strategyType: 'echo', windowSec: 3600, thresholdPips: 60, tpPips: 72, slPips: 120, cooldownSec: 1800, spreadGuardPips: 8, maxDailyLossUsd: 15 },
-  },
   // meanrev/limit: train +48$ / test +96$, ожидание +3.43$/сд при wr 86%
   {
     key: 'gn-meanrev',
@@ -375,13 +350,9 @@ export const ENSEMBLE_MEMBERS_AUDJPY: EnsembleMember[] = [
   },
 ];
 
+// МОРГ 21.09: jp-vprofile снят (реплей −45$ при wr 20%, DD-предупреждение
+// сбылось) — рынок JP225 из ноги убран целиком
 export const ENSEMBLE_MEMBERS_JP225: EnsembleMember[] = [
-  // vprofile/limit: train +70.98$ / test +60.17$ — рекордный по издержкам рынок
-  // (ratio 0.018), НО DD 120$ — под особым наблюдением
-  {
-    key: 'jp-vprofile',
-    params: { ...DEFAULT_PARAMS, strategyType: 'vprofile', windowSec: 7200, thresholdPips: 60, tpPips: 150, slPips: 150, cooldownSec: 1800, spreadGuardPips: 3, maxDailyLossUsd: 15 },
-  },
 ];
 
 export interface MarketLegSpec {
@@ -405,7 +376,6 @@ export const MARKET_LEGS: MarketLegSpec[] = [
   { key: 'gbpnzd', baseSymbol: 'GBP_NZD', mt5Symbol: 'GBPNZDm', priceScale: 1, warmupInstrument: 'gbpnzd', roster: ENSEMBLE_MEMBERS_GBPNZD },
   { key: 'eurjpy', baseSymbol: 'EUR_JPY', mt5Symbol: 'EURJPYm', priceScale: 100, warmupInstrument: 'eurjpy', roster: ENSEMBLE_MEMBERS_EURJPY },
   { key: 'audjpy', baseSymbol: 'AUD_JPY', mt5Symbol: 'AUDJPYm', priceScale: 100, warmupInstrument: 'audjpy', roster: ENSEMBLE_MEMBERS_AUDJPY },
-  { key: 'jp225', baseSymbol: 'JP225_JPY', mt5Symbol: 'JP225m', priceScale: 100_000, warmupInstrument: 'jpnidxjpy', roster: ENSEMBLE_MEMBERS_JP225 },
 ];
 
 export interface CryptoPreset {

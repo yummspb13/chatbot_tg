@@ -40,6 +40,11 @@ export interface EnsembleConfig {
   // через стопы не прыгают). Первая котировка после разрыва закрывает открытые
   // по пассивной стороне (reason GAP) и сносит отложки. 0/выкл — держим через ночь
   gapCloseMin?: number;
+  // модель филла лимитки: 'touch' — касание пассивной стороны (MOEX: паритет
+  // с живыми филлами подтверждён); 'cross' — цена должна пройти СКВОЗЬ лимитку
+  // (MT5/MetaApi: неделя 23-26.08 показала, что касание даёт виртуалу входы,
+  // которых живая лимитка не получает — btc-matrend virtual +34$ vs live −2.6$)
+  fillMode?: 'touch' | 'cross';
 }
 
 const MODE = 'virtual';
@@ -125,7 +130,7 @@ export class EnsembleLeg {
 
   constructor(
     private deps: EnsembleDeps,
-    private cfg: EnsembleConfig = { baseSymbol: 'EUR_USD', crypto: false, warmup: { instrument: 'eurusd', scale: 1 } },
+    private cfg: EnsembleConfig = { baseSymbol: 'EUR_USD', crypto: false, warmup: { instrument: 'eurusd', scale: 1 }, fillMode: 'cross' },
     roster: EnsembleMember[] = ENSEMBLE_MEMBERS,
   ) {
     this.members = roster.map(m => new MemberState(m, cfg.baseSymbol));
@@ -342,7 +347,9 @@ export class EnsembleLeg {
       const keep: VPending[] = [];
       for (const pe of m.pending) {
         if (now - pe.placedAt > p.entryTtlSec * 1000) continue; // истёк
-        const fills = pe.side === 'BUY' ? q.bid <= pe.price : q.ask >= pe.price;
+        const fills = this.cfg.fillMode === 'cross'
+          ? (pe.side === 'BUY' ? q.bid < pe.price : q.ask > pe.price)
+          : (pe.side === 'BUY' ? q.bid <= pe.price : q.ask >= pe.price);
         if (!fills) {
           keep.push(pe);
           continue;

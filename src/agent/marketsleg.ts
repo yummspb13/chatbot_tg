@@ -53,7 +53,7 @@ export class MarketsLeg {
       spec,
       leg: new EnsembleLeg(
         this.deps,
-        { baseSymbol: spec.baseSymbol, crypto: false, warmup: { instrument: spec.warmupInstrument, scale: spec.priceScale } },
+        { baseSymbol: spec.baseSymbol, crypto: false, warmup: { instrument: spec.warmupInstrument, scale: spec.priceScale }, fillMode: 'cross' },
         spec.roster,
       ),
     }));
