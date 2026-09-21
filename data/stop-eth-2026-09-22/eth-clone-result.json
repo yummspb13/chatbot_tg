@@ -1,0 +1,115 @@
+{
+ "ethTrainMean": 2051.433858886902,
+ "btcTrainMean": 71137.28502769208,
+ "relScale": 3000,
+ "results": [
+  {
+   "label": "ETH относительный клон (b), спред 0.03%",
+   "instrument": "ethusd",
+   "scale": 3000,
+   "train": {
+    "n": 245,
+    "net": 2,
+    "wr": 0.44,
+    "exp": 0.01,
+    "reasons": {
+     "SL": 136,
+     "TP": 109
+    }
+   },
+   "test": {
+    "n": 139,
+    "net": -68,
+    "wr": 0.42,
+    "exp": -0.49,
+    "reasons": {
+     "SL": 81,
+     "TP": 58
+    }
+   },
+   "stage1": false,
+   "stage2": false
+  },
+  {
+   "label": "ETH относительный клон (b), спред 0.06% (чувствительность)",
+   "instrument": "ethusd",
+   "scale": 3000,
+   "train": {
+    "n": 245,
+    "net": 20,
+    "wr": 0.45,
+    "exp": 0.08,
+    "reasons": {
+     "SL": 135,
+     "TP": 110
+    }
+   },
+   "test": {
+    "n": 125,
+    "net": -10,
+    "wr": 0.44,
+    "exp": -0.08,
+    "reasons": {
+     "SL": 70,
+     "TP": 55
+    }
+   },
+   "stage1": false,
+   "stage2": false
+  },
+  {
+   "label": "ETH масштаб пресета (a), спред 0.03%",
+   "instrument": "ethusd",
+   "scale": 10000,
+   "train": {
+    "n": 39,
+    "net": -60,
+    "wr": 0.36,
+    "exp": -1.54,
+    "reasons": {
+     "SL": 25,
+     "TP": 14
+    }
+   },
+   "test": {
+    "n": 16,
+    "net": -38,
+    "wr": 0.31,
+    "exp": -2.38,
+    "reasons": {
+     "SL": 11,
+     "TP": 5
+    }
+   },
+   "stage1": false,
+   "stage2": false
+  },
+  {
+   "label": "BTC контроль, спред 10$ (живой)",
+   "instrument": "btcusd",
+   "scale": 100000,
+   "train": {
+    "n": 205,
+    "net": 34,
+    "wr": 0.45,
+    "exp": 0.17,
+    "reasons": {
+     "SL": 112,
+     "TP": 93
+    }
+   },
+   "test": {
+    "n": 93,
+    "net": 84,
+    "wr": 0.49,
+    "exp": 0.9,
+    "reasons": {
+     "TP": 46,
+     "SL": 47
+    }
+   },
+   "stage1": true,
+   "stage2": true
+  }
+ ]
+}
