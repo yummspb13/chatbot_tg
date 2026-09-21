@@ -1,0 +1,33 @@
+правило: пропуск при vol < нижнего терциля инструмента (граница по train). Формат: train WR low/rest → test: low n, WR, pnl (что пропустили) | rest n, WR, pnl | perm-p
+
+--- frac 0.7 ---
+  BTC     train 0.61(77)/0.62(156) → test: low 13 WR 0.69 pnl +8.8$ | rest 26 WR 0.73 pnl +34.8$ | perm-p 0.102
+  WTI     train 0.28(29)/0.73(59) → test: low 13 WR 0.69 pnl +31.3$ | rest 14 WR 0.71 pnl +58.2$ | perm-p 0.430
+  EUR     train 0.54(28)/0.62(58) → test: low 10 WR 0.60 pnl +0.8$ | rest 14 WR 0.64 pnl +1.4$ | perm-p 0.777
+  GBPJPY  train 0.33(21)/0.76(45) → test: low 7 WR 0.14 pnl -5.6$ | rest 17 WR 0.59 pnl -11.1$ | perm-p 0.352
+  РФ-пул  train 0.68(19)/0.67(51) → test: low 14 WR 0.50 pnl -1.0$ | rest 16 WR 0.50 pnl +17.3$ | perm-p 0.640
+  ВСЁ     train 0.50(189)/0.65(401) → test: low 60 WR 0.62 pnl +74.8$ | rest 88 WR 0.61 pnl +116.6$ | perm-p 0.267
+
+--- frac 0.6 ---
+  BTC     train 0.59(66)/0.64(133) → test: low 16 WR 0.69 pnl +22.4$ | rest 57 WR 0.63 pnl -2.0$ | perm-p 0.593
+  WTI     train 0.24(25)/0.73(51) → test: low 15 WR 0.73 pnl +43.3$ | rest 24 WR 0.67 pnl +46.2$ | perm-p 0.634
+  EUR     train 0.50(24)/0.63(49) → test: low 7 WR 0.57 pnl +0.4$ | rest 30 WR 0.63 pnl +0.8$ | perm-p 0.617
+  GBPJPY  train 0.50(18)/0.77(39) → test: low 16 WR 0.19 pnl -19.1$ | rest 17 WR 0.59 pnl -11.1$ | perm-p 0.133
+  РФ-пул  train 0.69(16)/0.68(44) → test: low 22 WR 0.50 pnl +6.9$ | rest 18 WR 0.56 pnl +28.3$ | perm-p 0.675
+  ВСЁ     train 0.48(163)/0.63(342) → test: low 63 WR 0.63 pnl +75.6$ | rest 170 WR 0.64 pnl +168.0$ | perm-p 0.280
+
+--- frac 0.8 ---
+  BTC     train 0.60(88)/0.64(178) → test: low 4 WR 0.75 pnl +0.8$ | rest 2 WR 0.50 pnl -5.6$ | perm-p 1.000
+  WTI     train 0.36(33)/0.65(68) → test: low 5 WR 1.00 pnl +56.0$ | rest 9 WR 1.00 pnl +101.4$ | perm-p 0.795
+  EUR     train 0.50(32)/0.67(66) → test: low 5 WR 0.80 pnl +4.4$ | rest 7 WR 0.29 pnl -5.8$ | perm-p 0.896
+  GBPJPY  train 0.38(24)/0.73(52) → test: low 6 WR 0.17 pnl -5.3$ | rest 8 WR 0.50 pnl -9.7$ | perm-p 0.494
+  РФ-пул  train 0.71(24)/0.66(56) → test: low 12 WR 0.33 pnl -17.3$ | rest 8 WR 0.50 pnl +11.0$ | perm-p 0.521
+  ВСЁ     train 0.52(217)/0.64(457) → test: low 37 WR 0.54 pnl -10.1$ | rest 27 WR 0.67 pnl +43.3$ | perm-p 0.049
+
+--- диагностика (вся выборка, без BF): исходы low-vol vs rest по причинам закрытия ---
+  BTC     low(90) WR 0.62 avg 0.31$: TP 61% SL 37% TIME 2% || rest(182) WR 0.63 avg 0.02$: TP 63% SL 37%
+  WTI     low(38) WR 0.45 avg -3.28$: SL 55% TP 34% TRAIL 11% || rest(77) WR 0.69 avg 1.15$: TP 64% SL 31% TRAIL 5%
+  EUR     low(36) WR 0.53 avg -0.13$: TP 53% SL 47% || rest(74) WR 0.64 avg 0.08$: TP 64% SL 30% BE 7%
+  GBPJPY  low(30) WR 0.33 avg -0.67$: TIME 57% TP 27% SL 17% || rest(60) WR 0.70 avg -0.26$: TP 68% SL 28% TIME 3%
+  РФ-пул  low(29) WR 0.59 avg 0.29$: GAP 55% TP 24% TRAIL 14% SL 7% || rest(66) WR 0.62 avg -0.02$: TP 33% GAP 30% SL 20% TRAIL 17%
+  ВСЁ     low(239) WR 0.53 avg -0.52$: TP 44% SL 34% TIME 12% GAP 7% TRAIL 3% || rest(499) WR 0.64 avg 0.05$: TP 59% SL 32% GAP 4% TRAIL 3% BE 1% TIME 1%
