@@ -1,0 +1,722 @@
+[
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev2",
+  "sl": 60,
+  "tp": 60,
+  "train": {
+   "n": 21,
+   "net": 20.1,
+   "wr": 0.62,
+   "exp": 0.96,
+   "reasons": {
+    "TRAIL": 11,
+    "GAP": 4,
+    "SL": 6
+   }
+  },
+  "test": {
+   "n": 39,
+   "net": 12.9,
+   "wr": 0.54,
+   "exp": 0.33,
+   "reasons": {
+    "GAP": 5,
+    "TRAIL": 20,
+    "SL": 14
+   }
+  },
+  "all": {
+   "n": 60,
+   "net": 33,
+   "wr": 0.57,
+   "exp": 0.55,
+   "reasons": {
+    "TRAIL": 31,
+    "GAP": 9,
+    "SL": 20
+   }
+  },
+  "pass": true
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev2",
+  "sl": 90,
+  "tp": 60,
+  "train": {
+   "n": 21,
+   "net": 17,
+   "wr": 0.67,
+   "exp": 0.81,
+   "reasons": {
+    "TRAIL": 12,
+    "GAP": 4,
+    "SL": 5
+   }
+  },
+  "test": {
+   "n": 37,
+   "net": -3.7,
+   "wr": 0.57,
+   "exp": -0.1,
+   "reasons": {
+    "GAP": 6,
+    "TRAIL": 20,
+    "SL": 11
+   }
+  },
+  "all": {
+   "n": 58,
+   "net": 13.3,
+   "wr": 0.6,
+   "exp": 0.23,
+   "reasons": {
+    "TRAIL": 32,
+    "GAP": 10,
+    "SL": 16
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev2",
+  "sl": 120,
+  "tp": 60,
+  "train": {
+   "n": 20,
+   "net": -2.9,
+   "wr": 0.65,
+   "exp": -0.15,
+   "reasons": {
+    "TRAIL": 11,
+    "GAP": 4,
+    "SL": 5
+   }
+  },
+  "test": {
+   "n": 34,
+   "net": -8.6,
+   "wr": 0.59,
+   "exp": -0.25,
+   "reasons": {
+    "GAP": 8,
+    "TRAIL": 19,
+    "SL": 7
+   }
+  },
+  "all": {
+   "n": 54,
+   "net": -11.6,
+   "wr": 0.61,
+   "exp": -0.21,
+   "reasons": {
+    "TRAIL": 30,
+    "GAP": 12,
+    "SL": 12
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev2",
+  "sl": 60,
+  "tp": 60,
+  "train": {
+   "n": 21,
+   "net": 22.8,
+   "wr": 0.62,
+   "exp": 1.09,
+   "reasons": {
+    "TP": 11,
+    "GAP": 4,
+    "SL": 6
+   }
+  },
+  "test": {
+   "n": 40,
+   "net": 18.3,
+   "wr": 0.55,
+   "exp": 0.46,
+   "reasons": {
+    "GAP": 5,
+    "TP": 21,
+    "SL": 14
+   }
+  },
+  "all": {
+   "n": 61,
+   "net": 41.1,
+   "wr": 0.57,
+   "exp": 0.67,
+   "reasons": {
+    "TP": 32,
+    "GAP": 9,
+    "SL": 20
+   }
+  },
+  "pass": true
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev2",
+  "sl": 90,
+  "tp": 60,
+  "train": {
+   "n": 21,
+   "net": 19.8,
+   "wr": 0.67,
+   "exp": 0.94,
+   "reasons": {
+    "TP": 12,
+    "GAP": 4,
+    "SL": 5
+   }
+  },
+  "test": {
+   "n": 38,
+   "net": 4.3,
+   "wr": 0.58,
+   "exp": 0.11,
+   "reasons": {
+    "GAP": 6,
+    "TP": 21,
+    "SL": 11
+   }
+  },
+  "all": {
+   "n": 59,
+   "net": 24.2,
+   "wr": 0.61,
+   "exp": 0.41,
+   "reasons": {
+    "TP": 33,
+    "GAP": 10,
+    "SL": 16
+   }
+  },
+  "pass": true
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev2",
+  "sl": 120,
+  "tp": 60,
+  "train": {
+   "n": 20,
+   "net": -0.7,
+   "wr": 0.65,
+   "exp": -0.03,
+   "reasons": {
+    "TP": 11,
+    "GAP": 4,
+    "SL": 5
+   }
+  },
+  "test": {
+   "n": 35,
+   "net": -0.3,
+   "wr": 0.6,
+   "exp": -0.01,
+   "reasons": {
+    "GAP": 8,
+    "TP": 20,
+    "SL": 7
+   }
+  },
+  "all": {
+   "n": 55,
+   "net": -1,
+   "wr": 0.62,
+   "exp": -0.02,
+   "reasons": {
+    "TP": 31,
+    "GAP": 12,
+    "SL": 12
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev",
+  "sl": 70,
+  "tp": 70,
+  "train": {
+   "n": 22,
+   "net": -5.6,
+   "wr": 0.5,
+   "exp": -0.26,
+   "reasons": {
+    "GAP": 5,
+    "TRAIL": 9,
+    "SL": 8
+   }
+  },
+  "test": {
+   "n": 42,
+   "net": 26.1,
+   "wr": 0.6,
+   "exp": 0.62,
+   "reasons": {
+    "SL": 15,
+    "TRAIL": 21,
+    "GAP": 6
+   }
+  },
+  "all": {
+   "n": 64,
+   "net": 20.5,
+   "wr": 0.56,
+   "exp": 0.32,
+   "reasons": {
+    "GAP": 11,
+    "TRAIL": 30,
+    "SL": 23
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev",
+  "sl": 105,
+  "tp": 70,
+  "train": {
+   "n": 22,
+   "net": 16.4,
+   "wr": 0.59,
+   "exp": 0.75,
+   "reasons": {
+    "GAP": 9,
+    "TRAIL": 9,
+    "SL": 4
+   }
+  },
+  "test": {
+   "n": 37,
+   "net": 2.5,
+   "wr": 0.62,
+   "exp": 0.07,
+   "reasons": {
+    "SL": 10,
+    "GAP": 7,
+    "TRAIL": 20
+   }
+  },
+  "all": {
+   "n": 59,
+   "net": 18.9,
+   "wr": 0.61,
+   "exp": 0.32,
+   "reasons": {
+    "GAP": 16,
+    "TRAIL": 29,
+    "SL": 14
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev",
+  "sl": 140,
+  "tp": 70,
+  "train": {
+   "n": 22,
+   "net": 23.6,
+   "wr": 0.59,
+   "exp": 1.07,
+   "reasons": {
+    "GAP": 11,
+    "TRAIL": 9,
+    "SL": 2
+   }
+  },
+  "test": {
+   "n": 34,
+   "net": 23.5,
+   "wr": 0.68,
+   "exp": 0.69,
+   "reasons": {
+    "SL": 6,
+    "TRAIL": 21,
+    "GAP": 7
+   }
+  },
+  "all": {
+   "n": 56,
+   "net": 47,
+   "wr": 0.64,
+   "exp": 0.84,
+   "reasons": {
+    "GAP": 18,
+    "TRAIL": 30,
+    "SL": 8
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev",
+  "sl": 70,
+  "tp": 70,
+  "train": {
+   "n": 22,
+   "net": -4.5,
+   "wr": 0.5,
+   "exp": -0.21,
+   "reasons": {
+    "GAP": 5,
+    "TP": 9,
+    "SL": 8
+   }
+  },
+  "test": {
+   "n": 44,
+   "net": 39.9,
+   "wr": 0.61,
+   "exp": 0.91,
+   "reasons": {
+    "SL": 15,
+    "TP": 23,
+    "GAP": 6
+   }
+  },
+  "all": {
+   "n": 66,
+   "net": 35.4,
+   "wr": 0.58,
+   "exp": 0.54,
+   "reasons": {
+    "GAP": 11,
+    "TP": 32,
+    "SL": 23
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev",
+  "sl": 105,
+  "tp": 70,
+  "train": {
+   "n": 22,
+   "net": 17.5,
+   "wr": 0.59,
+   "exp": 0.8,
+   "reasons": {
+    "GAP": 9,
+    "TP": 9,
+    "SL": 4
+   }
+  },
+  "test": {
+   "n": 39,
+   "net": -0.7,
+   "wr": 0.62,
+   "exp": -0.02,
+   "reasons": {
+    "SL": 11,
+    "GAP": 7,
+    "TP": 21
+   }
+  },
+  "all": {
+   "n": 61,
+   "net": 16.8,
+   "wr": 0.61,
+   "exp": 0.28,
+   "reasons": {
+    "GAP": 16,
+    "TP": 30,
+    "SL": 15
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "SIBN",
+  "cell": "sibn-meanrev",
+  "sl": 140,
+  "tp": 70,
+  "train": {
+   "n": 22,
+   "net": 24.7,
+   "wr": 0.59,
+   "exp": 1.12,
+   "reasons": {
+    "GAP": 11,
+    "TP": 9,
+    "SL": 2
+   }
+  },
+  "test": {
+   "n": 36,
+   "net": 27.8,
+   "wr": 0.67,
+   "exp": 0.77,
+   "reasons": {
+    "SL": 6,
+    "TP": 22,
+    "GAP": 8
+   }
+  },
+  "all": {
+   "n": 58,
+   "net": 52.5,
+   "wr": 0.64,
+   "exp": 0.91,
+   "reasons": {
+    "GAP": 19,
+    "TP": 31,
+    "SL": 8
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "AFKS",
+  "cell": "afks-meanrev2",
+  "sl": 40,
+  "tp": 40,
+  "train": {
+   "n": 58,
+   "net": 42.8,
+   "wr": 0.62,
+   "exp": 0.74,
+   "reasons": {
+    "TRAIL": 17,
+    "GAP": 29,
+    "SL": 12
+   }
+  },
+  "test": {
+   "n": 46,
+   "net": 21.5,
+   "wr": 0.63,
+   "exp": 0.47,
+   "reasons": {
+    "GAP": 27,
+    "SL": 7,
+    "TRAIL": 12
+   }
+  },
+  "all": {
+   "n": 104,
+   "net": 64.2,
+   "wr": 0.63,
+   "exp": 0.62,
+   "reasons": {
+    "TRAIL": 29,
+    "GAP": 56,
+    "SL": 19
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "AFKS",
+  "cell": "afks-meanrev2",
+  "sl": 60,
+  "tp": 40,
+  "train": {
+   "n": 51,
+   "net": 40.6,
+   "wr": 0.63,
+   "exp": 0.8,
+   "reasons": {
+    "TRAIL": 16,
+    "GAP": 31,
+    "SL": 4
+   }
+  },
+  "test": {
+   "n": 40,
+   "net": 27.4,
+   "wr": 0.7,
+   "exp": 0.69,
+   "reasons": {
+    "GAP": 27,
+    "SL": 2,
+    "TRAIL": 11
+   }
+  },
+  "all": {
+   "n": 91,
+   "net": 68,
+   "wr": 0.66,
+   "exp": 0.75,
+   "reasons": {
+    "TRAIL": 27,
+    "GAP": 58,
+    "SL": 6
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "AFKS",
+  "cell": "afks-meanrev2",
+  "sl": 80,
+  "tp": 40,
+  "train": {
+   "n": 49,
+   "net": 45.1,
+   "wr": 0.63,
+   "exp": 0.92,
+   "reasons": {
+    "TRAIL": 16,
+    "GAP": 32,
+    "SL": 1
+   }
+  },
+  "test": {
+   "n": 40,
+   "net": 22.5,
+   "wr": 0.7,
+   "exp": 0.56,
+   "reasons": {
+    "GAP": 28,
+    "SL": 1,
+    "TRAIL": 11
+   }
+  },
+  "all": {
+   "n": 89,
+   "net": 67.6,
+   "wr": 0.66,
+   "exp": 0.76,
+   "reasons": {
+    "TRAIL": 27,
+    "GAP": 60,
+    "SL": 2
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "AFKS",
+  "cell": "afks-meanrev2",
+  "sl": 40,
+  "tp": 40,
+  "train": {
+   "n": 62,
+   "net": 33.2,
+   "wr": 0.61,
+   "exp": 0.53,
+   "reasons": {
+    "TP": 19,
+    "GAP": 30,
+    "SL": 13
+   }
+  },
+  "test": {
+   "n": 48,
+   "net": 23.2,
+   "wr": 0.6,
+   "exp": 0.48,
+   "reasons": {
+    "GAP": 28,
+    "SL": 7,
+    "TP": 13
+   }
+  },
+  "all": {
+   "n": 110,
+   "net": 56.4,
+   "wr": 0.61,
+   "exp": 0.51,
+   "reasons": {
+    "TP": 32,
+    "GAP": 58,
+    "SL": 20
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "AFKS",
+  "cell": "afks-meanrev2",
+  "sl": 60,
+  "tp": 40,
+  "train": {
+   "n": 54,
+   "net": 34.1,
+   "wr": 0.63,
+   "exp": 0.63,
+   "reasons": {
+    "TP": 18,
+    "GAP": 32,
+    "SL": 4
+   }
+  },
+  "test": {
+   "n": 43,
+   "net": 29.7,
+   "wr": 0.65,
+   "exp": 0.69,
+   "reasons": {
+    "GAP": 28,
+    "SL": 3,
+    "TP": 12
+   }
+  },
+  "all": {
+   "n": 97,
+   "net": 63.8,
+   "wr": 0.64,
+   "exp": 0.66,
+   "reasons": {
+    "TP": 30,
+    "GAP": 60,
+    "SL": 7
+   }
+  },
+  "pass": false
+ },
+ {
+  "ticker": "AFKS",
+  "cell": "afks-meanrev2",
+  "sl": 80,
+  "tp": 40,
+  "train": {
+   "n": 54,
+   "net": 37.4,
+   "wr": 0.65,
+   "exp": 0.69,
+   "reasons": {
+    "TP": 19,
+    "GAP": 33,
+    "SL": 2
+   }
+  },
+  "test": {
+   "n": 42,
+   "net": 24.2,
+   "wr": 0.67,
+   "exp": 0.58,
+   "reasons": {
+    "GAP": 29,
+    "SL": 1,
+    "TP": 12
+   }
+  },
+  "all": {
+   "n": 96,
+   "net": 61.7,
+   "wr": 0.66,
+   "exp": 0.64,
+   "reasons": {
+    "TP": 31,
+    "GAP": 62,
+    "SL": 3
+   }
+  },
+  "pass": false
+ }
+]

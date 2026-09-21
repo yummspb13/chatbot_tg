@@ -1,0 +1,17 @@
+
+=== [свип-механика, без трейла] SIBN sibn-meanrev2: tp 60 ===
+  SL=60 (1×TP): train 24 сд net +5.6$ wr 0.54 exp 0.23 [GAP 4 SL 8 TP 12] | test 45 сд net +42$ wr 0.62 exp 0.93 [TP 25 SL 15 GAP 5]  ✅
+  SL=90 (1.5×TP): train 22 сд net -9.6$ wr 0.55 exp -0.44 [GAP 6 SL 6 TP 10] | test 42 сд net +56.5$ wr 0.71 exp 1.34 [TP 26 SL 8 GAP 8]  —
+  SL=120 (2×TP) БАЗА: train 20 сд net +1.4$ wr 0.6 exp 0.07 [GAP 4 SL 4 TP 12] | test 40 сд net +39.3$ wr 0.72 exp 0.98 [TP 25 SL 7 GAP 8]
+
+=== [свип-механика, без трейла] SIBN sibn-meanrev: tp 70 ===
+  SL=70 (1×TP): train 22 сд net +16.4$ wr 0.59 exp 0.75 [TP 11 SL 7 GAP 4] | test 53 сд net -24.4$ wr 0.51 exp -0.46 [SL 23 TP 20 GAP 10]  —
+  SL=105 (1.5×TP): train 20 сд net +24$ wr 0.65 exp 1.2 [TP 10 SL 4 GAP 6] | test 47 сд net -62.3$ wr 0.51 exp -1.32 [SL 14 TP 18 GAP 15]  —
+  SL=140 (2×TP) БАЗА: train 18 сд net -4.7$ wr 0.61 exp -0.26 [TP 9 SL 4 GAP 5] | test 44 сд net +23.4$ wr 0.64 exp 0.53 [SL 6 GAP 16 TP 22]
+
+=== [свип-механика, без трейла] AFKS afks-meanrev2: tp 40 ===
+  SL=40 (1×TP): train 50 сд net +1.6$ wr 0.48 exp 0.03 [GAP 24 SL 12 TP 14] | test 38 сд net +22.9$ wr 0.61 exp 0.6 [GAP 20 SL 6 TP 12]  —
+  SL=60 (1.5×TP): train 44 сд net -1.5$ wr 0.45 exp -0.03 [GAP 25 TP 14 SL 5] | test 36 сд net +27$ wr 0.64 exp 0.75 [GAP 22 SL 2 TP 12]  —
+  SL=80 (2×TP) БАЗА: train 42 сд net +6.1$ wr 0.5 exp 0.15 [GAP 26 TP 14 SL 2] | test 34 сд net +25.6$ wr 0.65 exp 0.75 [GAP 22 TP 12]
+
+DONE

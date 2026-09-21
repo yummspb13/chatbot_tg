@@ -1,0 +1,26 @@
+
+=== SIBN sibn-meanrev2: tp 60, 157094 минуток, спред 3.2бп (EnsembleLeg, GAP исправлен) ===
+  [трейл 0.2] SL=60 (1.0×TP): train 21 сд net +20.1$ wr 0.62 exp 0.96 [TRAIL 11 GAP 4 SL 6] | test 39 сд net +12.9$ wr 0.54 exp 0.33 [GAP 5 TRAIL 20 SL 14]  ✅ лучше базы на train И test
+  [трейл 0.2] SL=90 (1.5×TP): train 21 сд net +17$ wr 0.67 exp 0.81 [TRAIL 12 GAP 4 SL 5] | test 37 сд net -3.7$ wr 0.57 exp -0.1 [GAP 6 TRAIL 20 SL 11]  —
+  [трейл 0.2] SL=120 (2.0×TP) БАЗА: train 20 сд net -2.9$ wr 0.65 exp -0.15 [TRAIL 11 GAP 4 SL 5] | test 34 сд net -8.6$ wr 0.59 exp -0.25 [GAP 8 TRAIL 19 SL 7]
+  [без трейла] SL=60 (1.0×TP): train 21 сд net +22.8$ wr 0.62 exp 1.09 [TP 11 GAP 4 SL 6] | test 40 сд net +18.3$ wr 0.55 exp 0.46 [GAP 5 TP 21 SL 14]  ✅ лучше базы на train И test
+  [без трейла] SL=90 (1.5×TP): train 21 сд net +19.8$ wr 0.67 exp 0.94 [TP 12 GAP 4 SL 5] | test 38 сд net +4.3$ wr 0.58 exp 0.11 [GAP 6 TP 21 SL 11]  ✅ лучше базы на train И test
+  [без трейла] SL=120 (2.0×TP) БАЗА: train 20 сд net -0.7$ wr 0.65 exp -0.03 [TP 11 GAP 4 SL 5] | test 35 сд net -0.3$ wr 0.6 exp -0.01 [GAP 8 TP 20 SL 7]
+
+=== SIBN sibn-meanrev: tp 70, 157094 минуток, спред 3.2бп (EnsembleLeg, GAP исправлен) ===
+  [трейл 0.2] SL=70 (1.0×TP): train 22 сд net -5.6$ wr 0.5 exp -0.26 [GAP 5 TRAIL 9 SL 8] | test 42 сд net +26.1$ wr 0.6 exp 0.62 [SL 15 TRAIL 21 GAP 6]  —
+  [трейл 0.2] SL=105 (1.5×TP): train 22 сд net +16.4$ wr 0.59 exp 0.75 [GAP 9 TRAIL 9 SL 4] | test 37 сд net +2.5$ wr 0.62 exp 0.07 [SL 10 GAP 7 TRAIL 20]  —
+  [трейл 0.2] SL=140 (2.0×TP) БАЗА: train 22 сд net +23.6$ wr 0.59 exp 1.07 [GAP 11 TRAIL 9 SL 2] | test 34 сд net +23.5$ wr 0.68 exp 0.69 [SL 6 TRAIL 21 GAP 7]
+  [без трейла] SL=70 (1.0×TP): train 22 сд net -4.5$ wr 0.5 exp -0.21 [GAP 5 TP 9 SL 8] | test 44 сд net +39.9$ wr 0.61 exp 0.91 [SL 15 TP 23 GAP 6]  —
+  [без трейла] SL=105 (1.5×TP): train 22 сд net +17.5$ wr 0.59 exp 0.8 [GAP 9 TP 9 SL 4] | test 39 сд net -0.7$ wr 0.62 exp -0.02 [SL 11 GAP 7 TP 21]  —
+  [без трейла] SL=140 (2.0×TP) БАЗА: train 22 сд net +24.7$ wr 0.59 exp 1.12 [GAP 11 TP 9 SL 2] | test 36 сд net +27.8$ wr 0.67 exp 0.77 [SL 6 TP 22 GAP 8]
+
+=== AFKS afks-meanrev2: tp 40, 157135 минуток, спред 2.1бп (EnsembleLeg, GAP исправлен) ===
+  [трейл 0.2] SL=40 (1.0×TP): train 58 сд net +42.8$ wr 0.62 exp 0.74 [TRAIL 17 GAP 29 SL 12] | test 46 сд net +21.5$ wr 0.63 exp 0.47 [GAP 27 SL 7 TRAIL 12]  —
+  [трейл 0.2] SL=60 (1.5×TP): train 51 сд net +40.6$ wr 0.63 exp 0.8 [TRAIL 16 GAP 31 SL 4] | test 40 сд net +27.4$ wr 0.7 exp 0.69 [GAP 27 SL 2 TRAIL 11]  —
+  [трейл 0.2] SL=80 (2.0×TP) БАЗА: train 49 сд net +45.1$ wr 0.63 exp 0.92 [TRAIL 16 GAP 32 SL 1] | test 40 сд net +22.5$ wr 0.7 exp 0.56 [GAP 28 SL 1 TRAIL 11]
+  [без трейла] SL=40 (1.0×TP): train 62 сд net +33.2$ wr 0.61 exp 0.53 [TP 19 GAP 30 SL 13] | test 48 сд net +23.2$ wr 0.6 exp 0.48 [GAP 28 SL 7 TP 13]  —
+  [без трейла] SL=60 (1.5×TP): train 54 сд net +34.1$ wr 0.63 exp 0.63 [TP 18 GAP 32 SL 4] | test 43 сд net +29.7$ wr 0.65 exp 0.69 [GAP 28 SL 3 TP 12]  —
+  [без трейла] SL=80 (2.0×TP) БАЗА: train 54 сд net +37.4$ wr 0.65 exp 0.69 [TP 19 GAP 33 SL 2] | test 42 сд net +24.2$ wr 0.67 exp 0.58 [GAP 29 SL 1 TP 12]
+
+DONE

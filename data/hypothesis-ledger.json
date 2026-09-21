@@ -1,5 +1,5 @@
 {
- "totalTested": 259997,
+ "totalTested": 260003,
  "lockboxEntrants": 27,
  "batches": [
   {
@@ -240,6 +240,14 @@
    "n": 6,
    "stage1": 1,
    "stage2": 0,
+   "lockboxWins": 0
+  },
+  {
+   "id": "стоп зеркальных ячеек (план владельца): SL ∈ {1×,1.5×} TP против базы 2× для sibn-meanrev2, sibn-meanrev, afks-meanrev2; два движка (свип-механика без трейла; EnsembleLeg с трейлом 0.2 и без, после починки GAP в реплее), окно март→21.09, train до 01.07 / test с 01.07: sibn-meanrev2 SL=1×TP лучше базы на train И test в обоих движках (свип +5.6/+42 vs +1.4/+39.3; EnsembleLeg +20.1/+12.9 vs −2.9/−8.6) — внедрён (зеркало, -og), контроль -sl2; 1.5× и варианты sibn-meanrev/afks-meanrev2 — база не хуже",
+   "when": "2026-09-22",
+   "n": 6,
+   "stage1": 1,
+   "stage2": 1,
    "lockboxWins": 0
   }
  ]

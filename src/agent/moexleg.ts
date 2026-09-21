@@ -94,12 +94,20 @@ export const MOEX_LEGS: MoexSpec[] = [
         params: moexParams({ strategyType: 'meanrev', windowSec: 3600, thresholdPips: 56, tpPips: 70, slPips: 140, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
       },
       {
-        key: 'sibn-meanrev2', // перекалибровка 22.08: train 18.2→2.4 / test 31.4→24.7 (49 сд, wr 67%); зеркалится живым счётом
+        // перекалибровка 22.08: train 18.2→2.4 / test 31.4→24.7 (49 сд, wr 67%); зеркалится живым счётом.
+        // 22.09 стоп-тест (docs/STOP-ETH-2026-09-22.md): SL 1×TP (60) лучше базы 2×TP (120) на train И test
+        // в обоих движках (свип: +5.6/+42 vs +1.4/+39; EnsembleLeg с трейлом: +20/+13 vs −3/−9) — стоп
+        // ужат до 60. Старая геометрия живёт контролем в -sl2 (форвард A/B, история с нуля)
+        key: 'sibn-meanrev2',
+        params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 60, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+      },
+      {
+        key: 'sibn-meanrev2-sl2', // контроль стоп-теста 22.09: та же ячейка со старым стопом 2×TP (120), не зеркалится
         params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
       },
       {
-        key: 'sibn-meanrev2-og', // oilguard: та же ячейка, но входы блокируются при активном нефтяном шоке
-        params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
+        key: 'sibn-meanrev2-og', // oilguard: близнец зеркальной ячейки (с 22.09 — стоп 60), входы блокируются при активном нефтяном шоке
+        params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 60, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
       },
     ],
   },

@@ -123,7 +123,11 @@ export interface VirtualTradeEvent {
 export class EnsembleLeg {
   private members: MemberState[];
   private running = false;
-  private lastQuoteAt = 0;
+  private lastQuoteAt = 0;      // часы сервера — для статуса (lastQuoteAgoSec)
+  // время последней КОТИРОВКИ (не сервера): по нему меряется разрыв gapCloseMin.
+  // До 22.09 разрыв сравнивал q.time с Date.now() — живьём это одно и то же, а в
+  // догонке BF (историческое время) GAP-выход не срабатывал никогда
+  private lastQuoteTimeMs = 0;
   private tradeListeners: Array<(e: VirtualTradeEvent) => void> = [];
   // 'BF' во время догонки простоя: сделки из проигранной истории помечаются в
   // brokerTradeId (у виртуальных он всё равно пуст) — лицензии их не считают
@@ -307,7 +311,7 @@ export class EnsembleLeg {
     // разрыв котировок (ночь/выходные MOEX): протестированная модель не несёт
     // позиции через гэп — закрываем по первой цене после разрыва, как в свипе
     const gapMs = (this.cfg.gapCloseMin ?? 0) * 60_000;
-    if (gapMs > 0 && this.lastQuoteAt && q.time.getTime() - this.lastQuoteAt > gapMs) {
+    if (gapMs > 0 && this.lastQuoteTimeMs && q.time.getTime() - this.lastQuoteTimeMs > gapMs) {
       for (const m of this.members) {
         m.pending = [];
         for (const o of m.open) {
@@ -327,6 +331,7 @@ export class EnsembleLeg {
       }
     }
     this.lastQuoteAt = Date.now();
+    this.lastQuoteTimeMs = q.time.getTime();
     this.priceCtx.onQuote(q.time.getTime(), (q.bid + q.ask) / 2);
     const spreadPips = (q.ask - q.bid) / PIP;
     const dayKey = q.time.toISOString().slice(0, 10);
