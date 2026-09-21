@@ -32,7 +32,8 @@ export class MarketsLeg {
 
   constructor(
     // tapOil: реальная (нескейленная) цена WTI для трекера нефтяного шока (oilguard)
-    private deps: EnsembleDeps & { tapOil?: (mid: number, time: Date) => void },
+    // oilShockSign: знак нефтяного шока для контекста входа (запись, не гейт)
+    private deps: EnsembleDeps & { tapOil?: (mid: number, time: Date) => void; oilShockSign?: () => number },
     private specs: MarketLegSpec[] = MARKET_LEGS,
   ) {}
 
@@ -53,7 +54,10 @@ export class MarketsLeg {
       spec,
       leg: new EnsembleLeg(
         this.deps,
-        { baseSymbol: spec.baseSymbol, crypto: false, warmup: { instrument: spec.warmupInstrument, scale: spec.priceScale }, fillMode: 'cross' },
+        {
+          baseSymbol: spec.baseSymbol, crypto: false, warmup: { instrument: spec.warmupInstrument, scale: spec.priceScale }, fillMode: 'cross',
+          extraCtx: () => ({ oilShock: this.deps.oilShockSign?.() ?? null }),
+        },
         spec.roster,
       ),
     }));

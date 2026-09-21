@@ -23,6 +23,7 @@ import { MetaApiAdapter } from '../broker/metaapi';
 import { ScaledAdapter } from '../broker/scaled';
 import { ClosedPosition, ExecutionAdapter, PIP, Quote, round5, sleep } from '../broker/types';
 import type { TradeStore } from '../store';
+import { EntryCtx, PriceContext } from './entryctx';
 
 export interface CryptoLegDeps {
   store: TradeStore;
@@ -42,6 +43,7 @@ interface LegPending {
   reason: string;
   spreadAtSignal: number;
   volAtSignal: number;
+  ctx: EntryCtx; // контекст на момент сигнала (вход лимиткой позже)
 }
 
 export class CryptoLeg {
@@ -49,6 +51,7 @@ export class CryptoLeg {
   private abort: AbortController | null = null;
   private adapter: ExecutionAdapter | null = null;
   private strategy: TradingStrategy | null = null;
+  private priceCtx = new PriceContext(); // контекст входа живой ноги (свой, независимо от ансамбля)
   private risk: RiskManager | null = null;
   private pendings: LegPending[] = [];
   private loopPromise: Promise<void> | null = null;
@@ -150,6 +153,7 @@ export class CryptoLeg {
       }
       for (const c of candles) {
         const mid = c.c / this.preset.priceScale;
+        this.priceCtx.seed(c.t, mid);
         strategy.onQuote({ symbol: this.preset.symbol, bid: mid, ask: mid, time: new Date(c.t) });
       }
       this.warmupDays = Math.round((candles[candles.length - 1].t - candles[0].t) / 86400_000);
@@ -217,6 +221,7 @@ export class CryptoLeg {
     if (this.deps.tapQuote) {
       await this.deps.tapQuote(q).catch(e => log.warn(`крипто-ансамбль onQuote: ${errMsg(e)}`, undefined, 'ensemble'));
     }
+    this.priceCtx.onQuote(q.time.getTime(), (q.bid + q.ask) / 2);
     await this.rollDay(q.time);
     const t = Date.now();
     if (t - this.lastReconcileAt > 5_000) {
@@ -294,6 +299,7 @@ export class CryptoLeg {
       reason: sig.reason,
       spreadAtSignal: spreadPips,
       volAtSignal: strategy.windowRangePips(),
+      ctx: this.priceCtx.ctx(q.time.getTime(), (q.bid + q.ask) / 2),
     });
     log.info(`🧪 крипто: лимитный вход ${sig.side} ${p.units} @ ${price.toFixed(5)} (${sig.reason})`, undefined, 'crypto');
   }
@@ -324,6 +330,7 @@ export class CryptoLeg {
             volAtEntry: pe.volAtSignal,
             hourUtc: check.filledAt.getUTCHours(),
             newsDistMin: null,
+            entryCtx: pe.ctx,
             paramsSnapshot: this.preset.params,
           });
           await this.deps.notify(
@@ -372,6 +379,7 @@ export class CryptoLeg {
       volAtEntry: strategy.windowRangePips(),
       hourUtc: q.time.getUTCHours(),
       newsDistMin: null,
+      entryCtx: this.priceCtx.ctx(q.time.getTime(), (q.bid + q.ask) / 2),
       paramsSnapshot: p,
     });
     await this.deps.notify(

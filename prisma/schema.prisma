@@ -47,6 +47,7 @@ model Trade {
   hourUtc        Int?
   newsDistMin    Int?
   paramsSnapshot Json?
+  entryCtx       Json? // контекст входа (src/agent/entryctx.ts): ход/размах 1-4-24ч, позиция в диапазоне, разрыв, news, oilShock
 
   @@index([openedAt])
   @@index([mode, closedAt])

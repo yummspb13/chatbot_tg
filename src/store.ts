@@ -6,6 +6,7 @@ import { getPrisma, hasDb } from './db';
 import { log } from './logger';
 import { config } from './config';
 import { AgentParams, clampParams, DEFAULT_PARAMS } from './agent/params';
+import type { EntryCtx } from './agent/entryctx';
 import type { Side } from './broker/types';
 
 export interface SettingsState {
@@ -56,6 +57,7 @@ export interface OpenTradeInput {
   hourUtc: number;
   newsDistMin: number | null;
   paramsSnapshot: AgentParams;
+  entryCtx?: EntryCtx | null; // контекст входа (entryctx.ts); null/undefined → NULL в БД
 }
 
 export interface CloseTradeInput {
@@ -187,6 +189,7 @@ class PrismaStore implements TradeStore {
         brokerTradeId: t.brokerTradeId, spreadAtEntry: t.spreadAtEntry, volAtEntry: t.volAtEntry,
         hourUtc: t.hourUtc, newsDistMin: t.newsDistMin,
         paramsSnapshot: t.paramsSnapshot as unknown as Prisma.InputJsonValue,
+        entryCtx: t.entryCtx ? (t.entryCtx as unknown as Prisma.InputJsonValue) : undefined,
       },
     });
     return this.mapTrade(row);

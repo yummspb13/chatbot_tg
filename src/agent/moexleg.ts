@@ -138,7 +138,8 @@ export class MoexLeg {
   constructor(
     // oilShockSign: трекер нефтяного шока из движка (oilguard-клон SIBN);
     // отсутствие колбэка или нефтяных данных = fail-open (входы разрешены)
-    private deps: EnsembleDeps & { notify: (text: string) => Promise<void>; oilShockSign?: () => number },
+    // newsBias: балл новостного фона по тикеру — только в контекст входа (запись)
+    private deps: EnsembleDeps & { notify: (text: string) => Promise<void>; oilShockSign?: () => number; newsBias?: (asset: string) => number | null },
     private specs: MoexSpec[] = MOEX_LEGS,
   ) {}
 
@@ -176,6 +177,7 @@ export class MoexLeg {
             // на разрыве >30 мин (овернайт-гэпы не прыгают через стопы), живой
             // виртуал раньше держал через ночь (AFKS висел неделю). Теперь 1:1
             gapCloseMin: 30,
+            extraCtx: () => ({ oilShock: this.deps.oilShockSign?.() ?? null, news: this.deps.newsBias?.(spec.ticker) ?? null }),
           },
           spec.roster,
         ),

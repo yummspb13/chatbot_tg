@@ -21,6 +21,7 @@ import { AgentParams, EnsembleMember, ENSEMBLE_MEMBERS } from './params';
 import { buildStrategy, TradingStrategy } from './strategy';
 import { RiskManager } from './risk';
 import { PIP, Quote, round5 } from '../broker/types';
+import { EntryCtx, PriceContext } from './entryctx';
 import type { TradeStore } from '../store';
 
 export interface EnsembleDeps {
@@ -45,6 +46,9 @@ export interface EnsembleConfig {
   // (MT5/MetaApi: неделя 23-26.08 показала, что касание даёт виртуалу входы,
   // которых живая лимитка не получает — btc-matrend virtual +34$ vs live −2.6$)
   fillMode?: 'touch' | 'cross';
+  // дополнительные поля контекста входа от владельца ноги (news, oilShock) —
+  // сливаются с ценовым контекстом PriceContext в agent_Trade.entryCtx. Только запись
+  extraCtx?: (time: Date) => Record<string, number | null>;
 }
 
 const MODE = 'virtual';
@@ -127,6 +131,8 @@ export class EnsembleLeg {
   // пока идёт проигрыш истории, живые тики дропаются: смешение исторического и
   // текущего времени в одном потоке ломало бы TP/SL и дневные счётчики
   private replaying = false;
+  // ценовой контекст входа (ход/размах 1-4-24ч, разрыв) — сидируется прогревом, кормится каждым тиком
+  private priceCtx = new PriceContext();
 
   constructor(
     private deps: EnsembleDeps,
@@ -227,6 +233,7 @@ export class EnsembleLeg {
         const mid = c.c / w.scale;
         const half = ((c.sp ?? PIP) / w.scale) / 2;
         const q: Quote = { symbol: this.cfg.baseSymbol, bid: mid - half, ask: mid + half, time: new Date(c.t) };
+        this.priceCtx.seed(c.t, mid);
         for (const m of this.members) m.strategy.onQuote(q);
       }
       log.success(`ансамбль ${this.cfg.baseSymbol}: прогрев ${candles.length} минуток (echo и spreadweather готовы сразу)`, undefined, 'ensemble');
@@ -320,6 +327,7 @@ export class EnsembleLeg {
       }
     }
     this.lastQuoteAt = Date.now();
+    this.priceCtx.onQuote(q.time.getTime(), (q.bid + q.ask) / 2);
     const spreadPips = (q.ask - q.bid) / PIP;
     const dayKey = q.time.toISOString().slice(0, 10);
 
@@ -329,6 +337,17 @@ export class EnsembleLeg {
       } catch (e) {
         log.warn(`ансамбль ${m.member.key}: ${errMsg(e)}`, undefined, 'ensemble');
       }
+    }
+  }
+
+  /** Контекст входа для записи в сделку: ценовой + расширения владельца ноги. Fail-safe: ошибка расширения не мешает входу. */
+  private entryCtx(q: Quote): EntryCtx {
+    const ctx = this.priceCtx.ctx(q.time.getTime(), (q.bid + q.ask) / 2);
+    try {
+      const extra = this.cfg.extraCtx?.(q.time);
+      return extra ? { ...ctx, ...extra } : ctx;
+    } catch {
+      return ctx;
     }
   }
 
@@ -373,6 +392,7 @@ export class EnsembleLeg {
           volAtEntry: m.strategy.windowRangePips(),
           hourUtc: q.time.getUTCHours(),
           newsDistMin: null,
+          entryCtx: this.entryCtx(q),
           paramsSnapshot: p,
         });
         m.open.push({ rowId: row.id, side: pe.side, entry: pe.price, tp: pe.tp, sl: pe.sl, openedAt: q.time.getTime(), mult });
@@ -486,6 +506,7 @@ export class EnsembleLeg {
         volAtEntry: m.strategy.windowRangePips(),
         hourUtc: q.time.getUTCHours(),
         newsDistMin: null,
+        entryCtx: this.entryCtx(q),
         paramsSnapshot: p,
       });
       m.open.push({ rowId: row.id, side: sig.side, entry, tp, sl, openedAt: q.time.getTime(), mult });

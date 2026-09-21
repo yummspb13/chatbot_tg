@@ -58,6 +58,8 @@ export class NewsBiasLeg {
   private lastPollAt = 0;
   private pendingCount = 0;
   private hitStats: Record<number, HitStats> = { 12: { judged: 0, hits: 0 }, 24: { judged: 0, hits: 0 }, 96: { judged: 0, hits: 0 } };
+  // прогнозы последних 96ч в памяти — для балла biasFor() в контексте входа сделок
+  private recent: Array<{ asset: string; dir: number; conf: number; horizonH: number; ts: number }> = [];
 
   constructor(private deps: NewsBiasDeps) {}
 
@@ -79,6 +81,7 @@ export class NewsBiasLeg {
     this.judgeTimer = setInterval(() => void this.judge().catch(e => log.warn(`news judge: ${errMsg(e)}`, undefined, 'news')), JUDGE_MS);
     setTimeout(() => void this.poll().catch(e => log.warn(`news poll: ${errMsg(e)}`, undefined, 'news')), 45_000);
     setTimeout(() => void this.judge().catch(e => log.warn(`news judge: ${errMsg(e)}`, undefined, 'news')), 90_000);
+    void this.loadRecent().catch(e => log.warn(`news recent: ${errMsg(e)}`, undefined, 'news'));
     log.success(`новостной фон запущен: ${FEEDS.length} фида / скоринг ${config.openaiKey ? config.openaiModel : 'ВЫКЛ (нет OPENAI_API_KEY)'} / судья 12-24-96ч`, undefined, 'news');
   }
 
@@ -226,6 +229,8 @@ export class NewsBiasLeg {
     const p = await this.prisma();
     await p.newsSignal.createMany({ data: rows, skipDuplicates: true });
     this.scoredToday += rows.length;
+    const ts = Date.now();
+    for (const r of rows) this.recent.push({ asset: r.asset, dir: r.dir, conf: r.conf, horizonH: r.horizonH, ts });
     log.info(`новостной фон: +${rows.length} прогнозов (${rows.map(r => `${r.asset}${r.dir > 0 ? '↑' : '↓'}`).join(' ')})`, undefined, 'news');
   }
 
@@ -302,6 +307,33 @@ export class NewsBiasLeg {
     }
     this.hitStats = st;
     this.pendingCount = await p.newsSignal.count({ where: { OR: HORIZONS.map(h => ({ [`p${h}`]: null })) } });
+  }
+
+  /** Прогнозы последних 96ч из БД в кэш (рестарт не обнуляет балл). */
+  private async loadRecent(): Promise<void> {
+    const p = await this.prisma();
+    const rows = await p.newsSignal.findMany({
+      where: { ts: { gte: new Date(Date.now() - 96 * 3600_000) } },
+      select: { asset: true, dir: true, conf: true, horizonH: true, ts: true },
+    });
+    this.recent = rows.map(r => ({ asset: r.asset, dir: r.dir, conf: r.conf, horizonH: r.horizonH, ts: r.ts.getTime() }));
+  }
+
+  /** Балл новостного фона по активу: Σ dir·conf·(1 − возраст/горизонт) по прогнозам
+   *  последних 96ч; null — прогнозов по активу нет (в т.ч. пока скоринг выключен).
+   *  Только запись в контекст входа — к торговле не подключён. */
+  biasFor(asset: string): number | null {
+    const now = Date.now();
+    if (this.recent.length) this.recent = this.recent.filter(s => now - s.ts < 96 * 3600_000);
+    let sum = 0, n = 0;
+    for (const s of this.recent) {
+      if (s.asset !== asset) continue;
+      const w = 1 - (now - s.ts) / (s.horizonH * 3600_000);
+      if (w <= 0) continue;
+      sum += s.dir * s.conf * w;
+      n++;
+    }
+    return n ? +sum.toFixed(3) : null;
   }
 
   summarySync() {

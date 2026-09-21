@@ -8,6 +8,7 @@ import { AgentParams, clampParams, CRYPTO_PRESETS, ENSEMBLE_MEMBERS, ENSEMBLE_ME
 import { buildStrategy, Signal, TradingStrategy } from './strategy';
 import { CryptoLeg } from './cryptoleg';
 import { EnsembleLeg } from './ensemble';
+import { EntryCtx, PriceContext } from './entryctx';
 import { MakerLeg } from './makerleg';
 import { MarketsLeg } from './marketsleg';
 import { MoexLeg } from './moexleg';
@@ -47,6 +48,7 @@ interface PendingEntry {
   spreadAtSignal: number;
   volAtSignal: number;
   newsDist: number | null;
+  ctx: EntryCtx;
 }
 
 export class AgentEngine {
@@ -81,6 +83,7 @@ export class AgentEngine {
   private polyLeg: PolyCollector | null = null;
   private newsLeg: import('../news/bias').NewsBiasLeg | null = null;
   private oilShock = new OilShockTracker();
+  private priceCtx = new PriceContext(); // контекст входа живой FX-ноги (холодный старт после рестарта)
   // алерт тишины MT5-стримов (урок 28.08→21.09: 24 дня без котировок и без
   // единого сигнала владельцу) — раз в 10 мин, повтор не чаще раза в 12 ч
   private streamTimer: ReturnType<typeof setInterval> | null = null;
@@ -193,7 +196,10 @@ export class AgentEngine {
           if (config.ensemble) {
             this.btcEnsemble = new EnsembleLeg(
               { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout },
-              { baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 }, fillMode: 'cross' },
+              {
+                baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 }, fillMode: 'cross',
+                extraCtx: () => ({ news: this.newsLeg?.biasFor('BTC') ?? null }),
+              },
               ENSEMBLE_MEMBERS_BTC,
             );
             await this.btcEnsemble.start(gapStart);
@@ -225,7 +231,13 @@ export class AgentEngine {
 
     if (config.ensemble && settings.mode === 'live') {
       try {
-        this.ensembleLeg = new EnsembleLeg({ store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout });
+        this.ensembleLeg = new EnsembleLeg(
+          { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout },
+          {
+            baseSymbol: 'EUR_USD', crypto: false, warmup: { instrument: 'eurusd', scale: 1 }, fillMode: 'cross',
+            extraCtx: () => ({ news: this.newsLeg?.biasFor('EURUSD') ?? null }),
+          },
+        );
         await this.ensembleLeg.start(gapStart);
         cryptoNote += '\n🎼 Ансамбль: 5 виртуальных стратегий на живых котировках (деньги не задействованы; /agent_ensemble).';
       } catch (e) {
@@ -243,6 +255,7 @@ export class AgentEngine {
           isNewsBlackout: this.deps.isNewsBlackout,
           // oilguard: реальная цена WTI из стрима кормит трекер нефтяного шока
           tapOil: (mid, t) => this.oilShock.onQuote(mid, t),
+          oilShockSign: () => this.oilShock.shockSign(),
         });
         await this.marketsLeg.start(gapStart);
         cryptoNote += '\n🌍 Мультирынок: золото, нефть, GBPJPY, S&P500 — 5 победителей свипа торгуют виртуально (/agent_ensemble).';
@@ -294,6 +307,7 @@ export class AgentEngine {
           notify: this.deps.notify,
           // oilguard-клон SIBN: блок входов при активном нефтяном шоке
           oilShockSign: () => this.oilShock.shockSign(),
+          newsBias: asset => this.newsLeg?.biasFor(asset) ?? null,
         });
         await this.moexLeg.start(gapStart);
         cryptoNote += `\n🇷🇺 MOEX-нога: ${this.moexLeg.summary().tickers.join(', ')} — виртуально по маркетдате T-Invest (read-only, комиссия 0.1%/круг в модели).`;
@@ -581,11 +595,17 @@ export class AgentEngine {
     log.info(`новый торговый день ${key} (UTC)`, undefined, 'engine');
   }
 
+  /** Контекст входа живой FX-ноги: ценовой + новостной балл EURUSD. */
+  private entryCtx(q: Quote): EntryCtx {
+    return { ...this.priceCtx.ctx(q.time.getTime(), (q.bid + q.ask) / 2), news: this.newsLeg?.biasFor('EURUSD') ?? null };
+  }
+
   private async onQuote(q: Quote): Promise<void> {
     // виртуальный ансамбль ест каждый живой тик (ошибки не роняют основной цикл)
     if (this.ensembleLeg) {
       await this.ensembleLeg.onQuote(q).catch(e => log.warn(`ансамбль onQuote: ${errMsg(e)}`, undefined, 'ensemble'));
     }
+    this.priceCtx.onQuote(q.time.getTime(), (q.bid + q.ask) / 2);
     await this.rollDay(q.time);
     const t = Date.now();
     if (t - this.lastReconcileAt > 5_000) {
@@ -674,6 +694,7 @@ export class AgentEngine {
       spreadAtSignal: spreadPips,
       volAtSignal: strategy.windowRangePips(),
       newsDist: this.deps.newsDistanceMin(q.time),
+      ctx: this.entryCtx(q),
     });
     log.info(`⏳ лимитный вход ${sig.side} ${p.units} @ ${price.toFixed(5)} (TTL ${p.entryTtlSec}с, ${sig.reason})`, undefined, 'engine');
   }
@@ -705,6 +726,7 @@ export class AgentEngine {
             volAtEntry: pe.volAtSignal,
             hourUtc: check.filledAt.getUTCHours(),
             newsDistMin: pe.newsDist,
+            entryCtx: pe.ctx,
             paramsSnapshot: settings.params,
           });
           await this.deps.notify(
@@ -770,6 +792,7 @@ export class AgentEngine {
       volAtEntry: strategy.windowRangePips(),
       hourUtc: q.time.getUTCHours(),
       newsDistMin: this.deps.newsDistanceMin(q.time),
+      entryCtx: this.entryCtx(q),
       paramsSnapshot: settings.params,
     });
 
