@@ -1,0 +1,46 @@
+===== Si [mult]: 171640 минуток, стыков 3 · цена 83626.39 · scale 100000 · ход 22.0п/ч · mult 6 · спред 0.10п (0.12бп) · комиссия A 6.7п / B 0.8п за круг =====
+  ячеек 5, прошло A: 0, B: 1
+  ✅B(только) impulse/market w1800 thr12 tp60 sl120: train 15.2 · test 0.4 (30 сд, wr 66.7%)
+  лучшее по A (не прошло): impulse/market w1800 thr12 tp60 sl120: train 3.2 · test -4.7 · gross 18.1
+===== BR [mult]: 185250 минуток, стыков 8 · цена 50.72 · scale 100 · ход 62.4п/ч · mult 17 · спред 1.00п (1.97бп) · комиссия A 4.1п / B 0.5п за круг =====
+  ячеек 14, прошло A: 4, B: 6
+  ✅A impulse/limit w1800 thr34 tp170 sl340: train 91.9 (t 0.48) · test 96.4 (t 1.31) · t_all 0.92 (70 сд, wr 65.7%, 0.3066%/сд)
+  ✅A impulse/market w1800 thr34 tp170 sl340: train 90.7 (t 0.48) · test 95.6 (t 1.3) · t_all 0.91 (70 сд, wr 65.7%, 0.3034%/сд)
+  ✅A impulse/limit w1800 thr34 tp340 sl680: train 45 (t 0.2) · test 43.8 (t 0.6) · t_all 0.37 (52 сд, wr 53.8%, 0.19%/сд)
+  ✅A impulse/market w1800 thr34 tp340 sl680: train 42.7 (t 0.19) · test 42.4 (t 0.58) · t_all 0.36 (52 сд, wr 53.8%, 0.1821%/сд)
+  ✅B(только) meanrev/limit w1800 thr136 tp170 sl340: train 17.3 · test 64.7 (83 сд, wr 61.4%)
+  ✅B(только) meanrev/market w1800 thr136 tp170 sl340: train 15.6 · test 37.2 (84 сд, wr 59.5%)
+===== RI [mult]: 170987 минуток, стыков 3 · цена 111193.00 · scale 1000000 · ход 4.4п/ч · mult 1 · спред 0.10п (0.90бп) · комиссия A 0.9п / B 0.1п за круг =====
+  ячеек 12, прошло A: 1, B: 2
+  ✅A meanrev/limit w1800 thr8 tp10 sl20: train 0.2 (t 0.02) · test 1.9 (t 0.37) · t_all 0.21 (77 сд, wr 58.4%, 0.029%/сд)
+  ✅B(только) meanrev/market w1800 thr8 tp10 sl20: train 3.1 · test 3.5 (78 сд, wr 57.7%)
+===== NG [mult]: 181751 минуток, стыков 9 · цена 3.05 · scale 10 · ход 24.8п/ч · mult 7 · спред 1.00п (3.28бп) · комиссия A 2.4п / B 0.3п за круг =====
+  ячеек 23, прошло A: 0, B: 2
+  ✅B(только) meanrev/market w1800 thr56 tp70 sl140: train 87.2 · test 5.3 (128 сд, wr 66.4%)
+  ✅B(только) meanrev/limit w1800 thr56 tp70 sl140: train 47.3 · test 0.4 (124 сд, wr 65.3%)
+  лучшее по A (не прошло): impulse/limit w3600 thr14 tp140 sl280: train -59.7 · test 58.4 · gross 10.1
+===== GD [mult]: 185744 минуток, стыков 3 · цена 4570.32 · scale 10000 · ход 16.1п/ч · mult 4 · спред 0.10п (0.22бп) · комиссия A 3.7п / B 0.5п за круг =====
+  ячеек 22, прошло A: 4, B: 4
+  ✅A impulse/market w1800 thr8 tp80 sl160: train 7.8 (t 0.11) · test 13.9 (t 0.58) · t_all 0.3 (80 сд, wr 46.3%, 0.0557%/сд)
+  ✅A meanrev/limit w3600 thr64 tp40 sl80: train 22.4 (t 0.74) · test 7.7 (t 0.4) · t_all 0.85 (48 сд, wr 72.9%, 0.1257%/сд)
+  ✅A meanrev/market w3600 thr64 tp40 sl80: train 29.5 (t 0.97) · test 7.6 (t 0.4) · t_all 1.05 (50 сд, wr 74%, 0.149%/сд)
+  ✅A impulse/limit w1800 thr8 tp80 sl160: train 15.8 (t 0.23) · test 0.9 (t 0.04) · t_all 0.23 (78 сд, wr 46.2%, 0.0442%/сд)
+===== SR [mult]: 167446 минуток, стыков 3 · цена 30907.22 · scale 100000 · ход 7.8п/ч · mult 2 · спред 0.10п (0.32бп) · комиссия A 2.5п / B 0.3п за круг =====
+  ячеек 20, прошло A: 2, B: 7
+  ✅A meanrev/market w1800 thr16 tp20 sl40: train 13.2 (t 0.59) · test 2.5 (t 0.17) · t_all 0.59 (140 сд, wr 65.7%, 0.039%/сд)
+  ✅A meanrev/limit w1800 thr16 tp20 sl40: train 10.7 (t 0.49) · test 0.9 (t 0.06) · t_all 0.44 (134 сд, wr 64.9%, 0.0299%/сд)
+  ✅B(только) meanrev/market w3600 thr16 tp40 sl80: train 7.1 · test 11.4 (123 сд, wr 56.1%)
+  ✅B(только) meanrev/market w3600 thr16 tp20 sl40: train 24.4 · test 8.9 (180 сд, wr 63.9%)
+  ✅B(только) meanrev/market w1800 thr16 tp40 sl80: train 7.3 · test 5.2 (92 сд, wr 55.4%)
+===== GZ [mult]: 175488 минуток, стыков 3 · цена 14287.80 · scale 100000 · ход 5.7п/ч · mult 2 · спред 0.10п (0.70бп) · комиссия A 1.1п / B 0.1п за круг =====
+  ячеек 4, прошло A: 0, B: 0
+  лучшее по A (не прошло): meanrev/limit w3600 thr16 tp20 sl40: train -7.7 · test 1.3 · gross -2
+===== MX [mult]: 183537 минуток, стыков 3 · цена 293106.06 · scale 1000000 · ход 8.4п/ч · mult 2 · спред 0.25п (0.85бп) · комиссия A 2.3п / B 0.3п за круг =====
+  ячеек 16, прошло A: 2, B: 2
+  ✅A meanrev/market w1800 thr16 tp20 sl40: train 14.6 (t 0.73) · test 1.8 (t 0.14) · t_all 0.69 (117 сд, wr 63.2%, 0.0605%/сд)
+  ✅A meanrev/limit w1800 thr16 tp20 sl40: train 10.3 (t 0.52) · test 0.3 (t 0.03) · t_all 0.45 (114 сд, wr 62.3%, 0.0401%/сд)
+
+ИТОГ [mult]: ячеек 116, прошло по A: 13, stage2 (t_all≥2): 0, по B: 24
+JSON: /home/user/chatbot_tg/data/forts-report-mult.json
+DONE
+exit 0

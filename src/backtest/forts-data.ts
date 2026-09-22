@@ -110,7 +110,11 @@ function contractsFor(spec: FortsRoot, from: Date, to: Date): Array<{ secid: str
   return out;
 }
 
-export async function loadFortsM1(spec: FortsRoot, from: Date, to: Date): Promise<{ candles: FortsCandle[]; rolls: Array<{ t: number; from: string; to: string; ratio: number }> }> {
+/** adjust: 'mult' — более ранние сегменты домножаются на отношение цен в стыке (геометрия
+ *  в % сохраняется, абсолютные пипсы прошлого искажаются на величину базиса — для BR с
+ *  8 месячными стыками ×0.68); 'add' — сдвиг на разность цен (panama): абсолютные
+ *  внутридневные ходы (пипсы, как у наших стратегий) сохраняются, уровень дрейфует. */
+export async function loadFortsM1(spec: FortsRoot, from: Date, to: Date, adjust: 'mult' | 'add' = 'add'): Promise<{ candles: FortsCandle[]; rolls: Array<{ t: number; from: string; to: string; ratio: number }> }> {
   log.info(`FORTS M1 ${spec.root}: ${from.toISOString().slice(0, 10)} → ${to.toISOString().slice(0, 10)}`, undefined, 'backtest');
   const nowMonth = new Date().toISOString().slice(0, 7);
   const contracts: Array<{ secid: string; candles: FortsCandle[] }> = [];
@@ -140,9 +144,12 @@ export async function loadFortsM1(spec: FortsRoot, from: Date, to: Date): Promis
     const seg = cur.candles.filter(c => c.t >= prevCutoff && c.t < cutoff && c.t >= from.getTime() && c.t < to.getTime());
     if (seg.length && out.length) {
       // back-adjust всего накопленного ряда к цене нового контракта в точке стыка
-      const ratio = seg[0].o / out[out.length - 1].c;
+      const lastC = out[out.length - 1].c;
+      const ratio = seg[0].o / lastC;
+      const shift = seg[0].o - lastC;
       if (Number.isFinite(ratio) && ratio > 0) {
-        for (const c of out) { c.o *= ratio; c.h *= ratio; c.l *= ratio; c.c *= ratio; }
+        if (adjust === 'mult') for (const c of out) { c.o *= ratio; c.h *= ratio; c.l *= ratio; c.c *= ratio; }
+        else for (const c of out) { c.o += shift; c.h += shift; c.l += shift; c.c += shift; }
         rolls.push({ t: seg[0].t, from: out[out.length - 1].secid, to: cur.secid, ratio });
       }
     }
@@ -166,7 +173,7 @@ if (isMain) {
     if (!spec) throw new Error(`неизвестная серия ${root}`);
     const from = new Date(parseArg('from') ?? '2026-01-01');
     const to = new Date(parseArg('to') ?? new Date().toISOString().slice(0, 10));
-    const { candles, rolls } = await loadFortsM1(spec, from, to);
+    const { candles, rolls } = await loadFortsM1(spec, from, to, (parseArg('adjust') as 'mult' | 'add') ?? 'add');
     if (!candles.length) { console.log('Данных нет'); return; }
     console.log(`OK: ${candles.length} минуток, ${new Date(candles[0].t).toISOString()} → ${new Date(candles[candles.length - 1].t).toISOString()}, последняя цена ${candles[candles.length - 1].c}`);
     for (const r of rolls) console.log(`  стык ${new Date(r.t).toISOString().slice(0, 10)}: ${r.from} → ${r.to}, ratio ${r.ratio.toFixed(4)}`);

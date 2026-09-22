@@ -2,12 +2,14 @@
 // Мосбиржи — та же механика и сетка, что у moex-sweep (акции), но издержки срочного рынка.
 // Мотив — живые кейсы (docs/STOP-ETH-2026-09-22.md §4): верифицированные победители РФ
 // сидят на FORTS, а наши минутные края на акциях умирали от 0.1 % комиссии и спреда 2-3 бп.
-// Спред = 1 тик (ликвидные ближние контракты). Две модели комиссии за круг:
+// Спред = 1 тик абсолютно (ликвидные ближние контракты). Склейка контрактов --adjust add|mult
+// (обе отчитываются; вердикт требует прохода при ОБЕИХ). Две модели комиссии за круг:
 //   A — Т-Инвестиции «Трейдер», допущение 0.04 %/сторона → 0.08 % (проверить по тарифу);
 //   B — брокер с поконтрактной комиссией (Финам/БКС ~1 ₽/контракт) → 0.01 %.
-// Вердикт ячейки: net > 0 на train (70 % сделок) И test (30 %) по модели A; B — справочно.
+// Вердикт ячейки (stage1): net > 0 на train (70 % сделок) И test (30 %) по модели A; stage2:
+// + t-статистика net-сделок по всей выборке ≥ 2 (конвенция майнера). B — справочно.
 //
-// CLI: npx tsx src/backtest/forts-sweep.ts [--from 2026-01-01] [--to 2026-09-21] [--roots Si,BR]
+// CLI: npx tsx src/backtest/forts-sweep.ts [--from 2026-01-01] [--to 2026-09-21] [--roots Si,BR] [--adjust add|mult]
 
 import { pathToFileURL } from 'node:url';
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -24,7 +26,8 @@ interface Cell {
   root: string; strategy: string; entryMode: 'market' | 'limit'; params: string; trades: number;
   netTrainA: number; netTestA: number; netTrainB: number; netTestB: number; gross: number; wr: number;
   pctPerTradeA: number; // net A на сделку в % нотионала
-  passA: boolean; passB: boolean;
+  tTrainA: number; tTestA: number; tAllA: number; // t-статистики net-сделок по модели A
+  passA: boolean; passB: boolean; stage2A: boolean;
 }
 
 function medianHourlyMovePips(candles: FortsCandle[], scale: number): number {
@@ -38,7 +41,7 @@ function medianHourlyMovePips(candles: FortsCandle[], scale: number): number {
   return moves.length ? moves[Math.floor(moves.length / 2)] : NaN;
 }
 
-function runCell(candles: FortsCandle[], scale: number, params: AgentParams, spreadFrac: number): Array<{ gross: number; notional: number }> {
+function runCell(candles: FortsCandle[], scale: number, params: AgentParams, halfSpread: number): Array<{ gross: number; notional: number }> {
   const strategy = buildStrategy(params);
   const pnls: Array<{ gross: number; notional: number }> = [];
   let pending: { side: 'BUY' | 'SELL'; price: number; tp: number; sl: number; placedAt: number } | null = null;
@@ -50,7 +53,7 @@ function runCell(candles: FortsCandle[], scale: number, params: AgentParams, spr
     open = null;
   };
   for (const c of candles) {
-    const mid = c.c / scale, half = (mid * spreadFrac) / 2, hi = c.h / scale, lo = c.l / scale;
+    const mid = c.c / scale, half = halfSpread, hi = c.h / scale, lo = c.l / scale;
     if (prevT && c.t - prevT > 30 * 60_000) { if (open) close(open.side === 'BUY' ? mid - half : mid + half); pending = null; }
     prevT = c.t;
     if (pending) {
@@ -86,19 +89,21 @@ if (isMain) {
     const from = new Date(parseArg('from') ?? '2026-01-01');
     const to = new Date(parseArg('to') ?? '2026-09-21');
     const roots = (parseArg('roots') ?? FORTS_ROOTS.map(r => r.root).join(',')).split(',').map(s => s.trim()).filter(Boolean);
+    const adjust = (parseArg('adjust') as 'mult' | 'add') ?? 'add';
     const cells: Cell[] = [];
     for (const root of roots) {
       const spec = FORTS_ROOTS.find(r => r.root === root);
       if (!spec) { console.log(`${root}: неизвестная серия — пропуск`); continue; }
-      const { candles, rolls } = await loadFortsM1(spec, from, to);
+      const { candles, rolls } = await loadFortsM1(spec, from, to, adjust);
       if (candles.length < 50_000) { console.log(`===== ${root}: мало данных (${candles.length}) — пропуск`); continue; }
       const p0 = candles[0].c;
       const scale = Math.pow(10, Math.ceil(Math.log10(p0)));
       const movePips = medianHourlyMovePips(candles, scale);
       const mult = Math.max(1, Math.round(movePips / 3.7));
+      const halfSpread = spec.tick / scale / 2; // 1 тик абсолютно, в масштабе ноги
       const spreadFrac = spec.tick / p0;
-      const spreadPips = (p0 / scale) * spreadFrac / PIP;
-      console.log(`===== ${root}: ${candles.length} минуток, стыков ${rolls.length} · цена ${p0} · scale ${scale} · ход ${movePips.toFixed(1)}п/ч · mult ${mult} · спред ${spreadPips.toFixed(2)}п (${(spreadFrac * 1e4).toFixed(2)}бп) · комиссия A ${(FEE_A * (p0 / scale) / PIP).toFixed(1)}п / B ${(FEE_B * (p0 / scale) / PIP).toFixed(1)}п за круг =====`);
+      const spreadPips = spec.tick / scale / PIP;
+      console.log(`===== ${root} [${adjust}]: ${candles.length} минуток, стыков ${rolls.length} · цена ${p0.toFixed(2)} · scale ${scale} · ход ${movePips.toFixed(1)}п/ч · mult ${mult} · спред ${spreadPips.toFixed(2)}п (${(spreadFrac * 1e4).toFixed(2)}бп) · комиссия A ${(FEE_A * (p0 / scale) / PIP).toFixed(1)}п / B ${(FEE_B * (p0 / scale) / PIP).toFixed(1)}п за круг =====`);
       const strategies: Array<{ type: AgentParams['strategyType']; grid: Array<Partial<AgentParams>> }> = [
         { type: 'meanrev', grid: [1800, 3600].flatMap(w => [8, 16].map(thr => ({ windowSec: w, thresholdPips: thr * mult }))) },
         { type: 'impulse', grid: [1800, 3600].flatMap(w => [2, 6].map(thr => ({ windowSec: w, thresholdPips: thr * mult }))) },
@@ -106,33 +111,36 @@ if (isMain) {
       ];
       for (const st of strategies) for (const g of st.grid) for (const [tp, sl] of [[10, 20], [20, 40]] as const) for (const entryMode of ['market', 'limit'] as const) {
         const params: AgentParams = { ...DEFAULT_PARAMS, ...g, strategyType: st.type, entryMode, tpPips: tp * mult, slPips: sl * mult, cooldownSec: 900, entryTtlSec: 180 };
-        const pnls = runCell(candles, scale, params, spreadFrac);
+        const pnls = runCell(candles, scale, params, halfSpread);
         if (pnls.length < 30) continue;
         const cut = Math.floor(pnls.length * 0.7);
         const net = (xs: typeof pnls, fee: number) => xs.reduce((s, x) => s + x.gross - fee * x.notional, 0);
         const tr = pnls.slice(0, cut), te = pnls.slice(cut);
         const notional = pnls.reduce((s, x) => s + x.notional, 0);
+        const tstat = (xs: typeof pnls, fee: number) => { const v = xs.map(x => x.gross - fee * x.notional); const m = v.reduce((a, b) => a + b, 0) / v.length; const sd = Math.sqrt(v.reduce((a, b) => a + (b - m) ** 2, 0) / Math.max(1, v.length - 1)); return sd ? +(m / (sd / Math.sqrt(v.length))).toFixed(2) : 0; };
         const cell: Cell = {
           root, strategy: st.type, entryMode, params: `w${params.windowSec} thr${params.thresholdPips} tp${params.tpPips} sl${params.slPips}`, trades: pnls.length,
           netTrainA: +net(tr, FEE_A).toFixed(1), netTestA: +net(te, FEE_A).toFixed(1), netTrainB: +net(tr, FEE_B).toFixed(1), netTestB: +net(te, FEE_B).toFixed(1),
           gross: +pnls.reduce((s, x) => s + x.gross, 0).toFixed(1), wr: +(pnls.filter(x => x.gross > 0).length / pnls.length * 100).toFixed(1),
           pctPerTradeA: +(100 * net(pnls, FEE_A) / notional).toFixed(4),
+          tTrainA: tstat(tr, FEE_A), tTestA: tstat(te, FEE_A), tAllA: tstat(pnls, FEE_A),
           passA: net(tr, FEE_A) > 0 && net(te, FEE_A) > 0, passB: net(tr, FEE_B) > 0 && net(te, FEE_B) > 0,
+          stage2A: net(tr, FEE_A) > 0 && net(te, FEE_A) > 0 && tstat(pnls, FEE_A) >= 2,
         };
         cells.push(cell);
       }
       const mine = cells.filter(c => c.root === root);
       const pa = mine.filter(c => c.passA), pb = mine.filter(c => c.passB);
       console.log(`  ячеек ${mine.length}, прошло A: ${pa.length}, B: ${pb.length}`);
-      for (const p of pa.slice().sort((a, b) => b.netTestA - a.netTestA).slice(0, 5)) console.log(`  ✅A ${p.strategy}/${p.entryMode} ${p.params}: train ${p.netTrainA} · test ${p.netTestA} (${p.trades} сд, wr ${p.wr}%, ${p.pctPerTradeA}%/сд)`);
+      for (const p of pa.slice().sort((a, b) => b.netTestA - a.netTestA).slice(0, 5)) console.log(`  ✅A ${p.strategy}/${p.entryMode} ${p.params}: train ${p.netTrainA} (t ${p.tTrainA}) · test ${p.netTestA} (t ${p.tTestA}) · t_all ${p.tAllA}${p.stage2A ? ' ★stage2' : ''} (${p.trades} сд, wr ${p.wr}%, ${p.pctPerTradeA}%/сд)`);
       for (const p of pb.filter(c => !c.passA).slice().sort((a, b) => b.netTestB - a.netTestB).slice(0, 3)) console.log(`  ✅B(только) ${p.strategy}/${p.entryMode} ${p.params}: train ${p.netTrainB} · test ${p.netTestB} (${p.trades} сд, wr ${p.wr}%)`);
       const best = mine.slice().sort((a, b) => b.netTestA - a.netTestA)[0];
       if (!pa.length && best) console.log(`  лучшее по A (не прошло): ${best.strategy}/${best.entryMode} ${best.params}: train ${best.netTrainA} · test ${best.netTestA} · gross ${best.gross}`);
     }
-    console.log(`\nИТОГ: ячеек ${cells.length}, прошло по A: ${cells.filter(c => c.passA).length}, по B: ${cells.filter(c => c.passB).length}`);
-    const outPath = path.join(process.cwd(), 'data', 'forts-report.json');
+    console.log(`\nИТОГ [${adjust}]: ячеек ${cells.length}, прошло по A: ${cells.filter(c => c.passA).length}, stage2 (t_all≥2): ${cells.filter(c => c.stage2A).length}, по B: ${cells.filter(c => c.passB).length}`);
+    const outPath = path.join(process.cwd(), 'data', `forts-report-${adjust}.json`);
     mkdirSync(path.dirname(outPath), { recursive: true });
-    writeFileSync(outPath, JSON.stringify({ from, to, feeA: FEE_A, feeB: FEE_B, cells }, null, 1));
+    writeFileSync(outPath, JSON.stringify({ from, to, adjust, feeA: FEE_A, feeB: FEE_B, cells }, null, 1));
     console.log(`JSON: ${outPath}\nDONE`);
   })().catch(e => { console.error(e); process.exit(1); });
 }
