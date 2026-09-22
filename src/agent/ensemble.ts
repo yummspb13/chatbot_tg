@@ -181,7 +181,10 @@ export class EnsembleLeg {
   /** gapStart — вотермарк простоя: прогрев истории обрезается на нём, а
    *  [gapStart, сейчас] проигрывается ЧЕРЕЗ ПОЛНЫЙ торговый путь (филлы,
    *  TP/SL, счётчики) со сделками-BF — понимание срабатываний без дыры. */
-  async start(gapStart?: Date | null): Promise<void> {
+  /** opts.lastQuoteTime — «память» о последней котировке до рестарта (конец прошлой сессии /
+   *  вотермарк простоя): без неё первая котировка после ночного рестарта не видит разрыва и
+   *  усыновлённые позиции живут через ночь вопреки протестированной модели (GAZP 21-22.09). */
+  async start(gapStart?: Date | null, opts?: { lastQuoteTime?: Date | null }): Promise<void> {
     if (this.running) return;
     const todayStart = new Date(new Date().toISOString().slice(0, 10));
     const closedToday = await this.deps.store.closedTradesSince(MODE, todayStart);
@@ -207,6 +210,7 @@ export class EnsembleLeg {
           mult: Math.max(1, Math.round(r.units / m.member.params.units)),
         }));
     }
+    if (opts?.lastQuoteTime) this.lastQuoteTimeMs = opts.lastQuoteTime.getTime();
     await this.warmupFromHistory(gapStart ?? undefined);
     this.running = true;
     if (gapStart) await this.replayGap(gapStart);

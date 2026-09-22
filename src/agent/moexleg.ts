@@ -127,6 +127,21 @@ const MEDIAN_SPREAD_FRAC: Record<string, number> = {
   TRNFP: 0.00018, SVCB: 0.00048, SNGS: 0.00032, RAGR: 0.0004, SIBN: 0.00032, ALRS: 0.00044,
 };
 
+/** Конец последней ЗАВЕРШИВШЕЙСЯ сессии до now (15:40 или 20:50 UTC буднего дня) —
+ *  память о последней котировке для ноги, стартующей вне сессии. */
+export function moexLastSessionEnd(now: Date): Date {
+  for (let back = 0; back < 10; back++) {
+    const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - back));
+    const dow = day.getUTCDay();
+    if (dow === 0 || dow === 6) continue;
+    for (const [h, m] of [[20, 50], [15, 40]] as const) {
+      const end = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), h, m);
+      if (end <= now.getTime()) return new Date(end);
+    }
+  }
+  return new Date(now.getTime() - 86400_000);
+}
+
 /** Будни, основная или вечерняя сессия Мосбиржи (UTC; MSK без DST). */
 export function moexInSession(now: Date): boolean {
   const dow = now.getUTCDay();
@@ -195,7 +210,12 @@ export class MoexLeg {
         ),
       });
     }
-    for (const l of this.legs) await l.leg.start();
+    // память о последней котировке: вотермарк простоя, иначе — сейчас (рестарт внутри сессии)
+    // или конец прошлой сессии (рестарт ночью/в перерыве): первая котировка после разрыва >30 мин
+    // закроет усыновлённые позиции по модели (22.09: GAZP держал SELL через ночь и день)
+    const bootAt = new Date();
+    const lastQuoteTime = gapStart ?? (moexInSession(bootAt) ? bootAt : moexLastSessionEnd(bootAt));
+    for (const l of this.legs) await l.leg.start(undefined, { lastQuoteTime });
     this.running = true;
 
     // Micro-этап (решение владельца 18.08, мультитикер 21.08): зеркала живых
