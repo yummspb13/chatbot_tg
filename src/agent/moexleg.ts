@@ -142,6 +142,10 @@ export class MoexLeg {
   private loopPromise: Promise<void> | null = null;
   private lastQuoteAt = 0;
   private mirrors: TickerMirror[] = [];
+  // ошибки на пути котировка→ансамбль (вне step): считаем, чтобы день без сделок был объясним
+  private quoteErrorsToday = 0;
+  private quoteErrDay = '';
+  private lastQuoteError: string | null = null;
 
   constructor(
     // oilShockSign: трекер нефтяного шока из движка (oilguard-клон SIBN);
@@ -176,7 +180,7 @@ export class MoexLeg {
         spec,
         uid,
         leg: new EnsembleLeg(
-          this.deps,
+          { ...this.deps, alert: this.deps.notify },
           {
             baseSymbol: spec.ticker, crypto: false, warmup: null, commissionFrac: 0.001,
             // oilguard: клоны с суффиксом -og не входят при активном нефтяном шоке
@@ -316,7 +320,12 @@ export class MoexLeg {
           errStreak = 0;
         } catch (e) {
           errStreak += 1;
+          const dk = new Date().toISOString().slice(0, 10);
+          if (dk !== this.quoteErrDay) { this.quoteErrDay = dk; this.quoteErrorsToday = 0; }
+          this.quoteErrorsToday += 1;
+          this.lastQuoteError = `${l.spec.ticker}: ${errMsg(e)}`;
           if (errStreak % 20 === 1) log.warn(`MOEX ${l.spec.ticker}: ${errMsg(e)}`, undefined, 'moex');
+          if (this.quoteErrorsToday === 1) void this.deps.notify(`⚠️ MOEX ${l.spec.ticker}: первая за день ошибка на пути котировки: ${errMsg(e)}`).catch(() => {});
         }
       }
       await sleep(5_000);
@@ -345,6 +354,13 @@ export class MoexLeg {
       inSession: moexInSession(new Date()),
       tickers: (this.legs.length ? this.legs.map(l => l.spec) : this.specs).map(s => s.ticker),
       lastQuoteAgoSec: this.lastQuoteAt ? Math.round((Date.now() - this.lastQuoteAt) / 1000) : null,
+      // проглоченные ошибки шага по всем тикерам за день (0 = ансамбли работают штатно)
+      quoteErrorsToday: this.quoteErrDay === new Date().toISOString().slice(0, 10) ? this.quoteErrorsToday : 0,
+      lastQuoteError: this.lastQuoteError,
+      stepErrorsToday: this.legs.reduce((s, l) => s + l.leg.errorsSummary().stepErrorsToday, 0),
+      lastStepError: this.legs.map(l => l.leg.errorsSummary().lastStepError).filter(Boolean).slice(-1)[0] ?? null,
+      // состояние каждого ансамбля: running/replaying/возраст последней котировки, дошедшей до ансамбля
+      legs: this.legs.map(l => ({ ticker: l.spec.ticker, ...l.leg.errorsSummary() })),
       mirrors: this.mirrors.map(m => m.summary()),
       // алиас для мониторинга/детекторов, писанных под одно AFKS-зеркало
       afksMirror: this.mirrors.find(m => m.summary().ticker === 'AFKS')?.summary()

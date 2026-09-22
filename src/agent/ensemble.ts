@@ -27,6 +27,9 @@ import type { TradeStore } from '../store';
 export interface EnsembleDeps {
   store: TradeStore;
   isNewsBlackout: (ts: Date, bufferMin: number) => boolean;
+  // алерт владельцу о первой за день ошибке шага (проглоченная ошибка = молча
+  // не открытые сделки; 22.09: день без единой сделки нельзя отличить от тишины рынка)
+  alert?: (text: string) => Promise<void>;
 }
 
 export interface EnsembleConfig {
@@ -128,6 +131,9 @@ export class EnsembleLeg {
   // До 22.09 разрыв сравнивал q.time с Date.now() — живьём это одно и то же, а в
   // догонке BF (историческое время) GAP-выход не срабатывал никогда
   private lastQuoteTimeMs = 0;
+  private stepErrorsToday = 0;
+  private errDayKey = '';
+  private lastStepError: string | null = null;
   private tradeListeners: Array<(e: VirtualTradeEvent) => void> = [];
   // 'BF' во время догонки простоя: сделки из проигранной истории помечаются в
   // brokerTradeId (у виртуальных он всё равно пуст) — лицензии их не считают
@@ -340,7 +346,13 @@ export class EnsembleLeg {
       try {
         await this.step(m, q, spreadPips, dayKey);
       } catch (e) {
+        if (dayKey !== this.errDayKey) { this.errDayKey = dayKey; this.stepErrorsToday = 0; }
+        this.stepErrorsToday += 1;
+        this.lastStepError = `${m.member.key}: ${errMsg(e)}`;
         log.warn(`ансамбль ${m.member.key}: ${errMsg(e)}`, undefined, 'ensemble');
+        if (this.stepErrorsToday === 1 && !this.replaying) {
+          void this.deps.alert?.(`⚠️ ансамбль ${this.cfg.baseSymbol}: первая за день ошибка шага (${m.member.key}): ${errMsg(e)} — входы этого участника могут молча пропускаться`).catch(() => {});
+        }
       }
     }
   }
@@ -533,6 +545,16 @@ export class EnsembleLeg {
   }
 
   /** Сводка для панели/TG: 14-дневная статистика из БД + живое состояние. */
+  /** Ошибки шага за день (проглоченные исключения step) — для /health и сводок. */
+  errorsSummary(): { stepErrorsToday: number; lastStepError: string | null; replaying: boolean; running: boolean; lastQuoteAgoSec: number | null } {
+    const today = new Date().toISOString().slice(0, 10);
+    return {
+      stepErrorsToday: this.errDayKey === today ? this.stepErrorsToday : 0, lastStepError: this.lastStepError,
+      replaying: this.replaying, running: this.running,
+      lastQuoteAgoSec: this.lastQuoteAt ? Math.round((Date.now() - this.lastQuoteAt) / 1000) : null,
+    };
+  }
+
   async stats(): Promise<{
     running: boolean;
     lastQuoteAgoSec: number | null;

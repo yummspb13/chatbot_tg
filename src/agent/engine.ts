@@ -195,7 +195,7 @@ export class AgentEngine {
           // крипто-ансамбль питается котировками крипто-ноги (24/7, включая выходные)
           if (config.ensemble) {
             this.btcEnsemble = new EnsembleLeg(
-              { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout },
+              { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout, alert: this.deps.notify },
               {
                 baseSymbol: 'BTC_USD', crypto: true, warmup: { instrument: 'btcusd', scale: 100_000 }, fillMode: 'cross',
                 extraCtx: () => ({ news: this.newsLeg?.biasFor('BTC') ?? null }),
@@ -232,7 +232,7 @@ export class AgentEngine {
     if (config.ensemble && settings.mode === 'live') {
       try {
         this.ensembleLeg = new EnsembleLeg(
-          { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout },
+          { store: this.deps.store, isNewsBlackout: this.deps.isNewsBlackout, alert: this.deps.notify },
           {
             baseSymbol: 'EUR_USD', crypto: false, warmup: { instrument: 'eurusd', scale: 1 }, fillMode: 'cross',
             extraCtx: () => ({ news: this.newsLeg?.biasFor('EURUSD') ?? null }),
@@ -253,6 +253,7 @@ export class AgentEngine {
         this.marketsLeg = new MarketsLeg({
           store: this.deps.store,
           isNewsBlackout: this.deps.isNewsBlackout,
+          alert: this.deps.notify,
           // oilguard: реальная цена WTI из стрима кормит трекер нефтяного шока
           tapOil: (mid, t) => this.oilShock.onQuote(mid, t),
           oilShockSign: () => this.oilShock.shockSign(),

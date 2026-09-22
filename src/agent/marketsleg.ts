@@ -159,6 +159,7 @@ export class MarketsLeg {
       running: this.running,
       markets: this.specs.map(s => s.key),
       lastQuoteAgoSec: this.lastAnyQuoteAt ? Math.round((Date.now() - this.lastAnyQuoteAt) / 1000) : null,
+      stepErrorsToday: this.legs.reduce((s, l) => s + l.leg.errorsSummary().stepErrorsToday, 0),
     };
   }
 }
