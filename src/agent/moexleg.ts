@@ -105,10 +105,10 @@ export const MOEX_LEGS: MoexSpec[] = [
         key: 'sibn-meanrev2-sl2', // контроль стоп-теста 22.09: та же ячейка со старым стопом 2×TP (120), не зеркалится
         params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 120, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
       },
-      {
-        key: 'sibn-meanrev2-og', // oilguard: близнец зеркальной ячейки (с 22.09 — стоп 60), входы блокируются при активном нефтяном шоке
-        params: moexParams({ strategyType: 'meanrev', windowSec: 1800, thresholdPips: 48, tpPips: 60, slPips: 60, cooldownSec: 900, spreadGuardPips: 8, maxDailyLossUsd: 15, trailAfterTpFrac: 0.2 }),
-      },
+      // sibn-meanrev2-og (oilguard, 22.08→22.09) снят: на окне март→сентябрь гейт по шоку нефти
+      // (WTI и Brent, σ фиксированная и скользящая) хуже контроля на train И test во всех 8
+      // вариантах, а константа σ=0.00568 в 2026 блокировала бы 36 % минут (docs/STOP-ETH-2026-09-22.md §3).
+      // Трекер и entryGuard остаются в коде: знак шока пишется в entryCtx.
     ],
   },
   {

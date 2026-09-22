@@ -1,0 +1,18 @@
+WTI σ60(train)=0.00955 | Brent σ60(train)=0.00888 (в проде WTI 0.00568)
+WTI-fixed: доля минут под шоком 12.9% | WTI-roll20: доля минут под шоком 20.7% | Brent-fixed: доля минут под шоком 13.5% | Brent-roll20: доля минут под шоком 20.3%
+
+=== SIBN sibn-meanrev2 (tp 60 sl 60, трейл 0.2) ===
+  control      train 21 сд net +20.1$ wr 0.62 | test 39 сд net +12.9$ wr 0.54  (контроль)
+  WTI-fixed    train 8 сд net +20.2$ wr 0.75 | test 36 сд net -3.4$ wr 0.5  —
+  WTI-roll20   train 7 сд net +16.7$ wr 0.71 | test 27 сд net -12.6$ wr 0.48  —
+  Brent-fixed  train 9 сд net +23.8$ wr 0.78 | test 35 сд net +3$ wr 0.51  —
+  Brent-roll20 train 7 сд net +16.7$ wr 0.71 | test 27 сд net +0.8$ wr 0.52  —
+
+=== SIBN sibn-meanrev (tp 70 sl 140, трейл 0.2) ===
+  control      train 22 сд net +23.6$ wr 0.59 | test 34 сд net +23.5$ wr 0.68  (контроль)
+  WTI-fixed    train 12 сд net +11.8$ wr 0.58 | test 32 сд net +11.9$ wr 0.66  —
+  WTI-roll20   train 11 сд net +19.8$ wr 0.64 | test 25 сд net +12.4$ wr 0.68  —
+  Brent-fixed  train 12 сд net +11.2$ wr 0.58 | test 31 сд net +17.4$ wr 0.68  —
+  Brent-roll20 train 11 сд net +19.8$ wr 0.64 | test 27 сд net +10$ wr 0.67  —
+
+DONE

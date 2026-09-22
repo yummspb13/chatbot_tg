@@ -1,0 +1,152 @@
+[
+ {
+  "cell": "sibn-meanrev2",
+  "variant": "control",
+  "train": {
+   "n": 21,
+   "net": 20.1,
+   "wr": 0.62
+  },
+  "test": {
+   "n": 39,
+   "net": 12.9,
+   "wr": 0.54
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev2",
+  "variant": "WTI-fixed",
+  "train": {
+   "n": 8,
+   "net": 20.2,
+   "wr": 0.75
+  },
+  "test": {
+   "n": 36,
+   "net": -3.4,
+   "wr": 0.5
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev2",
+  "variant": "WTI-roll20",
+  "train": {
+   "n": 7,
+   "net": 16.7,
+   "wr": 0.71
+  },
+  "test": {
+   "n": 27,
+   "net": -12.6,
+   "wr": 0.48
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev2",
+  "variant": "Brent-fixed",
+  "train": {
+   "n": 9,
+   "net": 23.8,
+   "wr": 0.78
+  },
+  "test": {
+   "n": 35,
+   "net": 3,
+   "wr": 0.51
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev2",
+  "variant": "Brent-roll20",
+  "train": {
+   "n": 7,
+   "net": 16.7,
+   "wr": 0.71
+  },
+  "test": {
+   "n": 27,
+   "net": 0.8,
+   "wr": 0.52
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev",
+  "variant": "control",
+  "train": {
+   "n": 22,
+   "net": 23.6,
+   "wr": 0.59
+  },
+  "test": {
+   "n": 34,
+   "net": 23.5,
+   "wr": 0.68
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev",
+  "variant": "WTI-fixed",
+  "train": {
+   "n": 12,
+   "net": 11.8,
+   "wr": 0.58
+  },
+  "test": {
+   "n": 32,
+   "net": 11.9,
+   "wr": 0.66
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev",
+  "variant": "WTI-roll20",
+  "train": {
+   "n": 11,
+   "net": 19.8,
+   "wr": 0.64
+  },
+  "test": {
+   "n": 25,
+   "net": 12.4,
+   "wr": 0.68
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev",
+  "variant": "Brent-fixed",
+  "train": {
+   "n": 12,
+   "net": 11.2,
+   "wr": 0.58
+  },
+  "test": {
+   "n": 31,
+   "net": 17.4,
+   "wr": 0.68
+  },
+  "pass": false
+ },
+ {
+  "cell": "sibn-meanrev",
+  "variant": "Brent-roll20",
+  "train": {
+   "n": 11,
+   "net": 19.8,
+   "wr": 0.64
+  },
+  "test": {
+   "n": 27,
+   "net": 10,
+   "wr": 0.67
+  },
+  "pass": false
+ }
+]
