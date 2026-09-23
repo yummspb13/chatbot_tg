@@ -216,6 +216,7 @@ export class MoexLeg {
     const bootAt = new Date();
     const lastQuoteTime = gapStart ?? (moexInSession(bootAt) ? bootAt : moexLastSessionEnd(bootAt));
     for (const l of this.legs) await l.leg.start(undefined, { lastQuoteTime });
+    await this.seedPriceHistory();
     this.running = true;
 
     // Micro-этап (решение владельца 18.08, мультитикер 21.08): зеркала живых
@@ -301,6 +302,21 @@ export class MoexLeg {
 
   /** Догонка простоя: ISS-минутки за [gapStart, сейчас] проигрываются через
    *  полный торговый путь книг (сделки-BF). Спред — медиана живого замера. */
+  /** Сутки ISS-минуток в ценовой контекст каждого ансамбля (entryCtx: ret240/ret1440/…),
+   *  до первой живой котировки. Ошибка — не помеха старту. */
+  private async seedPriceHistory(): Promise<void> {
+    const from = new Date(Date.now() - 26 * 3600_000);
+    for (const l of this.legs) {
+      try {
+        const { loadMoexM1 } = await import('../backtest/moex-data');
+        const candles = await loadMoexM1(l.spec.ticker, from, new Date());
+        l.leg.seedPriceHistory(candles, l.spec.priceScale);
+      } catch (e) {
+        log.warn(`MOEX ${l.spec.ticker}: засев ценового контекста не удался (${errMsg(e)})`, undefined, 'moex');
+      }
+    }
+  }
+
   private async replayGap(gapStart: Date): Promise<void> {
     const from = new Date(Math.max(gapStart.getTime(), Date.now() - 72 * 3600_000));
     for (const l of this.legs) {

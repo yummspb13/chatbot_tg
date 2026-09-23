@@ -549,6 +549,13 @@ export class EnsembleLeg {
   }
 
   /** Сводка для панели/TG: 14-дневная статистика из БД + живое состояние. */
+  /** Засев ценового контекста историей владельца ноги (MOEX: ISS-минутки за сутки перед
+   *  стартом) — иначе после каждого деплоя поля ret240/ret1440/rng1440/pos1440 в entryCtx
+   *  пустуют часами. Вызывать ДО первой живой/проигранной котировки. */
+  seedPriceHistory(candles: Array<{ t: number; c: number }>, scale: number): void {
+    for (const c of candles) this.priceCtx.seed(c.t, c.c / scale);
+  }
+
   /** Ошибки шага за день (проглоченные исключения step) — для /health и сводок. */
   errorsSummary(): { stepErrorsToday: number; lastStepError: string | null; replaying: boolean; running: boolean; lastQuoteAgoSec: number | null } {
     const today = new Date().toISOString().slice(0, 10);
